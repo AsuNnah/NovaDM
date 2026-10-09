@@ -8,6 +8,35 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [1.2.3] — 2026-10-09
+
+### Fixed
+- **Cloudflare "Verify you are human" pages looping.** Two causes:
+  - The User-Agent *header* of page requests still said `NovaDM/… Electron/…`, while scripts saw a
+    plain Chrome name (a 0.1 bug: only the scripts' name was cleaned). Every request now has the
+    plain Chrome name.
+  - Standard fingerprinting protection changed the CPU count, memory and screen size that pages
+    see, but background scripts (workers) still saw the real ones, and the changed values were
+    detectable. Bot checks treat that as a sign of automation. Standard now only adds noise to
+    canvas and audio read-outs (like Brave). The fixed values, the hidden device APIs and the WebGL
+    name moved to Strict, which is allowed to break such checks.
+  - Cloudflare, hCaptcha and reCAPTCHA check frames get no fingerprinting changes.
+  - If a site still loops, turn "Tor-style protection" off for it in the shield panel.
+
+### Notes
+- **Windows Firewall question on first use:** it appears when a page uses WebRTC (video calls,
+  and many tracking and bot-check scripts), because Chromium then opens a UDP port on the network.
+  NovaDM itself opens no ports (the local API listens on this PC only, and is off by default).
+  Choosing "Cancel" / blocking is fine: calls still work, through outgoing connections.
+
+### Tests
+- 127 unit tests. In-app: the request header and page agree on the browser name; page and worker see
+  the same CPU and memory with Standard; Strict still applies the fixed values. Self-tests for
+  per-site browser names, downloads, transport, pop-ups and 1.2 pass.
+
+### Not verified here
+- No real Cloudflare challenge page was loaded in the tests. Please try the site that looped.
+
 ## [1.2.2] — 2026-10-09
 
 ### Added

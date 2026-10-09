@@ -5,26 +5,32 @@ const { ipcRenderer, contextBridge } = require('electron');
 
 let cfg = null;
 try { cfg = ipcRenderer.sendSync('novadm:shield-config'); } catch {}
-if (cfg && (cfg.fingerprinting !== 'off' || cfg.clickToPlay)) {
+// Bot checks (Cloudflare, hCaptcha, reCAPTCHA) inspect the browser itself: altered values make them loop.
+const CAPTCHA = /(^|\.)(challenges\.cloudflare\.com|hcaptcha\.com|recaptcha\.net)$|^www\.google\.com$/;
+const captchaFrame = CAPTCHA.test(location.hostname) && (location.hostname !== 'www.google.com' || location.pathname.startsWith('/recaptcha/'));
+if (cfg && !captchaFrame && (cfg.fingerprinting !== 'off' || cfg.clickToPlay)) {
   try { contextBridge.executeInMainWorld({ func: protect, args: [cfg] }); } catch {}
 }
 
 // Serialized into the page: no outside references.
 function protect(cfg) {
   const def = (proto, key, value) => { try { Object.defineProperty(proto, key, { get() { return value; }, configurable: true }); } catch {} };
-  if (cfg.fingerprinting !== 'off') {
-    // The same values for everyone: CPU count, memory, screen size; device APIs trackers read are gone.
+  if (cfg.fingerprinting === 'strict') {
+    // Like Tor Browser, the same values for everyone: CPU count, memory, screen size; the device APIs
+    // trackers read are gone. Scripts can tell (workers still see the real CPU and memory), so some
+    // sites' bot checks refuse this: Strict only.
     def(Navigator.prototype, 'hardwareConcurrency', 4);
     def(Navigator.prototype, 'deviceMemory', 8);
     for (const [k, v] of [['width', 1920], ['height', 1080], ['availWidth', 1920], ['availHeight', 1040], ['colorDepth', 24], ['pixelDepth', 24]]) def(Screen.prototype, k, v);
     for (const k of ['getBattery', 'getGamepads']) { try { delete Navigator.prototype[k]; } catch {} }
     for (const k of ['usb', 'hid', 'serial', 'bluetooth', 'connection']) def(Navigator.prototype, k, undefined);
+  }
+  if (cfg.fingerprinting !== 'off') {
 
     const gid = CanvasRenderingContext2D.prototype.getImageData;
     const tdu = HTMLCanvasElement.prototype.toDataURL;
     const tbl = HTMLCanvasElement.prototype.toBlob;
     const gcd = AudioBuffer.prototype.getChannelData;
-    const gp = WebGLRenderingContext.prototype.getParameter;
     if (cfg.fingerprinting === 'strict') {
       // Like Tor Browser: canvas read-outs are blank, WebGL is off, audio read-outs are silent.
       CanvasRenderingContext2D.prototype.getImageData = function (x, y, w, h) { return new ImageData(Math.max(1, Math.abs(w)), Math.max(1, Math.abs(h))); };
@@ -60,7 +66,6 @@ function protect(cfg) {
       HTMLCanvasElement.prototype.toDataURL = function (...a) { return tdu.apply(noisy(this), a); };
       HTMLCanvasElement.prototype.toBlob = function (...a) { return tbl.apply(noisy(this), a); };
       AudioBuffer.prototype.getChannelData = function (...a) { const d = gcd.apply(this, a); for (let i = cfg.seed % 101; i < d.length; i += 101) d[i] += 1e-7; return d; };
-      WebGLRenderingContext.prototype.getParameter = function (k) { if (k === 37445) return 'Google Inc.'; if (k === 37446) return 'ANGLE (Generic GPU)'; return gp.call(this, k); };
     }
   }
   if (cfg.clickToPlay) {

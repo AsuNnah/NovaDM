@@ -115,7 +115,7 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <label class="sw"><input type="checkbox" id="blockThirdPartyCookies"><i></i></label>
     </div>
     <div class="row">
-      <div class="lbl"><b>Fingerprinting protection</b><span>Standard (like Brave): canvas, WebGL and audio read-outs get tiny noise, and CPU, memory, screen and device APIs look the same for everyone. Strict (like Tor Browser): those read-outs are blocked; drawing apps and some games may not work. Turn it off for one site from the shield.</span></div>
+      <div class="lbl"><b>Fingerprinting protection</b><span>Standard (like Brave): canvas and audio read-outs get tiny noise, different on every site. Strict (like Tor Browser): those read-outs are blocked, WebGL is off, and CPU, memory, screen and device APIs look the same for everyone; drawing apps, some games and some sites' “are you human” checks may not work. Turn it off for one site from the shield.</span></div>
       <select id="fingerprinting"><option value="standard">Standard</option><option value="strict">Strict</option><option value="off">Off</option></select>
     </div>
     <div class="row">

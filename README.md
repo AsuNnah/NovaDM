@@ -254,6 +254,9 @@ on its own are ad-block list updates and Secure DNS lookups to the provider you 
 
 The clipboard watcher only checks copied text for download links while NovaDM runs; nothing is
 saved or sent, and it can be turned off. Downloads from private tabs are not written to the list.
+Windows Firewall may ask about NovaDM the first time a page uses WebRTC (Chromium opens a network
+port for it); blocking it is fine. NovaDM itself opens no network ports.
+
 Proxy and site passwords are stored encrypted with Windows' data protection. The webhook and the
 after-download program only run if you set them up.
 

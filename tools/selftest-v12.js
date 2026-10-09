@@ -64,9 +64,9 @@ module.exports = async ({ app, browser, settings, ipc, chromeView, downloads }) 
       sameSiteSameNoise: std1.fp.canvas === std1again.fp.canvas,
       otherSiteOtherNoise: std1.fp.canvas !== std2.fp.canvas,
       noiseDiffersFromReal: std1.fp.canvas !== real.canvas,
-      standard: { cpu: std1.fp.cpu, screen: std1.fp.screen, battery: std1.fp.battery, usb: std1.fp.usb },
+      standardKeepsRealValues: std1.fp.cpu === real.cpu && std1.fp.screen === real.screen && std1.fp.battery === real.battery, // bot checks compare with workers
       real: { cpu: real.cpu, screen: real.screen, battery: real.battery, usb: real.usb, webgl: real.webgl },
-      strict: { webgl: strict.fp.webgl, blankCanvas: strict.fp.canvas !== real.canvas },
+      strict: { webgl: strict.fp.webgl, blankCanvas: strict.fp.canvas !== real.canvas, cpu: strict.fp.cpu, screen: strict.fp.screen, battery: strict.fp.battery, usb: strict.fp.usb },
     };
 
     // 2. Safer: no web fonts, no JavaScript on http:// pages, media waits for a click. Safest: no JavaScript.

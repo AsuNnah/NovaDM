@@ -3,7 +3,7 @@
 // the media sniffer (request-header capture + response classification into the media registry).
 const path = require('path');
 const { EventEmitter } = require('events');
-const { WebContentsView, session: electronSession, ipcMain } = require('electron');
+const { app, WebContentsView, session: electronSession, ipcMain } = require('electron');
 const net = require('./net');
 const { shortcutFor } = require('./shortcuts');
 
@@ -28,6 +28,8 @@ class Browser extends EventEmitter {
     this.activeId = null;
     this.bounds = { x: 0, y: 0, width: 800, height: 600 };
     this._seq = 0;
+    // A plain Chrome name everywhere (pages, request headers): sites and bot checks refuse "Electron".
+    app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
     this.normalSession = electronSession.fromPartition('persist:browser');
     this.incognitoSession = electronSession.fromPartition('novadm-incognito');
     this._sessionsReady = new Set();
