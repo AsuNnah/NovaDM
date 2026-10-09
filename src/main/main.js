@@ -6,6 +6,7 @@ const { AdBlocker } = require('./adblock');
 const { PopupGuard } = require('./popup');
 const { MediaRegistry } = require('./media/registry');
 const { DownloadManager } = require('./download/manager');
+const { Transport } = require('./transport');
 const { Browser } = require('./browser');
 const net = require('./net');
 const { registerIpc } = require('./ipc');
@@ -236,7 +237,9 @@ app.whenReady().then(async () => {
   });
   adblock = new AdBlocker(settings);
   browser = new Browser({ settings, media, adblock, popup });
-  downloads = new DownloadManager(settings, browser.normalSession);
+  downloads = new DownloadManager(settings, browser.normalSession, {
+    transport: new Transport({ session: browser.normalSession, settings }),
+  });
 
   // Grabber thumbnails: novadm-thumb://img/?u=<image url>&r=<page url>. Fetched through the browsing
   // session with the page as Referer, so hotlink-protected images still preview. Only NovaDM's own UI
@@ -350,6 +353,15 @@ app.whenReady().then(async () => {
 });
 
 app.on('window-all-closed', () => { settings && settings.flush(); app.quit(); });
-app.on('before-quit', () => { settings && settings.flush(); downloads && downloads.persist(); });
+// Running downloads are paused properly on quit (caches written, data synced, progress saved), so they
+// resume from where they stopped. Quitting waits for that, at most a few seconds.
+let quitReady = false;
+app.on('before-quit', (e) => {
+  settings && settings.flush();
+  if (quitReady || !downloads) { downloads && downloads.persist(); return; }
+  e.preventDefault();
+  quitReady = true;
+  downloads.shutdown(4000).finally(() => app.quit());
+});
 
 module.exports = { get win() { return win; } };

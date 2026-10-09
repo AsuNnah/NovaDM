@@ -76,6 +76,10 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <input type="number" id="connections" min="1" max="32" />
     </div>
     <div class="row">
+      <div class="lbl"><b>Connection method</b><span>Automatic uses NovaDM's own fast connections where the browser would allow only 6 per server, and the browser's connections everywhere else.</span></div>
+      <select id="downloadTransport"><option value="auto">Automatic (recommended)</option><option value="browser">Browser only (max 6 per server)</option><option value="direct">Always NovaDM's own</option></select>
+    </div>
+    <div class="row">
       <div class="lbl"><b>Downloads at the same time</b></div>
       <input type="number" id="maxActive" min="1" max="10" />
     </div>

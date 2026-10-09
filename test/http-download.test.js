@@ -214,3 +214,22 @@ test('an expired link is reported as LINK_EXPIRED', async (t) => {
   assert.ok(err, 'should fail');
   assert.equal(err.code, 'LINK_EXPIRED');
 });
+
+test('a download paused by the 0.1.0 engine resumes without starting over', async (t) => {
+  const MB = 1024 * 1024;
+  const st = { body: crypto.randomBytes(4 * MB) };
+  const server = makeServer(st); t.after(() => server.close()); const url = await listen(server);
+  const save = tmp();
+  // 0.1.0 wrote parts in place (no preallocation) and saved { start, end, pos } per part.
+  const part = Buffer.alloc(2.5 * MB);
+  st.body.copy(part, 0, 0, 1 * MB);
+  st.body.copy(part, 2 * MB, 2 * MB, 2.5 * MB);
+  fs.writeFileSync(save + '.part', part);
+  fs.writeFileSync(save + '.part.meta', JSON.stringify({
+    v: 1, sources: [url + '/f.mp4'], size: st.body.length, resumable: true, received: 1.5 * MB,
+    segments: [{ start: 0, end: 2 * MB, pos: 1 * MB }, { start: 2 * MB, end: 4 * MB, pos: 2.5 * MB }],
+  }));
+  await run(new HttpDownload(base({ savePath: save, url: url + '/f.mp4', connections: 4 })));
+  assert.ok(same(save, st.body));
+  assert.ok(st.bytes <= 2.5 * MB + 256 * 1024, `downloaded again: ${st.bytes} bytes`);
+});

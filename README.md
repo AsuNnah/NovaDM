@@ -44,8 +44,18 @@ AB Download Manager, XDM). No code from any of them is included.
 - DRM-protected streams (Widevine) are detected and labelled; NovaDM does not decrypt DRM
 
 ### Download manager
-- Multi-connection HTTP downloads (up to 32 parts) with pause, resume and retry
-- HLS downloads with pause and resume (the MP4 timeline stays continuous across resumes)
+- Multi-connection HTTP downloads (up to 32 connections) with pause, resume and retry.
+  Connections are added while they still make the download faster (slow start), and slow parts
+  get help near the end.
+- **More than 6 connections per server**: where the browser would stop at 6, NovaDM opens the rest
+  with its own HTTP client, keeping the browser's cookies, Referer, Secure DNS and proxy. Servers
+  that refuse it get the browser's connections automatically.
+- **Crash-safe**: progress is saved only after the data is synced to disk, so a crash or power cut
+  resumes from the last checkpoint; a file that changed on the server is detected on resume.
+- HLS downloads with parallel segments, pause and resume (the MP4 timeline stays continuous). AES
+  keys and the playlist are kept, so a paused stream still resumes after its links expire.
+- Clear errors for full disks, expired links and servers that limit connections (429/503 are
+  retried after the time the server asks for)
 - Downloads page in the style of 1DM: category tabs, search, bulk actions, progress, speed and
   time left, and a box to paste a link (file or `.m3u8` stream)
 - **Properties** for each download: page and download links, mirrors, save path, resume support,
@@ -82,7 +92,8 @@ npm test
 ```
 
 Unit tests cover the HLS parser, media classification, the media registry, TS→MP4 conversion, the
-HTTP and HLS download engines (against a local test server) and the content grabber.
+HTTP and HLS download engines and the direct HTTP client (against local test servers), and the
+content grabber.
 
 `tools/` holds in-app self-tests (`selftest-*.js`) and diagnostics. They run inside Electron
 with a throwaway profile, for example:
@@ -109,7 +120,7 @@ src/main/                 Electron main process
   grabber.js              content (image) grabber
   media/                  media detection, HLS parsing, TS→MP4
   download/               download manager, HTTP and HLS engines, speed limiter
-  transport.js            direct HTTP transport for the new engine (in progress)
+  transport.js            NovaDM's own HTTP client for extra connections (undici)
 src/ui/                   toolbar, panels, downloads, settings, new tab pages
 test/                     unit tests (node --test)
 tools/                    self-tests, diagnostics, icon generator

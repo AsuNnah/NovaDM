@@ -12,10 +12,12 @@ const { JsonStore } = require('../store');
 const util = require('../util');
 
 class DownloadManager extends EventEmitter {
-  constructor(settings, session) {
+  /** opts: { transport } - the direct/browser transport for HTTP and HLS engines (see transport.js). */
+  constructor(settings, session, opts = {}) {
     super();
     this.settings = settings;
     this.session = session;
+    this.transport = opts.transport || null;
     this.limiter = new RateLimiter((settings.get('speedLimitKBps') || 0) * 1024);
     this.store = new JsonStore(path.join(app.getPath('userData'), 'downloads.json'), { items: [] });
     this.records = new Map(); // id -> record (serialisable)
@@ -30,8 +32,9 @@ class DownloadManager extends EventEmitter {
 
   load() {
     for (const rec of this.store.data.items || []) {
-      // Downloads that were running when the app closed come back paused.
-      if (rec.state === 'downloading' || rec.state === 'connecting') rec.state = 'paused';
+      // Downloads that were running or waiting when the app closed come back paused (and are
+      // remembered, so "resume unfinished downloads on start" can pick them up).
+      if (['downloading', 'connecting', 'queued'].includes(rec.state)) { rec.state = 'paused'; rec.wasRunning = true; }
       rec.speed = 0;
       this.records.set(rec.id, rec);
     }
@@ -45,6 +48,7 @@ class DownloadManager extends EventEmitter {
       convertTs: r.convertTs, addedAt: r.addedAt, completedAt: r.completedAt, error: r.error,
       allowRename: r.allowRename, resumable: r.resumable, segments: r.segments, doneSegments: r.doneSegments,
       activeMs: r.activeMs || 0, meta: r.meta || null, percent: r.percent || 0,
+      wasRunning: !!r.wasRunning, errorCode: r.errorCode || null,
     }));
     this.store.save();
   }
@@ -109,7 +113,8 @@ class DownloadManager extends EventEmitter {
     const rec = this.records.get(id);
     if (!rec || rec.state === 'done') return;
     rec.state = 'queued';
-    rec.error = null;
+    rec.error = null; rec.errorCode = null;
+    rec.wasRunning = false;
     if (!this.queue.includes(id)) this.queue.push(id);
     this.emitRecord(rec);
     this.pump();
@@ -134,7 +139,7 @@ class DownloadManager extends EventEmitter {
   makeEngine(rec) {
     const common = {
       id: rec.id, savePath: rec.savePath, headers: rec.headers, session: this.session,
-      limiter: this.limiter, retries: this.settings.get('retries'),
+      limiter: this.limiter, transport: this.transport, retries: this.settings.get('retries'),
       retryDelayMs: (this.settings.get('retryDelaySec') || 3) * 1000,
       timeoutMs: (this.settings.get('timeoutSec') || 30) * 1000,
     };
@@ -148,6 +153,7 @@ class DownloadManager extends EventEmitter {
     return new HttpDownload({
       ...common, sources: rec.sources.concat(rec.mirrors), size: rec.size,
       connections: this.settings.get('connections') || 8,
+      minSplitBytes: (this.settings.get('minSplitKB') || 512) * 1024,
       allowRename: !!rec.allowRename && rec.received === 0,
     });
   }
@@ -172,6 +178,8 @@ class DownloadManager extends EventEmitter {
       rec.speed = p.speed; rec.percent = p.percent; rec.error = p.error;
       if (p.resumable !== undefined) rec.resumable = p.resumable;
       if (p.segments) { rec.segments = p.segments; rec.doneSegments = p.doneSegments; }
+      rec.connections = p.connections || 0; rec.directConnections = p.directConnections || 0;
+      rec.errorCode = p.errorCode || null;
       this.emitRecord(rec);
     });
     engine.on('done', () => {
@@ -186,7 +194,8 @@ class DownloadManager extends EventEmitter {
     engine.on('error', (err) => {
       if (!current()) return;
       this.addActiveTime(rec);
-      rec.state = 'error'; rec.error = String(err.message || err); rec.speed = 0;
+      rec.state = 'error'; rec.error = String(err.message || err); rec.errorCode = err.code || null; rec.speed = 0;
+      rec.connections = 0;
       this.engines.delete(rec.id);
       this.persist(); this.emitRecord(rec);
       this.pump();
@@ -220,6 +229,19 @@ class DownloadManager extends EventEmitter {
   }
 
   resume(id) { this.enqueue(id); }
+
+  /** Pause every running download and wait (up to timeoutMs) until their progress is saved. */
+  async shutdown(timeoutMs = 4000) {
+    for (const r of this.records.values()) {
+      if (['downloading', 'connecting', 'queued'].includes(r.state)) r.wasRunning = true;
+    }
+    this.queue = [];
+    const running = [...this.records.values()].filter((r) => this.engines.has(r.id));
+    for (const r of running) this.pause(r.id);
+    const waits = running.map((r) => r._pausing).filter(Boolean);
+    await Promise.race([Promise.allSettled(waits), new Promise((res) => setTimeout(res, timeoutMs))]);
+    this.persist();
+  }
 
   pauseAll() { for (const r of this.records.values()) if (['downloading', 'connecting', 'queued'].includes(r.state)) this.pause(r.id); }
 
@@ -294,6 +316,7 @@ class DownloadManager extends EventEmitter {
       mirrors: r.mirrors || [], activeMs, modifiedAt, fileExists,
       avgSpeed: activeMs > 1000 ? Math.round(r.received / (activeMs / 1000)) : 0,
       meta: r.meta || null, convertTs: r.convertTs,
+      connections: r.state === 'downloading' ? r.connections || 0 : 0, directConnections: r.directConnections || 0,
     };
   }
 

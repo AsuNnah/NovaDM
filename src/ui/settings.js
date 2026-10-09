@@ -5,7 +5,7 @@ let current = {};
 
 const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames'];
 const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6] };
-const SELECTS = ['secureDns', 'popupMode', 'searchEngine'];
+const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport'];
 
 function flashSaved() {
   const s = $('saved');

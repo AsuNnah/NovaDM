@@ -34,6 +34,7 @@ function defaults() {
     retryDelaySec: 3,
     timeoutSec: 30,
     minSplitKB: 512,
+    downloadTransport: 'auto', // auto | browser | direct (see transport.js)
     skipEditor: false, // start downloads without the "new download" dialog
     autoResume: false, // resume unfinished downloads when NovaDM starts
     notifyOnComplete: true,

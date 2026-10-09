@@ -28,9 +28,11 @@ function caCertificates() {
 const HOP_HEADERS = new Set(['host', 'connection', 'keep-alive', 'transfer-encoding', 'upgrade', 'proxy-connection', 'te', 'trailer']);
 
 class Transport {
-  constructor({ session, settings }) {
+  /** browserOpen (tests): replaces net.open for the browser stack. */
+  constructor({ session, settings, browserOpen }) {
     this.session = session;
     this.settings = settings;
+    this.browserOpen = browserOpen || net.open;
     this.agents = new Map(); // proxy key -> undici dispatcher
     this.directBlocked = new Map(); // host -> reason (direct refused; use the browser stack)
   }
@@ -60,15 +62,21 @@ class Transport {
    */
   async open(url, opts = {}) {
     const ses = opts.session || this.session;
-    if (!opts.direct) return net.open(url, { ...opts, session: ses });
+    if (!opts.direct) return this.browserOpen(url, { ...opts, session: ses });
     try {
       const conn = await this.directOpen(url, { ...opts, session: ses });
-      if (conn.status === 403 && opts.firstConnection) this.blockDirect(url, '403');
+      // Some CDNs refuse clients that don't look like a browser (TLS fingerprint, bot checks). Ask again
+      // through the browser stack; if that is refused too, the caller sees a real 403 (connection limit).
+      if (conn.status === 401 || conn.status === 403) {
+        conn.abort();
+        this.blockDirect(url, String(conn.status));
+        return this.browserOpen(url, { ...opts, session: ses });
+      }
       return conn;
     } catch (err) {
       if (isRefusal(err)) {
         this.blockDirect(url, err.code || err.message);
-        return net.open(url, { ...opts, session: ses });
+        return this.browserOpen(url, { ...opts, session: ses });
       }
       throw err;
     }
@@ -150,6 +158,7 @@ class Transport {
       }
       const status = resp.statusCode;
       if (status >= 300 && status < 400 && resp.headers.location) {
+        resp.body.on('error', () => {}); // destroying the unread redirect body reports an abort
         resp.body.destroy();
         current = new URL(resp.headers.location, current).href;
         continue;

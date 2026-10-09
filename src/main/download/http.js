@@ -100,7 +100,7 @@ class HttpDownload extends EventEmitter {
     this.emitUpdate(true);
     try {
       const first = await this.prepare();
-      if (this._stopping) { if (first) first.conn.abort(); return; }
+      if (this._stopping) { if (first && first.conn) first.conn.abort(); this.closeFd(); return; }
       this.state = 'downloading';
       await this.run(first);
       if (this._stopping) return;
@@ -150,7 +150,8 @@ class HttpDownload extends EventEmitter {
   async tryResume(meta) {
     let st;
     try { st = fs.statSync(this.partPath); } catch { return null; }
-    if (meta.size > 0 && st.size !== meta.size) return null;
+    // 0.1.0 progress files didn't preallocate, so their .part may be shorter than the file.
+    if (meta.size > 0 && st.size !== meta.size && !(meta.legacy && st.size <= meta.size)) return null;
     const segs = meta.segments.map((s) => ({ start: s.start, end: s.end === -1 ? Infinity : s.end, done: s.done, got: s.done, conn: null, lastSteal: 0 }));
     if (!segs.length || !meta.resumable) return null;
     const covered = segs.slice().sort((a, b) => a.start - b.start);
@@ -158,7 +159,7 @@ class HttpDownload extends EventEmitter {
     this.size = meta.size; this.resumable = true; this.validator = meta.validator || null;
     this.segments = covered;
     const first = this.segments.find((s) => s.start + s.done < s.end);
-    if (!first) { this.fd = fs.openSync(this.partPath, 'r+'); return { conn: null, seg: null }; }
+    if (!first) { this.openPart(); return { conn: null, seg: null }; }
     const headers = {};
     if (this.validator && (this.validator.etag || this.validator.lastModified)) headers['if-range'] = this.validator.etag || this.validator.lastModified;
     const from = first.start + first.done;
@@ -169,9 +170,14 @@ class HttpDownload extends EventEmitter {
       try { fs.rmSync(this.partPath, { force: true }); } catch {}
       return null;
     }
-    this.fd = fs.openSync(this.partPath, 'r+');
+    this.openPart();
     this.resumedFrom = this.received;
     return { conn, seg: first };
+  }
+
+  openPart() {
+    this.fd = fs.openSync(this.partPath, 'r+');
+    if (this.size > 0 && fs.fstatSync(this.fd).size < this.size) { try { fs.ftruncateSync(this.fd, this.size); } catch {} }
   }
 
   newSegment(start, end) {
@@ -323,7 +329,7 @@ class HttpDownload extends EventEmitter {
   }
 
   startConnection(seg, initial) {
-    const c = { seg, speed: 0, samples: [], buf: [], bufLen: 0, bufStart: 0, writeChain: Promise.resolve(), closed: false, abort: null, retries: 0 };
+    const c = { seg, speed: 0, samples: [], buf: [], bufLen: 0, bufStart: 0, writeChain: Promise.resolve(), closed: false, abort: null, retries: 0, direct: !!(initial && initial.transport === 'direct') };
     seg.conn = c;
     this.conns.add(c);
     this.runConnection(c, initial).finally(() => {
@@ -353,6 +359,7 @@ class HttpDownload extends EventEmitter {
           const from = seg.start + seg.got;
           const range = this.resumable && seg.end !== Infinity ? `bytes=${from}-${seg.end - 1}` : (from > 0 ? `bytes=${from}-` : undefined);
           conn = await this.request(this.nextSource(), { range });
+          c.direct = conn.transport === 'direct';
           if (conn.status >= 400) {
             conn.abort();
             const err = new HttpError(conn.status);
@@ -620,8 +627,15 @@ class HttpDownload extends EventEmitter {
   loadMeta() {
     try {
       const m = JSON.parse(fs.readFileSync(this.metaPath, 'utf8'));
-      if (m.v !== 2 || !Array.isArray(m.segments)) return null;
-      return m;
+      if (!Array.isArray(m.segments)) return null;
+      if (m.v === 1) {
+        // Written by the 0.1.0 engine: parts were { start, end, pos } with pos = next byte to write.
+        return {
+          v: 2, legacy: true, sources: m.sources, size: m.size, resumable: m.resumable, validator: null,
+          segments: m.segments.map((s) => ({ start: s.start, end: s.end, done: Math.max(0, (s.pos ?? s.start) - s.start) })),
+        };
+      }
+      return m.v === 2 ? m : null;
     } catch {
       return null;
     }
@@ -671,7 +685,8 @@ class HttpDownload extends EventEmitter {
       id: this.id, state: this.state, size: this.size, received,
       percent: this.size > 0 ? Math.min(100, (received / this.size) * 100) : 0,
       speed: this.state === 'downloading' ? this.speed() : 0, resumable: this.resumable,
-      connections: this.activeConns(), error: this.error ? String(this.error.message || this.error) : null,
+      connections: this.activeConns(), directConnections: [...this.conns].filter((c) => !c.closed && c.direct).length,
+      error: this.error ? String(this.error.message || this.error) : null,
       errorCode: this.error && this.error.code ? this.error.code : null,
     };
   }

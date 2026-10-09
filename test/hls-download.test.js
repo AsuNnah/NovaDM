@@ -201,3 +201,95 @@ test('output segments are written strictly in playlist order', async () => {
   for (let i = 0; i < N; i++) assert.equal(out[i * 4096], i, `block ${i} out of order`);
   server.close();
 });
+
+// Latency-bound server: each request waits delayMs, so more parallel fetches finish sooner.
+function latencyServer(routes, delayMs, stats, opts = {}) {
+  stats.active = 0; stats.peak = 0; stats.requests = 0;
+  let throttle = opts.throttle || 0;
+  return http.createServer((req, res) => {
+    const r = routes[req.url];
+    if (!r || r.gone) { res.writeHead(r ? 410 : 404); return res.end(); }
+    stats.requests++;
+    if (throttle > 0 && stats.requests > 4) { throttle--; res.writeHead(429, { 'Retry-After': '1' }); return res.end(); }
+    stats.active++; stats.peak = Math.max(stats.peak, stats.active);
+    setTimeout(() => {
+      res.writeHead(200, { 'Content-Length': r.body.length });
+      res.end(r.body, () => { stats.active--; });
+    }, delayMs);
+  });
+}
+
+test('parallel segment fetches grow while the total speed rises', async (t) => {
+  const N = 200;
+  const routes = {};
+  let playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:1\n';
+  for (let i = 0; i < N; i++) { routes[`/g${i}.bin`] = { body: Buffer.alloc(16384, i & 255) }; playlist += `#EXTINF:1,\ng${i}.bin\n`; }
+  playlist += '#EXT-X-ENDLIST\n';
+  const stats = {};
+  const server = latencyServer(routes, 100, stats); t.after(() => server.close());
+  const base = await listen(server);
+  const save = tmp();
+  const dl = new HlsDownload({
+    id: 'g1', savePath: save, playlistUrl: base + '/g.m3u8', openConn: nodeOpen, convertTs: false, concurrency: 12,
+    fetchText: async () => ({ text: playlist, finalUrl: base + '/g.m3u8' }),
+  });
+  await new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); dl.start(); });
+  assert.equal(fs.statSync(save).size, N * 16384);
+  assert.ok(stats.peak >= 6, 'expected the parallel fetches to grow past the start value, peak was ' + stats.peak);
+});
+
+test('resume works after the playlist and key links have expired', async (t) => {
+  const key = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(16);
+  const enc = (buf) => { const c = crypto.createCipheriv('aes-128-cbc', key, iv); return Buffer.concat([c.update(buf), c.final()]); };
+  const N = 12;
+  const routes = { '/k.bin': { body: key } };
+  let playlist = `#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-KEY:METHOD=AES-128,URI="k.bin",IV=0x${iv.toString('hex')}\n`;
+  const plain = [];
+  for (let i = 0; i < N; i++) {
+    plain.push(Buffer.alloc(4000, i));
+    routes[`/e${i}.bin`] = { body: enc(plain[i]) };
+    playlist += `#EXTINF:1,\ne${i}.bin\n`;
+  }
+  playlist += '#EXT-X-ENDLIST\n';
+  const stats = {};
+  const server = latencyServer(routes, 40, stats); t.after(() => server.close());
+  const base = await listen(server);
+  const save = tmp();
+  const opts = { savePath: save, playlistUrl: base + '/p.m3u8', openConn: nodeOpen, convertTs: false, concurrency: 2 };
+  const dl = new HlsDownload({ id: 'k1', ...opts, fetchText: async () => ({ text: playlist, finalUrl: base + '/p.m3u8' }) });
+  dl.start();
+  await new Promise((r) => dl.on('progress', (p) => { if (p.doneSegments >= 4 && dl.state === 'downloading') r(); }));
+  await dl.pause();
+  assert.ok(fs.existsSync(save + '.part.m3u8'), 'playlist copy kept while unfinished');
+
+  // Both links are dead now: the playlist request fails and the key is gone.
+  routes['/k.bin'].gone = true;
+  const expired = async () => { const e = new Error('HTTP 410'); e.status = 410; throw e; };
+  const dl2 = new HlsDownload({ id: 'k1', ...opts, fetchText: expired });
+  await new Promise((res, rej) => { dl2.on('done', res); dl2.on('error', rej); dl2.start(); });
+  assert.equal(dl2.resumed, true);
+  assert.ok(fs.readFileSync(save).equals(Buffer.concat(plain)), 'decrypted output matches');
+  assert.ok(!fs.existsSync(save + '.part.m3u8'), 'playlist copy removed when finished');
+});
+
+test('429 from the server shrinks parallel fetches and the download still finishes', async (t) => {
+  const N = 30;
+  const routes = {};
+  let playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:1\n';
+  for (let i = 0; i < N; i++) { routes[`/t${i}.bin`] = { body: Buffer.alloc(2048, i) }; playlist += `#EXTINF:1,\nt${i}.bin\n`; }
+  playlist += '#EXT-X-ENDLIST\n';
+  const stats = {};
+  const server = latencyServer(routes, 20, stats, { throttle: 3 }); t.after(() => server.close());
+  const base = await listen(server);
+  const save = tmp();
+  const dl = new HlsDownload({
+    id: 't1', savePath: save, playlistUrl: base + '/t.m3u8', openConn: nodeOpen, convertTs: false, concurrency: 8, retryDelayMs: 20,
+    fetchText: async () => ({ text: playlist, finalUrl: base + '/t.m3u8' }),
+  });
+  await new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); dl.start(); });
+  const out = fs.readFileSync(save);
+  assert.equal(out.length, N * 2048);
+  for (let i = 0; i < N; i++) assert.equal(out[i * 2048], i);
+  assert.ok(dl.steady && dl.target < 3, 'stopped growing after 429, target ' + dl.target);
+});

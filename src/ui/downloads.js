@@ -247,6 +247,7 @@ async function showProperties(id) {
   if (p.meta && p.meta.duration) extra.push(`Duration ${fmtClock(p.meta.duration)}`);
   if (p.meta && p.meta.width) extra.push(`Resolution ${p.meta.width} × ${p.meta.height}`);
   if (p.segments) extra.push(`${p.doneSegments || 0} of ${p.segments} parts`);
+  if (p.connections) extra.push(`${p.connections} connection${p.connections === 1 ? '' : 's'}${p.directConnections ? ` (${p.directConnections} direct)` : ''}`);
   if (p.kind === 'hls') extra.push(p.convertTs ? 'Stream saved as MP4' : 'Stream saved as received');
   const w = modal(`<h2>Properties</h2><div class="props">
     ${row('Name', esc(p.name))}
