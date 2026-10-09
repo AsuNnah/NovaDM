@@ -1,162 +1,97 @@
 # NovaDM
 
-A Windows browser and download manager in one app. It has a clean, Brave-style interface, an ad
-blocker, a pop-up guard that asks before a site opens a new window, and a media detector that finds
-the videos, audio and images on a page so you can download them.
+**A Windows web browser with a fast download manager built in.** Browse with an ad blocker, a
+pop-up guard and Tor-style privacy protections; download files, videos, live streams and torrents
+with up to 32 connections, resume after crashes, and schedule everything.
 
-NovaDM is an original project. Its feature set was inspired by Android download managers such as
-1DM, and its download engine borrows ideas from open-source desktop managers (Motrix, Gopeed,
-AB Download Manager, XDM). No code from any of them is included.
+NovaDM is free and open source (GPL-3.0). It is built on Electron (Chromium). Its feature set was
+inspired by the Android download manager 1DM, and its download engine borrows ideas from Motrix,
+Gopeed, AB Download Manager and XDM. No code from any of them is included.
 
-> Status: early development (0.x). See [CHANGELOG.md](CHANGELOG.md) for what each version contains
-> and [docs/competitor-research-plan.md](docs/competitor-research-plan.md) for the roadmap.
+## Download
 
-## Features
+Get the latest version from [Releases](../../releases):
 
-### Browser
-- Tabs and private tabs, address bar with search (Google, DuckDuckGo, Bing, Brave Search,
-  Startpage, Yandex)
-- New tab page with a clock and counters for blocked ads, stopped pop-ups and downloads
-- Right-click menu: open link in a new or private tab, **Download link with NovaDM**, download
-  image/video/audio, copy, search for selected text, inspect
-- **Chrome Web Store extensions**: install from the store and use them from the toolbar
-- **Secure DNS** (DNS over HTTPS: Cloudflare, Google, Quad9, AdGuard or a custom server), which gets
-  around DNS-level blocking by an ISP
-- Site permissions (camera, microphone, location, notifications) asked per site
-- **History** (Ctrl+H) with search and "Clear browsing data"; private tabs are never recorded
-- **Bookmarks**: star in the address bar (Ctrl+D), bookmarks bar, folders, a Bookmarks page
-  (Ctrl+Shift+O) with import / export of the HTML file Chrome, Brave, Edge and Firefox use
-- **Address bar suggestions** from history and bookmarks; **find in page** (Ctrl+F)
-- **Restore tabs**: last time's tabs come back, loading only when clicked
-- **Third-party cookies blocked** (can be turned off); optionally clear history, cookies and cache
-  when NovaDM closes
-- **Faster, cleaner pages** (like Brave's Shields): tracking redirects skipped, tracking codes
-  removed from addresses, AMP pages opened on the publisher's site, http:// links upgraded to HTTPS
-- **Unload inactive tabs** to save memory and CPU; they come back where you left them
-- **Reader view** for articles
-- **Theme and accent colour**: like Windows, dark or light, and seven accent colours; size of
-  NovaDM's own screens (90–150 %)
-- Brave's keyboard shortcuts (Ctrl+/ lists them): reopen closed tab, Ctrl+1…9, developer tools, page
-  source, task manager, Alt+click to download a link, and more
-- **Tor-style protections**: fingerprinting protection (Brave-style noise or Tor-style blocking),
-  WebRTC without local addresses, and Tor Browser's Standard / Safer / Safest security levels; off
-  per site from the shield if a site breaks
+| File | |
+|---|---|
+| `NovaDM-Setup-x.y.z.exe` | Installer. Asks whether to add a desktop shortcut and a Start menu entry. |
+| `NovaDM-Portable-x.y.z.exe` | No installation: runs from any folder or USB stick. |
 
-### Ad blocker and pop-up guard
-- Ghostery ad-block engine with EasyList, EasyPrivacy and uBlock Origin lists plus the OISD Big
-  list, refreshed every 4 days
-- Turn blocking off per site from the toolbar shield
-- **Pop-up guard**: when a page tries to open a pop-up or a new window, NovaDM asks
-  "Open this pop-up?" before anything happens. Pop-ups from known ad domains, and redirects of the
-  current tab to ad sites, are blocked outright. You can choose Ask / Block / Allow and keep a list
-  of sites that may always open pop-ups.
+Windows 10 or 11, 64-bit. The builds are not code-signed yet, so Windows SmartScreen may show
+"Windows protected your PC" the first time: click **More info → Run anyway**. Each release lists
+the SHA-256 of its files so you can check your download.
 
-### Media detection and the content grabber
-- Detects video and audio while a page plays: HLS (`.m3u8`), **DASH (`.mpd`)**, MP4/WebM files and
-  subtitles, using network sniffing plus a page script that scans `<video>` elements
-- A download button appears over playing videos and a media icon lights up in the toolbar
-- HLS streams are saved as a single **MP4** (TS segments are converted on the fly, segment by
-  segment, so memory use stays flat)
-- **Separate picture and sound joined into one MP4 without FFmpeg**: DASH video + audio, and HLS
-  streams whose audio is a separate rendition
-- **Live stream recording** (HLS and DASH): records until you press Stop or the broadcast ends
-- **FFmpeg on demand** (optional add-on, Settings → Add-ons): verified one-click install of the
-  official build, used for WebM/plain-MP4 tracks and for "Save sound only", "Convert sound to MP3"
-  and "Repair video"
-- **Content grabber**: lists every image on a page (including lazy-loaded and CSS background
-  images) with sizes, filters and bulk download
-- DRM-protected streams (Widevine) are detected and labelled; NovaDM does not decrypt DRM
+## What it does
 
-### Adding downloads
-- **Every download goes through NovaDM**: files a page starts (links, buttons, "attachment"
-  answers) are taken over by NovaDM's engine. Links it can't fetch again (`blob:`/`data:`, form
-  POST answers) are saved by the browser into the same folders and listed too.
-- **New download dialog**: file name, size, folder, a speed limit for this download, an optional
-  checksum to verify, "Add paused", and a warning when the same link is already in the list. It
-  can be turned off ("start downloads right away").
-- **Copied links**: copy a link to a file type on your list in any app, and NovaDM offers to
-  download it.
-- **Several at once**: paste many links, or a pattern like `https://site/img[001-120].jpg` or
-  `file[a-f].zip`, and pick which to download.
-- **"Copy as cURL"**: paste a command from a browser's developer tools and the download uses the
-  same headers and cookies.
-- **Category rules**: by file type, site or address text, each with its own folder if you like.
-- Videos from the media button and images from the grabber start right away.
+**Browser**
+- Tabs, private tabs, history, bookmarks (with a bookmarks bar and import/export from Chrome,
+  Brave, Edge and Firefox), find in page, reader view, restore tabs on start
+- Chrome Web Store extensions
+- Brave's keyboard shortcuts (Ctrl+/ lists them), dark/light theme and accent colours
+- Unloads tabs you haven't used for a while, to save memory
 
-### Download manager
-- Multi-connection HTTP downloads (up to 32 connections) with pause, resume and retry.
-  Connections are added while they still make the download faster (slow start), and slow parts
-  get help near the end.
-- **More than 6 connections per server**: where the browser would stop at 6, NovaDM opens the rest
-  with its own HTTP client, keeping the browser's cookies, Referer, Secure DNS and proxy. Servers
-  that refuse it get the browser's connections automatically.
-- **Crash-safe**: progress is saved only after the data is synced to disk, so a crash or power cut
-  resumes from the last checkpoint; a file that changed on the server is detected on resume.
-- HLS downloads with parallel segments, pause and resume (the MP4 timeline stays continuous). AES
-  keys and the playlist are kept, so a paused stream still resumes after its links expire.
-- Clear errors for full disks, expired links and servers that limit connections (429/503 are
-  retried after the time the server asks for)
-- **Refresh link**: when a link expires, open the download's page and start it (or play the
-  video) again, and NovaDM continues the old download from the new link. You can also paste a new
-  link. What was already downloaded is kept.
-- **Notifications** when a download finishes or fails; click to open it
-- **Resume unfinished downloads when NovaDM starts** (optional); quitting pauses downloads cleanly
-- Speed limit for all downloads and for each download (also changeable while it runs)
-- **Checksum check**: give an MD5, SHA-1 or SHA-256 when adding, and NovaDM verifies the file
-- **Proxy** for browsing and downloads: Windows settings, none, HTTP/HTTPS/SOCKS server, or a PAC
-  script, with sign-in (the password is encrypted by Windows)
-- Downloads from private tabs use the private session and are not kept in the list
-- **Settings for a site**: connections, speed limit, browser name (user agent) and a sign-in
-  (password encrypted by Windows)
-- **Export / import** the downloads list and settings (passwords, keys and cookies are never
-  exported)
+**Privacy and safety**
+- Ad and tracker blocker (EasyList, EasyPrivacy, uBlock Origin lists, OISD), off per site
+- Pop-up guard: asks before a site opens a pop-up; ad pop-ups are blocked
+- Third-party cookies blocked; tracking redirects skipped; tracking codes removed from addresses;
+  http:// upgraded to HTTPS; AMP pages opened on the publisher's site
+- Fingerprinting protection (Brave-style noise, or Tor-style blocking) and Tor Browser's Standard /
+  Safer / Safest security levels, with an off switch per site
+- Secure DNS (DNS over HTTPS), proxy support, Microsoft Defender scan of downloaded programs,
+  Mark of the Web on downloads
 
-### After a download
-- **Unpack archives** (zip, 7z, rar, tar…) into a folder next to them, optionally deleting the
-  archive; or "Extract here" from the Downloads menu
-- **Start a program** with the file as an argument (`"{file}"`, `{folder}`, `{name}`, `{url}`,
-  `{page}`), started directly without a command shell
-- **Webhook**: a JSON POST to your address when a download finishes or fails
+**Downloads**
+- Up to 32 connections per file, more than the browser's limit of 6 per server, with the page's
+  cookies and Referer kept
+- Pause, resume and crash-safe progress; expired links can be refreshed from their page
+- Speed limits (all downloads or one), queues with schedules, "when all downloads finish:
+  sleep / shut down"
+- Checksum check, category rules and folders, unpacking archives, a program or webhook to run
+  after each download
+- Every download a page starts goes through NovaDM; copied links and lists of links
+  (`img[001-100].jpg`) and "Copy as cURL" commands are offered too
 
-### Other browsers and apps
-- **Browser extension for Chrome, Edge and Brave** (`browser-extension/`, load it unpacked):
-  right-click "Download with NovaDM", send the browser's downloads to NovaDM (with its cookies),
-  and see the videos found on a page
-- **Local connection for other apps** (off by default; 127.0.0.1 only, with a key), including an
-  **MCP endpoint** (`/mcp`) so AI assistants can add and manage downloads
-- **Command line and links**: `NovaDM.exe --add <link> [--name <file>] [--start]`,
-  `novadm://add?url=…`, magnet links and `.torrent` files
-- **Site extensions**: small sandboxed scripts that find a site's downloads
+**Video**
+- Finds videos and audio as pages play them: HLS (`.m3u8`), DASH (`.mpd`), MP4/WebM, subtitles
+- Saves streams as one MP4, joining separate picture and sound without FFmpeg
+- Records live streams (HLS and DASH)
+- Grabs all images of a page
+- DRM-protected streams are labelled and not downloaded
+
+**Torrents and other apps**
+- Magnet links and `.torrent` files, with file choice and seeding limits (through the aria2 add-on)
+- Browser extension for Chrome, Edge and Brave (`browser-extension/`, load it unpacked)
+- Command line (`NovaDM.exe --add <link>`), `novadm://` links, and a local API with an MCP endpoint
+  for AI assistants (off by default, this PC only)
+- Site extensions: small sandboxed scripts that find a site's downloads
   ([guide](docs/site-extensions.md))
-- **yt-dlp add-on** (optional): "Find with yt-dlp" for over a thousand sites; NovaDM does the
-  downloading and joins separate picture and sound
 
-### Torrents
-- **BitTorrent and magnet links** (through aria2, installed on demand or your own aria2c.exe):
-  magnet links from pages, the clipboard or the Downloads box, `.torrent` links and files
-- Choose which files to download; seeding with a ratio / time limit and "Stop seeding"; DHT, peer
-  exchange and an up-to-date public tracker list
+### Add-ons (optional, installed separately)
 
-### Background, scheduling and safety
-- **Tray icon**: closing the window while downloads run keeps NovaDM downloading in the tray;
-  optionally always stay in the tray and **start with Windows**
-- **Queues and schedules**: named queues with their own "at once" limit and a time window
-  (start, optional end, days of the week); downloads pause when the window ends and continue in
-  the next one
-- **When all downloads finish**: close NovaDM, sleep or shut down, after a cancellable countdown
-- Keeps the computer awake while downloading
-- **Microsoft Defender scan** of finished programs and archives (or all files), with the result in
-  the list
-- **Mark of the Web** on downloaded files, so Windows SmartScreen and Office Protected View treat
-  them like browser downloads
-- Downloads page in the style of 1DM: category tabs, search, bulk actions, progress, speed and
-  time left, and a box to paste a link (file or `.m3u8` stream)
-- **Properties** for each download: page and download links, mirrors, save path, resume support,
-  size, average speed, dates, active time, parts, connections, speed limit, checksum check, and
-  MD5 / SHA-256 checksums; "Download again" and "Refresh link"
-- Maximum active downloads, category folders, file names from page titles
+Some features use separate programs that NovaDM downloads only when you click **Install** in
+Settings → Add-ons. Each comes from its project's official release and is checked against its
+published checksum. You can also point NovaDM at your own copy.
 
-## Running from source
+| Add-on | Size | Used for |
+|---|---|---|
+| [aria2](https://github.com/aria2/aria2) | ~2.5 MB | Torrents and magnet links |
+| [FFmpeg](https://github.com/BtbN/FFmpeg-Builds) | ~80 MB | Joining WebM / plain-MP4 picture and sound, saving sound only, repairing videos |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | one .exe | "Find with yt-dlp" for sites NovaDM's own detection can't read |
+
+## Privacy
+
+NovaDM has no telemetry, no accounts and no ads of its own. Everything it stores (settings,
+downloads list, history, bookmarks, cookies) stays in `%APPDATA%\NovaDM` on your PC.
+
+On its own it only connects to download the ad-block lists (every 4 days) and to the Secure DNS
+provider you choose; add-ons and the torrent tracker list are downloaded only when you use them.
+Private tabs leave no history or downloads list entries. Passwords for proxies and sites are
+encrypted with Windows' data protection.
+
+Windows Firewall may ask about NovaDM the first time a page uses WebRTC (Chromium then opens a
+network port); blocking it is fine. NovaDM itself opens no network ports.
+
+## Building from source
 
 Requirements: Windows 10/11 and [Node.js](https://nodejs.org/) 22 or newer.
 
@@ -168,32 +103,20 @@ npm install
 npm start
 ```
 
-After `npm install` you can also double-click `Start NovaDM.cmd`.
-
-## Building the installer
-
 ```bash
 npm run dist
 ```
 
-This writes `NovaDM-Setup-<version>.exe` (installer) and `NovaDM-Portable-<version>.exe` to
-`dist/`. The builds are not code-signed, so Windows SmartScreen may warn on first run.
+`npm run dist` writes the installer and the portable version to `dist/`.
 
-The installer asks whether to create a desktop shortcut and a Start menu entry (both ticked);
-its extra page is `build/installer.nsh`.
-
-## Tests
+### Tests
 
 ```bash
 npm test
 ```
 
-Unit tests cover the HLS parser, media classification, the media registry, TS→MP4 conversion, the
-HTTP and HLS download engines and the direct HTTP client (against local test servers), and the
-content grabber.
-
-`tools/` holds in-app self-tests (`selftest-*.js`) and diagnostics. They run inside Electron
-with a throwaway profile, for example:
+Unit tests run with `node --test` against local test servers. `tools/selftest-*.js` are in-app
+self-tests that run inside Electron with a throwaway profile:
 
 ```bat
 set NOVADM_USERDATA=%TEMP%\novadm-test-profile
@@ -201,67 +124,22 @@ set NOVADM_SELFTEST=tools/selftest-popup.js
 node_modules\electron\dist\electron.exe .
 ```
 
-`tools/bench-pageload.js` is a page-load benchmark run the same way (offline by default; set
-`NOVADM_BENCH_URLS` to a file of addresses to measure real pages). Results go to
-`%TEMP%\novadm-bench.json`.
-
-Other debug variables: `NOVADM_OPEN=<url>` opens a page at start-up instead of the new tab, and
-`NOVADM_PANEL=<name>` opens a toolbar panel.
-
-## Project layout
+### Project layout
 
 ```
-docs/                     design notes and the roadmap
-src/main/                 Electron main process
-  main.js                 window, views, layout, app start-up
-  browser.js              tabs (one WebContentsView per tab)
-  browsing.js, library.js history, bookmarks, find bar, restore tabs, address-bar suggestions
-  adblock.js, popup.js    ad blocker and pop-up guard
-  shields.js              redirect skipping, tracking codes, de-AMP, HTTPS upgrade
-  hardening.js, shield-preload.js  fingerprinting protection and security levels
-  shortcuts.js            keyboard shortcuts
-  dns.js                  Secure DNS
-  extensions.js           Chrome extensions and Web Store
-  grabber.js              content (image) grabber
-  media/                  media detection, HLS and DASH parsing, TS→MP4, MP4 track merger
-  download/               download manager, HTTP and HLS engines, speed limiter
-  transport.js            NovaDM's own HTTP client for extra connections (undici)
-  add-flow.js             how downloads get added: dialog, duplicates, link lists, Refresh link
-  clipboard-watch.js      copied-link watcher
-  proxy.js, notify.js     proxy settings and sign-in; Windows notifications
-  scheduler.js            download queues and their time windows
-  background.js           tray, start with Windows, keep awake, "when all downloads finish"
-  ffmpeg.js               FFmpeg on demand (verified install, joining, sound, repair)
-  torrent/                aria2 helper (install, start, JSON-RPC, trackers), .torrent reader
-  api.js                  local API and MCP endpoint for other apps; command line and novadm:// links
-  curl.js, backup.js      "Copy as cURL" parser; export / import
-  rules.js, hooks.js      category rules and per-site settings; after-download program and webhook
-  site-ext.js             site extensions (install, sandboxed runs, site-limited fetching)
-  ytdlp.js                yt-dlp add-on (verified install, choices from yt-dlp -J)
-browser-extension/        the Chrome / Edge / Brave extension
-site-extensions/example/  an example site extension
-src/ui/                   toolbar, panels, downloads, settings, new tab pages
-test/                     unit tests (node --test)
-tools/                    self-tests, diagnostics, icon generator
-assets/                   app icon
+src/main/          Electron main process: tabs, ad blocker, privacy, downloads, add-ons, local API
+  download/        download manager and the HTTP, HLS, DASH and torrent engines
+  media/           media detection, HLS/DASH parsing, TS→MP4, MP4 merging
+src/ui/            toolbar, panels and NovaDM's own pages (downloads, settings, history…)
+browser-extension/ the Chrome / Edge / Brave extension
+site-extensions/   an example site extension
+test/              unit tests
+tools/             in-app self-tests, benchmark, icon generator
+docs/              design notes and plans
+build/             installer customisation
 ```
 
-## Privacy
-
-NovaDM has no telemetry and no accounts. Everything it stores (settings, the downloads list, tabs,
-history, bookmarks, extensions, cookies) stays in `%APPDATA%\NovaDM` on your computer. The only network requests it makes
-on its own are ad-block list updates and Secure DNS lookups to the provider you choose.
-
-The clipboard watcher only checks copied text for download links while NovaDM runs; nothing is
-saved or sent, and it can be turned off. Downloads from private tabs are not written to the list.
-Windows Firewall may ask about NovaDM the first time a page uses WebRTC (Chromium opens a network
-port for it); blocking it is fine. NovaDM itself opens no network ports.
-
-Proxy and site passwords are stored encrypted with Windows' data protection. The webhook and the
-after-download program only run if you set them up.
-
-Profiles from the earlier name of this project ("Swoop") are moved to `%APPDATA%\NovaDM`
-automatically on first start.
+What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
@@ -272,5 +150,4 @@ with no warranty.
 Libraries keep their own licenses: electron-chrome-extensions (GPL-3.0, the reason NovaDM is
 GPL), Ghostery adblocker (MPL-2.0), hls.js, mux.js and Mozilla Readability (Apache-2.0), undici
 and electron-chrome-web-store (MIT). Electron and Chromium's licenses ship with the app
-(`LICENSES.chromium.html`). Add-ons NovaDM can download (aria2, FFmpeg, yt-dlp) are separate
-programs under their own licenses.
+(`LICENSES.chromium.html`). The add-ons are separate programs under their own licenses.
