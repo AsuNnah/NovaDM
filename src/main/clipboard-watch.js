@@ -24,6 +24,7 @@ function extensionList(setting) {
 /** Download links in text, keeping those whose file extension is in exts (and .m3u8 streams). */
 function downloadLinks(text, exts) {
   return extractLinks(text, 200).filter((u) => {
+    if (/^magnet:\?/i.test(u)) return true;
     let p = '';
     try { p = decodeURIComponent(new URL(u).pathname); } catch { return false; }
     const ext = extOf(p);

@@ -8,6 +8,7 @@ const { app } = require('electron');
 const { HttpDownload } = require('./http');
 const { HlsDownload } = require('./hls-dl');
 const { MergeDownload } = require('./merge-dl');
+const { TorrentDownload } = require('./torrent-dl');
 const { RateLimiter } = require('./limiter');
 const { JsonStore } = require('../store');
 const util = require('../util');
@@ -31,6 +32,9 @@ class DownloadManager extends EventEmitter {
     this.scanFile = opts.scanFile || post.scanFile;
     this.scheduler = null; // set by main: decides whether a queue waits for its time window
     this.ffmpeg = null; // set by main (ffmpeg.js): joins WebM/plain MP4 tracks, conversions
+    this.aria2 = null; // set by main (torrent/aria2.js): torrents and magnet links
+    this.askTorrentFiles = null; // set by main: (rec, files) => Promise<'1,3' | null>
+    this.seeders = new Map(); // id -> TorrentDownload still seeding after it finished
     this._finishedSinceIdle = false;
     this.limiter = new RateLimiter((settings.get('speedLimitKBps') || 0) * 1024);
     this.store = new JsonStore(path.join(app.getPath('userData'), 'downloads.json'), { items: [] });
@@ -72,6 +76,8 @@ class DownloadManager extends EventEmitter {
       native: !!r.native, queue: r.queue || 'main', scan: r.scan === 'scanning' ? '' : r.scan || '', scanDetail: r.scanDetail || '',
       separateAudio: !!r.separateAudio, reresolve: !!r.reresolve, live: !!r.live, recordedSeconds: r.recordedSeconds || 0,
       from: r.from || '',
+      magnet: r.magnet || '', torrentData: r.torrentData || '', gid: r.gid || '', selectFiles: r.selectFiles || '', infoHash: r.infoHash || '',
+      btFiles: r.btFiles || null, uploaded: r.uploaded || 0,
     }));
     this.store.save();
   }
@@ -113,7 +119,8 @@ class DownloadManager extends EventEmitter {
     let dir = spec.dir || this.categoryDir(category);
     if (spec.subdir) dir = path.join(dir, util.sanitizeFilename(spec.subdir, 'Page'));
     const name = util.sanitizeFilename(spec.name || util.filenameFromUrl(spec.url || spec.playlistUrl) || 'download');
-    const savePath = util.uniquePath(path.join(dir, name), this.reservedPaths());
+    // Torrents are saved by aria2 under their own name in the folder (it continues what exists).
+    const savePath = spec.kind === 'torrent' ? path.join(dir, name) : util.uniquePath(path.join(dir, name), this.reservedPaths());
     const rec = {
       id, kind: spec.kind, name: path.basename(savePath), savePath,
       sources: spec.sources || (spec.url ? [spec.url] : []), playlistUrl: spec.playlistUrl || '',
@@ -128,6 +135,8 @@ class DownloadManager extends EventEmitter {
       expectedHash: util.hashKind(spec.expectedHash) ? spec.expectedHash.trim().toLowerCase() : '',
       verify: '', incognito: !!spec.incognito, queue: this.queueIds().includes(spec.queue) ? spec.queue : 'main',
       separateAudio: !!spec.separateAudio,
+      magnet: spec.magnet || '', torrentData: spec.torrentData || '', selectFiles: spec.selectFiles || '', infoHash: spec.infoHash || '',
+      btFiles: spec.files || null, gid: '',
     };
     // A queue with a schedule keeps new downloads until its time window opens.
     if (spec.start !== false && this.scheduler && this.scheduler.waitsForSchedule(rec.queue)) rec.state = 'scheduled';
@@ -249,6 +258,13 @@ class DownloadManager extends EventEmitter {
   }
 
   makeEngine(rec) {
+    if (rec.kind === 'torrent') {
+      if (!this.aria2 || !this.aria2.available()) { const e = new Error('Torrents need aria2. Install it in Settings → Torrents, then retry.'); e.code = 'NEEDS_ARIA2'; throw e; }
+      return new TorrentDownload({
+        id: rec.id, aria2: this.aria2, magnet: rec.magnet, torrent: rec.torrentData, dir: path.dirname(rec.savePath),
+        gid: rec.gid, selectFiles: rec.selectFiles, askFiles: this.askTorrentFiles ? (files) => this.askTorrentFiles(rec, files) : null,
+      });
+    }
     const common = {
       id: rec.id, savePath: rec.savePath, headers: rec.headers, session: rec.incognito ? this.privateSession : this.session,
       limiter: this.limiter, taskLimiter: this.taskLimiter(rec), transport: this.transport, retries: this.settings.get('retries'),
@@ -286,8 +302,18 @@ class DownloadManager extends EventEmitter {
     // A pause that is still finishing (last write, saving progress) must complete first.
     if (rec._pausing) await rec._pausing;
     if (rec.state !== 'connecting') return; // paused or removed meanwhile
-    const engine = this.makeEngine(rec);
+    let engine;
+    try {
+      engine = this.makeEngine(rec);
+    } catch (err) {
+      rec.state = 'error'; rec.error = err.message; rec.errorCode = err.code || null;
+      this.persist(); this.emitRecord(rec);
+      this.emit('failed', rec);
+      this.pump();
+      return;
+    }
     this.engines.set(rec.id, engine);
+    if (rec.kind === 'torrent') this.wireTorrent(rec, engine);
     const current = () => this.engines.get(rec.id) === engine;
     rec.runStartedAt = Date.now();
     engine.on('renamed', (p) => {
@@ -309,7 +335,8 @@ class DownloadManager extends EventEmitter {
     engine.on('done', () => {
       this.addActiveTime(rec);
       rec.state = 'done'; rec.completedAt = Date.now(); rec.speed = 0; rec.percent = 100;
-      try { rec.size = fs.statSync(rec.savePath).size; rec.received = rec.size; } catch {}
+      try { const st = fs.statSync(rec.savePath); if (st.isFile()) { rec.size = st.size; rec.received = rec.size; } } catch {}
+      if (rec.kind === 'torrent') { rec.received = rec.size; this.seeders.set(rec.id, engine); }
       this.engines.delete(rec.id);
       this.taskLimiters.delete(rec.id);
       this.persist(); this.emitRecord(rec);
@@ -321,6 +348,14 @@ class DownloadManager extends EventEmitter {
     });
     engine.on('error', (err) => {
       if (!current()) return;
+      if (err && err.code === 'CANCELLED') {
+        // The user closed the torrent's file choice: forget it.
+        this.engines.delete(rec.id);
+        this.records.delete(rec.id);
+        this.persist(); this.emitList();
+        this.pump();
+        return;
+      }
       if (err && err.code === 'NEEDS_MERGE' && !rec.separateAudio) {
         // An HLS master whose sound is a separate playlist: switch to the merging engine.
         this.engines.delete(rec.id);
@@ -415,6 +450,28 @@ class DownloadManager extends EventEmitter {
     return rec;
   }
 
+  // Torrent-only events: the aria2 id, the chosen files, seeding after completion.
+  wireTorrent(rec, engine) {
+    engine.on('gid', (gid) => { rec.gid = gid; this.persist(); });
+    engine.on('selected', (sel) => { rec.selectFiles = sel; this.persist(); });
+    engine.on('files', (files) => { rec.btFiles = files.map((f) => ({ path: f.path, length: f.length })); });
+    engine.on('progress', (p) => { rec.phase = p.phase; rec.seeders = p.seeders; if (p.infoHash) rec.infoHash = p.infoHash; });
+    engine.on('seeding', (s) => {
+      rec.seeding = s.seeding; rec.uploadSpeed = s.uploadSpeed; rec.uploaded = s.uploaded; rec.ratio = s.ratio;
+      if (!s.seeding) this.seeders.delete(rec.id);
+      this.emitRecord(rec);
+    });
+  }
+
+  /** Stop seeding a finished torrent. */
+  async stopSeeding(id) {
+    const engine = this.seeders.get(id);
+    this.seeders.delete(id);
+    if (engine) await engine.stopSeeding();
+    const rec = this.records.get(id);
+    if (rec) { rec.seeding = false; rec.uploadSpeed = 0; this.persist(); this.emitRecord(rec); }
+  }
+
   /** Live stream: stop recording and finish the file (it stays playable). */
   stopRecording(id) {
     const engine = this.engines.get(id);
@@ -448,10 +505,16 @@ class DownloadManager extends EventEmitter {
     this.taskLimiters.delete(id);
     const item = this.natives.get(id);
     if (item) { this.natives.delete(id); try { item.cancel(); } catch {} }
+    const seeder = this.seeders.get(id);
+    if (seeder) { this.seeders.delete(id); try { await seeder.stopSeeding(); } catch {} }
     this.persist(); this.emitList();
     if (engine) { try { await engine.cancel(); } catch {} }
     if (rec._pausing) await rec._pausing;
     if (deleteFile) {
+      if (rec.kind === 'torrent') {
+        // A torrent may be a folder; aria2 keeps its progress in "<name>.aria2".
+        for (const f of [rec.savePath, rec.savePath + '.aria2']) { try { fs.rmSync(f, { recursive: true, force: true }); } catch {} }
+      }
       for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8', rec.savePath + '.part.tracks']) {
         try { fs.rmSync(f, { force: true }); } catch {}
       }
@@ -476,7 +539,7 @@ class DownloadManager extends EventEmitter {
       kind: r.kind, name: r.name, url: r.sources[0], sources: r.sources, playlistUrl: r.playlistUrl,
       mirrors: r.mirrors, headers: r.headers, pageUrl: r.pageUrl, category: r.category,
       convertTs: r.convertTs, meta: r.meta, allowRename: false, size: r.kind === 'hls' || r.kind === 'dash' ? r.size : -1,
-      separateAudio: r.separateAudio,
+      separateAudio: r.separateAudio, magnet: r.magnet, torrentData: r.torrentData, selectFiles: r.selectFiles, infoHash: r.infoHash,
     });
   }
 
@@ -653,6 +716,7 @@ class DownloadManager extends EventEmitter {
       connections: r.state === 'downloading' ? r.connections || 0 : 0, directConnections: r.directConnections || 0,
       speedLimitKBps: r.speedLimitKBps || 0, expectedHash: r.expectedHash || '', verify: r.verify || '',
       native: !!r.native, incognito: !!r.incognito, scanDetail: r.scanDetail || '',
+      infoHash: r.infoHash || '', btFiles: r.btFiles || null, selectFiles: r.selectFiles || '', uploaded: r.uploaded || 0, magnet: r.magnet || '',
     };
   }
 
@@ -669,6 +733,7 @@ class DownloadManager extends EventEmitter {
       queue: r.queue || 'main', scan: r.scan || '',
       live: !!r.live, recording: !!r.recording && r.state === 'downloading', recordedSeconds: r.recordedSeconds || 0,
       from: r.from || '', joining: !!r.joining,
+      phase: r.phase || '', seeding: !!r.seeding, uploadSpeed: r.uploadSpeed || 0, ratio: r.ratio || 0, seeders: r.seeders || 0,
     };
   }
 

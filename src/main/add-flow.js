@@ -9,6 +9,7 @@
 const { dialog } = require('electron');
 const util = require('./util');
 const net = require('./net');
+const { torrentInfo, parseMagnet } = require('./torrent/bencode');
 
 class AddFlow {
   /**
@@ -45,7 +46,7 @@ class AddFlow {
 
   /** Several links (pasted list, pattern, clipboard). One link goes to the normal dialog. */
   requestLinks(urls, opts = {}) {
-    const list = [...new Set(urls.filter((u) => /^https?:\/\//i.test(u)))].slice(0, 5000);
+    const list = [...new Set(urls.filter((u) => /^(https?:\/\/|magnet:\?)/i.test(u)))].slice(0, 5000);
     if (!list.length) return { ok: false, error: 'No links found' };
     const specs = list.map((url) => specFromUrl(url, opts));
     if (specs.length === 1) return this.request(specs[0], opts);
@@ -75,6 +76,10 @@ class AddFlow {
       });
       return;
     }
+    if (req.kind === 'files') {
+      this.sendUI('torrent-files', { reqId: req.id, name: req.name, files: req.files });
+      return;
+    }
     const s = req.spec;
     const name = util.sanitizeFilename(s.name || util.filenameFromUrl(s.url || s.playlistUrl) || 'download');
     const category = s.category || util.categoryOf(name, s.mime);
@@ -84,6 +89,7 @@ class AddFlow {
       pageUrl: s.pageUrl || '', incognito: !!s.incognito,
       duplicate: req.dup ? { id: req.dup.id, name: req.dup.name, state: req.dup.state } : null,
       queues: this.queueChoices(),
+      torrent: s.kind === 'torrent' ? { files: s.files || null, magnet: !!s.magnet } : null,
     });
     // Unknown size/name (plain links): ask the server while the dialog is open.
     if (s.kind === 'http' && !(s.size > 0) && !s.native) this.probeFor(req);
@@ -119,7 +125,9 @@ class AddFlow {
     this.current = null;
     let result = { ok: true };
     if (a.dontAsk) this.settings.set({ skipEditor: true });
-    if (a.action === 'resumeExisting' && req.dup) {
+    if (req.kind === 'files') {
+      req.resolve(a.action === 'start' ? (a.selected || []).map((i) => i + 1).join(',') || null : null);
+    } else if (a.action === 'resumeExisting' && req.dup) {
       this.downloads.resume(req.dup.id);
     } else if (a.action === 'start' || a.action === 'paused') {
       const start = a.action === 'start';
@@ -133,6 +141,7 @@ class AddFlow {
         const rec = this.downloads.add({
           ...s, name: a.name ? util.sanitizeFilename(a.name) : s.name, allowRename: a.name ? false : s.allowRename,
           dir: a.folder || s.dir, speedLimitKBps: a.speedLimitKBps, expectedHash: a.checksum, queue: a.queue, start,
+          selectFiles: s.kind === 'torrent' && Array.isArray(a.selected) && s.files && a.selected.length < s.files.length ? a.selected.map((i) => i + 1).join(',') : s.selectFiles,
         });
         result.id = rec.id;
       }
@@ -146,6 +155,7 @@ class AddFlow {
   /** The dialog was closed without an answer (Esc, click outside, another panel). */
   dismiss() {
     if (!this.current) return;
+    if (this.current.kind === 'files') this.current.resolve(null);
     this.current = null;
     setTimeout(() => this.showNext(), 150);
   }
@@ -155,6 +165,22 @@ class AddFlow {
       properties: ['openDirectory', 'createDirectory'], defaultPath: current || this.settings.get('downloadDir'),
     });
     return r.canceled ? '' : r.filePaths[0] || '';
+  }
+
+  /** Torrent from a magnet link: the files are known now; ask which to download. */
+  askTorrentFiles(rec, files) {
+    if (this.settings.get('torrentAskFiles') === false || files.length < 2) return Promise.resolve(files.map((f) => f.index).join(','));
+    return new Promise((resolve) => this.enqueue({ kind: 'files', name: rec.name, files: files.map((f) => ({ path: f.path, length: f.length })), resolve }));
+  }
+
+  /** A .torrent file's bytes (from a page, a link or the disk): read it and ask. */
+  requestTorrentFile(buf, opts = {}) {
+    let info;
+    try { info = torrentInfo(buf); } catch (e) { return { ok: false, error: e.message }; }
+    return this.request({
+      kind: 'torrent', torrentData: buf.toString('base64'), name: info.name, size: info.length, infoHash: info.infoHash,
+      files: info.files, pageUrl: opts.pageUrl || '', tabId: opts.tabId, incognito: !!opts.incognito, category: torrentCategory(info.files),
+    }, { origin: opts.origin || 'manual' });
   }
 
   // ---- Refresh link ------------------------------------------------------------------------------
@@ -185,8 +211,18 @@ class AddFlow {
   }
 }
 
+/** The kind of a torrent: what most of its bytes are. */
+function torrentCategory(files) {
+  const big = (files || []).slice().sort((a, b) => b.length - a.length)[0];
+  return big ? util.categoryOf(big.path) : 'other';
+}
+
 /** A download spec for a plain link (a stream when it is an .m3u8 playlist or .mpd manifest). */
 function specFromUrl(url, opts = {}) {
+  const magnet = parseMagnet(url);
+  if (magnet) {
+    return { kind: 'torrent', magnet: url, name: util.sanitizeFilename(magnet.name || '', 'Torrent ' + magnet.infoHash.slice(0, 8)), infoHash: magnet.infoHash, pageUrl: opts.pageUrl || '', incognito: !!opts.incognito };
+  }
   const hls = /\.m3u8(\?|#|$)/i.test(url);
   const isDash = /\.mpd(\?|#|$)/i.test(url);
   const stream = hls || isDash;
@@ -198,4 +234,4 @@ function specFromUrl(url, opts = {}) {
   };
 }
 
-module.exports = { AddFlow, specFromUrl };
+module.exports = { AddFlow, specFromUrl, torrentCategory };

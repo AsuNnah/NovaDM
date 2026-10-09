@@ -61,6 +61,30 @@ function registerIpc(ctx) {
       try { const r = getManagers().downloads.convert(a.id, a.action); return { ok: true, id: r.id }; } catch (e) { return { ok: false, error: e.message, code: e.code }; }
     },
 
+    // ---- torrents ----
+    'downloads.openTorrent': async () => {
+      const { win, addFlow } = getManagers();
+      const r = await dialog.showOpenDialog(win, { title: 'Open a torrent file', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Torrent files', extensions: ['torrent'] }] });
+      if (r.canceled) return { ok: false };
+      const fs = require('fs');
+      for (const f of r.filePaths) addFlow.requestTorrentFile(fs.readFileSync(f), { origin: 'manual' });
+      return { ok: true };
+    },
+    'downloads.stopSeeding': async (a) => { await getManagers().downloads.stopSeeding(a.id); return { ok: true }; },
+    'torrents.status': () => getManagers().aria2.status(),
+    'torrents.install': async () => {
+      const { aria2, browser } = getManagers();
+      const push = (p) => { for (const t of browser.internalTabs('settings')) t.wc.send('novadm:internal-event', 'aria2', p); };
+      try { const st = await aria2.install(push); return { ok: true, status: st }; } catch (e) { push({ phase: 'error', error: e.message }); return { ok: false, error: e.message }; }
+    },
+    'torrents.uninstall': () => { getManagers().aria2.uninstall(); getManagers().settings.set({ aria2Path: '' }); return getManagers().aria2.status(); },
+    'torrents.choose': async () => {
+      const { win, settings, aria2 } = getManagers();
+      const r = await dialog.showOpenDialog(win, { title: 'Choose aria2c.exe', properties: ['openFile'], filters: [{ name: 'aria2', extensions: ['exe'] }] });
+      if (!r.canceled && r.filePaths[0]) settings.set({ aria2Path: r.filePaths[0] });
+      return aria2.status();
+    },
+
     // ---- FFmpeg (Settings → Video tools) ----
     'ffmpeg.status': () => getManagers().ffmpeg.status(),
     'ffmpeg.install': async () => {

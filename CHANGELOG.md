@@ -8,6 +8,42 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [0.6.0] — 2026-10-09
+
+Torrents and magnet links (roadmap phase 5).
+
+### Added
+- **BitTorrent and magnet links** through aria2 (the engine Motrix uses), run as a hidden helper
+  that listens only on this PC (random port and secret) and exits with NovaDM.
+  - Magnet links clicked in pages, pasted in the Downloads box or copied anywhere (clipboard
+    watcher) open the New download dialog; `.torrent` links open in NovaDM instead of being saved
+    (setting); "Open torrent" on the Downloads page opens .torrent files from disk.
+  - **Choose the files**: a .torrent lists its files in the dialog; for a magnet link NovaDM first
+    gets the torrent's details from other computers, then asks which files to download.
+  - Status in the list: getting details, peers, speed, time left; after completion **seeding**
+    with upload speed and ratio until the ratio or time limit (Settings → Torrents), or until you
+    choose "Stop seeding". Properties show the info hash and the chosen files.
+  - DHT, peer exchange and local peer discovery; an up-to-date public tracker list
+    (github.com/ngosang/trackerslist), refreshed twice a day (can be turned off); upload limit.
+  - aria2 is installed on demand (Settings → Torrents, about 2.5 MB from the official release over
+    HTTPS), or NovaDM uses your own aria2c.exe. Without it, a torrent download says what to install.
+- Torrent file reader (bencode): name, files, size and info hash shown before downloading; magnet
+  links with hex or base32 hashes.
+
+### Not verified here
+- The real aria2 program was not run while testing (downloading it was not approved). The whole
+  flow was tested in the app against a stand-in that answers like aria2's JSON-RPC.
+- aria2 publishes no checksums, so its install is checked only by the HTTPS download from GitHub
+  until a SHA-256 from a checked copy is pinned in `src/main/torrent/aria2.js`.
+
+### Tests
+- 89 unit tests (new: torrent files and magnet links, tracker lists, the aria2 RPC client and the
+  torrent flow against a stand-in aria2: details → file choice → download → seeding → limit,
+  cancel, errors, wrong secret).
+- In-app self-test `tools/selftest-phase5.js`: magnet link clicked in a page → dialog → file
+  chooser → download → seeding → Stop seeding; a .torrent link with one file unticked; the message
+  without aria2. All earlier self-tests pass unchanged.
+
 ## [0.5.0] — 2026-10-09
 
 Video capability (roadmap phase 4).
@@ -224,7 +260,8 @@ First packaged version: `Swoop-Setup-0.1.0.exe` and `Swoop-Portable-0.1.0.exe`.
 - Speed limit, maximum active downloads, category folders, names from page titles
 - Windows installer (NSIS) and portable build
 
-[Unreleased]: ../../compare/v0.5.0...HEAD
+[Unreleased]: ../../compare/v0.6.0...HEAD
+[0.6.0]: ../../compare/v0.5.0...v0.6.0
 [0.5.0]: ../../compare/v0.4.0...v0.5.0
 [0.4.0]: ../../compare/v0.3.0...v0.4.0
 [0.3.0]: ../../compare/v0.2.0...v0.3.0

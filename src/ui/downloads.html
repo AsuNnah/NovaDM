@@ -98,6 +98,7 @@ select{height:32px;border-radius:8px;border:1px solid var(--line);background:var
     <button id="pauseAll" title="Pause all running downloads">Pause all</button>
     <button id="openFolder" title="Open the download folder">Open folder</button>
     <button id="clearDone" title="Remove finished downloads from the list (files stay on disk)">Clear finished</button>
+    <button id="openTorrent" title="Open a .torrent file">Open torrent</button>
     <button id="queuesBtn" title="Queues and schedules">Queues</button>
     <label class="after" title="Runs once, when nothing is downloading or waiting any more">When all finish
       <select id="afterAllDone"><option value="nothing">do nothing</option><option value="exit">close NovaDM</option><option value="sleep">sleep</option><option value="shutdown">shut down</option></select>
@@ -105,7 +106,7 @@ select{height:32px;border-radius:8px;border:1px solid var(--line);background:var
   </div>
 
   <div class="addbar">
-    <input type="text" id="addUrl" placeholder="Paste download links (files or .m3u8 streams; several at once, or a pattern like img[001-100].jpg) and press Enter" spellcheck="false" />
+    <input type="text" id="addUrl" placeholder="Paste download links (files, .m3u8/.mpd streams, magnet links; several at once, or a pattern like img[001-100].jpg) and press Enter" spellcheck="false" />
     <button class="pri" id="addBtn">Download</button>
   </div>
 

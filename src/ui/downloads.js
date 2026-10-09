@@ -62,6 +62,15 @@ function statusText(d) {
   const pct = Math.floor(d.percent || 0);
   const parts = d.segments ? `Part ${d.doneSegments || 0} of ${d.segments}` : '';
   const sizeTxt = d.size > 0 ? `${fmtSize(d.received)} of ${d.sizeIsEstimate ? '~' : ''}${fmtSize(d.size)}` : fmtSize(d.received);
+  if (d.kind === 'torrent') {
+    if (d.phase === 'metadata' && d.state !== 'error') return 'Getting the torrent’s details from other computers…';
+    if (d.phase === 'choosing' && d.state !== 'error') return 'Waiting for you to choose the files';
+    if (d.state === 'done' && d.seeding) return [fmtSize(d.size), `Seeding ↑ ${fmtSize(d.uploadSpeed || 0)}/s`, `ratio ${(d.ratio || 0).toFixed(2)}`].join(' · ');
+    if (d.state === 'downloading' && d.connections) {
+      const left = d.speed > 0 && d.size > 0 ? fmtDur(((d.size - d.received) / d.speed) * 1000) + ' left' : '';
+      return [Math.floor(d.percent || 0) + '%', `${fmtSize(d.received)} of ${fmtSize(d.size)}`, d.speed > 0 ? fmtSize(d.speed) + '/s' : '', left, `${d.connections} peers`].filter(Boolean).join(' · ');
+    }
+  }
   if (d.kind === 'convert' && d.state === 'downloading') return `Converting “${esc(d.from)}”${d.percent > 0 ? ' · ' + Math.floor(d.percent) + '%' : '…'}`;
   if (d.joining && d.state === 'downloading') return 'Joining picture and sound with FFmpeg…';
   if (d.recording) return `<span class="rec">● Recording</span> · ${fmtClock(d.recordedSeconds || 0)} · ${fmtSize(d.received)}${d.speed > 0 ? ' · ' + fmtSize(d.speed) + '/s' : ''}`;
@@ -233,7 +242,8 @@ function openMenu(anchor, d) {
   hr();
   add('Copy download link', () => api.call('downloads.copyLink', { id: d.id }));
   if (d.pageUrl) { add('Copy page link', () => api.call('downloads.copyLink', { id: d.id, which: 'page' })); add('Open download page', () => api.call('downloads.openPage', { id: d.id })); }
-  if (d.state !== 'done' && !d.native && d.kind !== 'convert') add('Refresh link…', () => showRefresh(d));
+  if (d.state !== 'done' && !d.native && !['convert', 'torrent'].includes(d.kind)) add('Refresh link…', () => showRefresh(d));
+  if (d.seeding) add('Stop seeding', () => api.call('downloads.stopSeeding', { id: d.id }));
   if (d.state === 'done' && ['video', 'music'].includes(d.category)) {
     hr();
     const conv = (label, action) => add(label, async () => {
@@ -386,6 +396,8 @@ async function showProperties(id) {
     ${extra.length ? row('Additional information', extra.map(esc).join('<br>')) : ''}
     ${p.state !== 'done' && !p.native ? row('Speed limit', `<input type="number" id="pLimit" min="0" step="100" value="${p.speedLimitKBps || 0}" style="width:90px"> KB/s for this download <button id="pLimitSet">Set</button> <span style="color:var(--fg3)">(0 = no limit)</span>`) : ''}
     ${p.expectedHash ? row('Checksum check', `${esc(VERIFY_TEXT[p.verify] ? VERIFY_TEXT[p.verify].replace(/<[^>]+>/g, '') : 'When the download finishes')}<br><span class="hash">${esc(p.expectedHash)}</span>`) : ''}
+    ${p.infoHash ? row('Info hash', `<span class="hash">${esc(p.infoHash)}</span>`) : ''}
+    ${p.btFiles && p.btFiles.length > 1 ? row('Files', p.btFiles.map((f, i) => `${!p.selectFiles || p.selectFiles.split(',').includes(String(i + 1)) ? '✓' : '·'} ${esc(f.path)} (${fmtSize(f.length)})`).join('<br>')) : ''}
     ${p.native ? row('Handled by', 'The browser (this kind of link cannot be fetched again, so it cannot resume after NovaDM closes)') : ''}
     ${p.incognito ? row('Private', 'Started from a private tab: not kept in the list after NovaDM closes') : ''}
     ${row('MD5 checksum', '<span class="hash" id="h-md5"></span> <button id="c-md5">Calculate</button>')}
@@ -425,6 +437,7 @@ $('resumeAll').onclick = () => api.call('downloads.resumeAll');
 $('pauseAll').onclick = () => api.call('downloads.pauseAll');
 $('openFolder').onclick = () => api.call('downloads.openFolder');
 $('queuesBtn').onclick = () => loadQueues().then(showQueues);
+$('openTorrent').onclick = () => api.call('downloads.openTorrent');
 $('afterAllDone').onchange = () => api.call('downloads.setAfterAllDone', { action: $('afterAllDone').value });
 loadQueues().then(renderAll);
 setInterval(loadQueues, 15000);

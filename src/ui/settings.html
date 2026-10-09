@@ -132,6 +132,38 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     </div>
   </div>
 
+  <h2>Torrents</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>aria2</b><span>Downloads torrents and magnet links (the engine Motrix uses). Installed on demand from the official release (about 2.5 MB, github.com/aria2/aria2), or use your own aria2c.exe.</span><div class="status" id="a2Status">Checking…</div><div class="ffbar" id="a2Bar" hidden><i></i></div></div>
+      <div class="ffacts"><button id="a2Install">Install</button><button id="a2Choose">Use my own…</button><button id="a2Remove" hidden>Remove</button></div>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Choose the files before downloading</b><span>For torrents with several files.</span></div>
+      <label class="sw"><input type="checkbox" id="torrentAskFiles"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Open .torrent links with NovaDM</b></div>
+      <label class="sw"><input type="checkbox" id="openTorrentFiles"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Stop seeding at ratio</b><span>Uploaded ÷ downloaded. 0 means no ratio limit.</span></div>
+      <input type="number" id="torrentSeedRatio" min="0" max="100" step="0.1" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>…or after (minutes)</b><span>0 means no time limit.</span></div>
+      <input type="number" id="torrentSeedMinutes" min="0" step="10" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Upload limit (KB/s)</b><span>0 means no limit.</span></div>
+      <input type="number" id="torrentUploadKBps" min="0" step="50" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Add public trackers</b><span>An up-to-date list (github.com/ngosang/trackerslist), refreshed twice a day, helps find peers.</span></div>
+      <label class="sw"><input type="checkbox" id="torrentTrackerList"><i></i></label>
+    </div>
+  </div>
+
   <h2>Video tools</h2>
   <div class="card">
     <div class="row">

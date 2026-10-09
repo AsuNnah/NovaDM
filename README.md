@@ -86,6 +86,12 @@ AB Download Manager, XDM). No code from any of them is included.
   script, with sign-in (the password is encrypted by Windows)
 - Downloads from private tabs use the private session and are not kept in the list
 
+### Torrents
+- **BitTorrent and magnet links** (through aria2, installed on demand or your own aria2c.exe):
+  magnet links from pages, the clipboard or the Downloads box, `.torrent` links and files
+- Choose which files to download; seeding with a ratio / time limit and "Stop seeding"; DHT, peer
+  exchange and an up-to-date public tracker list
+
 ### Background, scheduling and safety
 - **Tray icon**: closing the window while downloads run keeps NovaDM downloading in the tray;
   optionally always stay in the tray and **start with Windows**
@@ -170,6 +176,7 @@ src/main/                 Electron main process
   scheduler.js            download queues and their time windows
   background.js           tray, start with Windows, keep awake, "when all downloads finish"
   ffmpeg.js               FFmpeg on demand (verified install, joining, sound, repair)
+  torrent/                aria2 helper (install, start, JSON-RPC, trackers), .torrent reader
 src/ui/                   toolbar, panels, downloads, settings, new tab pages
 test/                     unit tests (node --test)
 tools/                    self-tests, diagnostics, icon generator

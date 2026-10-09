@@ -169,7 +169,8 @@ Progress (see CHANGELOG.md for details):
 | 2. Half-done basics | Done in 0.3.0 (A2, A3, A5, A6, A7, A8, A9, A11, A16, B4) + page downloads go to NovaDM |
 | 3. Background + scheduling | Done in 0.4.0 (A1, A4, A10, A17, B7). T4 (engine in a utilityProcess) dropped: downloads need the browser session's cookies, Secure DNS and proxy, which only the main process has; the tray gives background downloading instead |
 | 4. Video capability | Done in 0.5.0 (B2 DASH + A/V merge without FFmpeg, also for HLS alternate audio; B5 live HLS recording; B3 FFmpeg on demand). Live DASH not yet |
-| 5–7 | Not started |
+| 5. Torrents | Done in 0.6.0 (B1 via aria2: magnet/.torrent, file choice, seeding limits, DHT/PEX, tracker list). Real aria2 not yet run in testing |
+| 6–7 | Not started |
 
 1. **Engine speed + stability** (S1–S5, T1–T3, T6) — biggest benefit for what you download most.
 2. **Wire the half-done basics** (A5, A6, A16) + per-download limit, proxy, free-space, duplicates (A2, A3, A11)

@@ -138,6 +138,9 @@ class Browser extends EventEmitter {
     wc.on('page-title-updated', (_e, title) => { tab.title = title; update(); });
     wc.on('did-start-loading', () => { tab.loading = true; update(); });
     wc.on('did-stop-loading', () => { tab.loading = false; update(); });
+    wc.on('will-navigate', (e) => {
+      if (/^magnet:\?/i.test(e.url || '')) { e.preventDefault(); this.emit('magnet', tab, e.url); }
+    });
     wc.on('did-start-navigation', (e) => {
       // Only a real page change resets per-page state; SPA URL changes (same document) keep it.
       if (!e.isMainFrame || e.isSameDocument) return;
@@ -219,6 +222,7 @@ class Browser extends EventEmitter {
   }
 
   handleWindowOpen(tab, details) {
+    if (/^magnet:\?/i.test(details.url || '')) { this.emit('magnet', tab, details.url); return { action: 'deny' }; }
     // Always deny the raw request and decide a moment later: the preload's click report travels
     // on a separate channel and may arrive just after this call. Allowed windows open as tabs.
     setTimeout(() => this.decideWindowOpen(tab, details), 60);
@@ -242,6 +246,12 @@ class Browser extends EventEmitter {
   }
 
   handlePermission(tab, permission, details, callback) {
+    // A magnet: link opens in NovaDM instead of asking Windows for another torrent app.
+    if (permission === 'openExternal' && details && /^magnet:\?/i.test(details.externalURL || '')) {
+      callback(false);
+      this.emit('magnet', tab, details.externalURL);
+      return;
+    }
     const origin = (details && details.requestingUrl) ? originOf(details.requestingUrl) : originOf(tab.url);
     const stored = this.getStoredPermission(origin, permission);
     if (stored === 'granted') return callback(true);

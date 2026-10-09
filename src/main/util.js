@@ -141,7 +141,7 @@ function uid() {
 function extractLinks(text, max = 1000) {
   const out = [];
   const seen = new Set();
-  const re = /https?:\/\/[^\s"'<>()\[\]{}]+(?:\[[^\s\]]*\][^\s"'<>()\[\]{}]*)*/gi;
+  const re = /magnet:\?[^\s"'<>]+|https?:\/\/[^\s"'<>()\[\]{}]+(?:\[[^\s\]]*\][^\s"'<>()\[\]{}]*)*/gi;
   let m;
   while ((m = re.exec(String(text || ''))) && out.length < max) {
     const u = m[0].replace(/[.,;:!?]+$/, '');

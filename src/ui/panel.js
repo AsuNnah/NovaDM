@@ -46,6 +46,7 @@ api.on('download-ask', (d) => showDownloadAsk(d));
 api.on('download-ask-update', (d) => updateDownloadAsk(d));
 api.on('links-ask', (d) => showLinksAsk(d));
 api.on('afterdone-ask', (d) => showAfterDone(d));
+api.on('torrent-files', (d) => showTorrentFiles(d));
 
 function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -142,7 +143,7 @@ function dlRow(d) {
   meta.append(el('div', 'nm', esc(d.name)));
   const tags = el('div', 'tags');
   const pct = Math.round(d.percent || 0);
-  const stateText = d.recording ? 'Recording ' + fmtDur(d.recordedSeconds || 0) : { downloading: fmtSpeed(d.speed) || 'Downloading', connecting: 'Connecting…', paused: 'Paused', queued: 'Queued', done: 'Completed', error: 'Error', scheduled: 'Scheduled' }[d.state] || d.state;
+  const stateText = d.phase === 'metadata' ? 'Getting torrent info…' : d.seeding ? 'Seeding' : d.recording ? 'Recording ' + fmtDur(d.recordedSeconds || 0) : { downloading: fmtSpeed(d.speed) || 'Downloading', connecting: 'Connecting…', paused: 'Paused', queued: 'Queued', done: 'Completed', error: 'Error', scheduled: 'Scheduled' }[d.state] || d.state;
   tags.append(el('span', 'tag', stateText));
   if (d.size > 0) tags.append(el('span', 'tag', fmtSize(d.received) + ' / ' + fmtSize(d.size)));
   else if (d.doneSegments) tags.append(el('span', 'tag', d.doneSegments + '/' + d.segments + ' parts'));
@@ -451,6 +452,10 @@ function showDownloadAsk(d) {
     if (r && r.folder && ask) { ask.folderChosen = true; showAskFolder(r.folder); }
   };
 
+  if (d.torrent) {
+    if (d.torrent.files && d.torrent.files.length > 1) content.append(fileList(d.torrent.files, 'na-files'));
+    else if (d.torrent.magnet) content.append(el('div', 'notice', 'You can choose the files once the torrent’s details have arrived from other computers.'));
+  }
   const more = el('details', 'more');
   more.innerHTML = `<summary>More options</summary><div class="frm" style="padding:6px 0 0">
     <div class="k">Speed limit</div><div class="v"><input class="inp num" id="na-limit" type="number" min="0" step="100" value="0"><span style="color:var(--fg3);font-size:12px">KB/s for this download (0 = no limit)</span></div>
@@ -499,9 +504,42 @@ function respondAsk(action) {
   api.call('add.respond', {
     reqId: ask.reqId, action, name: ask.nameEdited ? v('na-name').trim() : '', folder: ask.folder,
     speedLimitKBps: Number(v('na-limit')) || 0, checksum: v('na-hash').trim(), dontAsk: !!(dont && dont.checked),
-    queue: v('na-queue') || 'main',
+    queue: v('na-queue') || 'main', selected: checkedFiles('na-files'),
   });
   ask = null; current = null;
+}
+
+// Files of a torrent, all ticked; checkedFiles() gives the ticked indexes (0-based) or undefined.
+function fileList(files, id) {
+  const wrap = el('div', 'links');
+  wrap.id = id;
+  files.forEach((f, i) => wrap.append(el('label', 'lrow', `<input type="checkbox" data-i="${i}" checked><div class="nm2"><div>${esc(f.path)}</div><div class="u">${fmtSize(f.length)}</div></div>`)));
+  return wrap;
+}
+function checkedFiles(id) {
+  const w = document.getElementById(id);
+  return w ? [...w.querySelectorAll('input:checked')].map((c) => Number(c.dataset.i)) : undefined;
+}
+
+// A magnet link's details have arrived: which files to download?
+function showTorrentFiles(d) {
+  current = 'torrent-files'; place('dialog');
+  ask = { reqId: d.reqId };
+  content.innerHTML = '';
+  content.append(el('div', 'hdr', `<div class="t">Choose files</div><div class="sp"></div><span class="tag">${esc(d.files.length)} files</span>`));
+  content.append(el('div', 'q', `<b>${esc(d.name)}</b>`));
+  const list = fileList(d.files, 'tf-files');
+  content.append(list);
+  const acts = el('div', 'acts');
+  const go = el('button', 'btn pri', '');
+  const upd = () => { const n = list.querySelectorAll('input:checked').length; go.textContent = n ? `Download ${n}` : 'Download'; go.disabled = !n; };
+  const all = el('button', 'btn sm', 'All'); all.onclick = () => { list.querySelectorAll('input').forEach((c) => { c.checked = true; }); upd(); };
+  const none = el('button', 'btn sm', 'None'); none.onclick = () => { list.querySelectorAll('input').forEach((c) => { c.checked = false; }); upd(); };
+  const cancel = el('button', 'btn', 'Cancel'); cancel.onclick = () => close();
+  list.addEventListener('change', upd); upd();
+  go.onclick = () => { api.call('add.respond', { reqId: d.reqId, action: 'start', selected: checkedFiles('tf-files') }); ask = null; current = null; };
+  acts.append(all, none, el('div', 'sp'), cancel, go);
+  content.append(acts);
 }
 
 // Queue choice, only when the user has made queues besides Main.

@@ -3,9 +3,9 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb'];
+const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList'];
 const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser'];
-const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6] };
+const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7] };
 const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads'];
 
 function flashSaved() {
@@ -55,6 +55,7 @@ function render() {
   for (const k of Object.keys(NUMBERS)) if (document.activeElement !== $(k)) $(k).value = current[k];
   for (const k of SELECTS) $(k).value = current[k];
   for (const k of TEXTS) if (document.activeElement !== $(k)) $(k).value = current[k] || '';
+  if (document.activeElement !== $('torrentSeedRatio')) $('torrentSeedRatio').value = current.torrentSeedRatio ?? 1;
   $('askEach').checked = !current.skipEditor;
   const pm = current.proxyMode;
   $('proxyManualRow').hidden = pm !== 'manual';
@@ -108,6 +109,7 @@ async function init() {
   render();
   for (const k of TOGGLES) $(k).addEventListener('change', () => save({ [k]: $(k).checked }));
   for (const k of SELECTS) $(k).addEventListener('change', () => save({ [k]: $(k).value }));
+  $('torrentSeedRatio').addEventListener('change', () => save({ torrentSeedRatio: Math.max(0, Math.min(100, Number($('torrentSeedRatio').value) || 0)) }));
   for (const [k, [min, max]] of Object.entries(NUMBERS)) {
     $(k).addEventListener('change', () => {
       let v = Math.round(Number($(k).value));
@@ -127,6 +129,7 @@ async function init() {
   });
   $('chooseDir').addEventListener('click', async () => { current = await bridge.chooseDownloadDir(); render(); });
   initFfmpeg();
+  initAria2();
 }
 
 // ---- FFmpeg (Video tools) ----
@@ -166,6 +169,32 @@ async function initFfmpeg() {
   };
   $('ffChoose').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.choose'));
   $('ffRemove').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.uninstall'));
+  refresh();
+}
+
+// ---- aria2 (Torrents) ----
+async function initAria2() {
+  const render = (st) => {
+    const el = $('a2Status');
+    el.className = 'status';
+    if (st.installing) el.textContent = 'Installing…';
+    else if (st.installed) { el.textContent = `aria2 ${st.version || ''} is ready` + (st.custom ? ` (${st.path})` : ''); el.classList.add('ok'); }
+    else el.textContent = 'Not installed: torrents and magnet links can’t be downloaded yet.';
+    $('a2Install').hidden = !!st.installed && !st.custom;
+    $('a2Remove').hidden = !st.installed;
+  };
+  const refresh = async () => { try { render(await bridge.call('torrents.status')); } catch {} };
+  bridge.on('aria2', (p) => {
+    const el = $('a2Status');
+    const bar = $('a2Bar');
+    if (p.phase === 'error') { el.textContent = p.error; el.className = 'status warn'; bar.hidden = true; return; }
+    if (p.phase === 'done') { bar.hidden = true; refresh(); return; }
+    el.textContent = { downloading: 'Downloading…', verifying: 'Checking the download…', unpacking: 'Unpacking…' }[p.phase] || p.phase;
+    if (p.phase === 'downloading' && p.size > 0) { bar.hidden = false; bar.firstElementChild.style.width = Math.round((p.received / p.size) * 100) + '%'; }
+  });
+  $('a2Install').onclick = async () => { $('a2Install').disabled = true; const r = await bridge.call('torrents.install'); $('a2Install').disabled = false; if (r && r.ok) render(r.status); };
+  $('a2Choose').onclick = async () => render(await bridge.call('torrents.choose'));
+  $('a2Remove').onclick = async () => render(await bridge.call('torrents.uninstall'));
   refresh();
 }
 

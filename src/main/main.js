@@ -14,6 +14,7 @@ const { applyProxy, proxyCredentials } = require('./proxy');
 const { Scheduler } = require('./scheduler');
 const { Background } = require('./background');
 const { FFmpeg } = require('./ffmpeg');
+const { Aria2 } = require('./torrent/aria2');
 const { HttpDownload } = require('./download/http');
 const util = require('./util');
 const { Browser } = require('./browser');
@@ -56,7 +57,7 @@ const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
 
 let win, chromeView, overlayView;
-let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg;
+let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg, aria2;
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
@@ -164,6 +165,7 @@ function wireEvents() {
   browser.on('page-changed', (tabId) => { blockedPopups.delete(tabId); sendPopupState(); });
   browser.on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win, addDownload: (spec, o) => addFlow.request(spec, o) }));
   browser.on('download', onPageDownload);
+  browser.on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
   browser.on('tab-selected', (tab) => { if (extensions.ready && !tab.incognito) extensions.selectTab(tab.wc); });
@@ -218,6 +220,18 @@ function wireEvents() {
 // with the browser, saved straight into the download folder and shown in the list.
 function onPageDownload(event, item, info) {
   const http = /^https?:\/\//i.test(info.url);
+  // A .torrent file: open the torrent in NovaDM (asking which files) instead of saving the .torrent.
+  if (http && settings.get('openTorrentFiles') !== false && (info.mime === 'application/x-bittorrent' || /\.torrent$/i.test(info.name || ''))) {
+    event.preventDefault();
+    const ses = info.incognito ? browser.incognitoSession : browser.normalSession;
+    net.fetchBuffer(info.url, { session: ses, headers: info.pageUrl ? { referer: info.pageUrl } : {}, maxBytes: 20 * 1024 * 1024, timeoutMs: 20000 })
+      .then((r) => {
+        const res = addFlow.requestTorrentFile(r.body, { origin: 'page', pageUrl: info.pageUrl, tabId: info.tabId, incognito: info.incognito });
+        if (res && res.ok === false) notify({ title: 'Not a torrent file', body: res.error });
+      })
+      .catch((e) => notify({ title: 'Could not open the torrent', body: e.message }));
+    return;
+  }
   if (http && !info.viaPost) {
     event.preventDefault();
     addFlow.request({
@@ -352,19 +366,22 @@ app.whenReady().then(async () => {
   transport = new Transport({ session: browser.normalSession, settings });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
-  // FFmpeg on demand: downloaded with NovaDM's own engine (speed limit and proxy apply).
-  ffmpeg = new FFmpeg({
-    settings, userDataDir: app.getPath('userData'),
-    fetchText: async (url) => (await net.fetchText(url, { session: browser.normalSession, timeoutMs: 20000 })).text,
-    download: (url, savePath, onProgress) => new Promise((resolve, reject) => {
-      const dl = new HttpDownload({ id: 'ffmpeg', savePath, sources: [url], session: browser.normalSession, transport, limiter: downloads.limiter, connections: 8, retries: 5 });
-      dl.on('progress', (p) => onProgress({ received: p.received, size: p.size }));
-      dl.on('done', resolve);
-      dl.on('error', reject);
-      dl.start();
-    }),
+  // Helper tools on demand (FFmpeg, aria2): downloaded with NovaDM's own engine (speed limit and
+  // proxy apply) and checked before use.
+  const toolText = async (url) => (await net.fetchText(url, { session: browser.normalSession, timeoutMs: 20000 })).text;
+  const toolDownload = (url, savePath, onProgress) => new Promise((resolve, reject) => {
+    const dl = new HttpDownload({ id: 'tool', savePath, sources: [url], session: browser.normalSession, transport, limiter: downloads.limiter, connections: 8, retries: 5 });
+    dl.on('progress', (p) => onProgress({ received: p.received, size: p.size }));
+    dl.on('done', resolve);
+    dl.on('error', reject);
+    dl.start();
   });
+  ffmpeg = new FFmpeg({ settings, userDataDir: app.getPath('userData'), fetchText: toolText, download: toolDownload });
   downloads.ffmpeg = ffmpeg;
+  aria2 = new Aria2({ settings, userDataDir: app.getPath('userData'), fetchText: toolText, download: toolDownload });
+  downloads.aria2 = aria2;
+  downloads.askTorrentFiles = (rec, files) => addFlow.askTorrentFiles(rec, files);
+  settings.on('change', (c) => { if (Object.keys(c).some((k) => k.startsWith('torrent'))) aria2.applySettings(); });
 
   // Proxy for pages and downloads (system settings unless the user chose otherwise).
   const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession];
@@ -441,7 +458,7 @@ app.whenReady().then(async () => {
     .catch((e) => console.error('extensions init failed', e));
 
   const ipcHandlers = registerIpc({
-    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg }),
+    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2 }),
     setPanel, sendUI, sendMediaState,
     downloadItem,
     reviewBlockedPopup,
@@ -485,7 +502,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions|ffmpeg)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!/^(downloads|extensions|ffmpeg|torrents)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return ipcHandlers[method](args || {});
   });
   // Live updates for open Downloads pages.
@@ -534,7 +551,7 @@ app.on('before-quit', (e) => {
   if (quitReady || !downloads) { downloads && downloads.persist(); return; }
   e.preventDefault();
   quitReady = true;
-  downloads.shutdown(4000).finally(() => app.quit());
+  downloads.shutdown(4000).finally(() => { if (aria2) aria2.stop(); app.quit(); });
 });
 
 module.exports = { get win() { return win; } };

@@ -49,6 +49,16 @@ function defaults() {
     markOfTheWeb: true,
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
 
+    // Torrents (aria2)
+    aria2Path: '', // the user's own aria2c.exe
+    torrentAskFiles: true, // choose the files of a torrent before it downloads
+    torrentSeedRatio: 1, // stop seeding at this upload/download ratio (0 = no ratio limit)
+    torrentSeedMinutes: 60, // ...or after this many minutes (0 = no time limit)
+    torrentUploadKBps: 0, // upload limit (0 = none)
+    torrentPort: 0, // listening port (0 = aria2's default range)
+    torrentTrackerList: true, // add an up-to-date list of public trackers
+    openTorrentFiles: true, // .torrent links open in NovaDM
+
     // Proxy (browsing and downloads): system | none | manual | pac
     proxyMode: 'system',
     proxyType: 'http', // http | https | socks4 | socks5
