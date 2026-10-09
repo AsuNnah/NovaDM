@@ -74,11 +74,10 @@ class Transport {
       }
       return conn;
     } catch (err) {
-      if (isRefusal(err)) {
-        this.blockDirect(url, err.code || err.message);
-        return this.browserOpen(url, { ...opts, session: ses });
-      }
-      throw err;
+      // Whatever went wrong with NovaDM's own client (TLS refusal, a proxy that won't tunnel, a
+      // timeout...), the browser's connection is the safe answer: use it for this server from now on.
+      this.blockDirect(url, err.code || err.message);
+      return this.browserOpen(url, { ...opts, session: ses });
     }
   }
 
@@ -91,6 +90,9 @@ class Transport {
     // "PROXY host:port; DIRECT" -> first entry. SOCKS isn't supported by undici: use the browser stack.
     const first = String(proxy || 'DIRECT').split(';')[0].trim();
     if (/^SOCKS/i.test(first)) { const e = new Error('SOCKS proxy: browser stack only'); e.code = 'NOVADM_SOCKS'; throw e; }
+    // undici reaches every site through a proxy with a CONNECT tunnel, which many proxies only allow
+    // for HTTPS. Plain http:// links behind a proxy stay with the browser (it forwards them normally).
+    if (/^(PROXY|HTTPS)\s/i.test(first) && /^http:/i.test(url)) { const e = new Error('http through a proxy: browser stack only'); e.code = 'NOVADM_PROXY_HTTP'; throw e; }
     const key = first || 'DIRECT';
     let d = this.agents.get(key);
     if (d) return d;
@@ -114,7 +116,9 @@ class Transport {
     const m = /^PROXY\s+(.+)$/i.exec(first) || /^HTTPS\s+(.+)$/i.exec(first);
     if (m) {
       const scheme = /^HTTPS/i.test(first) ? 'https' : 'http';
-      d = new ProxyAgent({ uri: `${scheme}://${m[1]}`, connections: 64, requestTls: { ca: caCertificates() } });
+      const creds = this.proxyCredentials ? this.proxyCredentials() : null;
+      const token = creds ? 'Basic ' + Buffer.from(`${creds.user}:${creds.pass}`).toString('base64') : undefined;
+      d = new ProxyAgent({ uri: `${scheme}://${m[1]}`, token, connections: 64, requestTls: { ca: caCertificates() } });
     } else {
       // Many sockets per origin: the whole point of direct mode. HTTP/1.1 so each range is its own TCP stream.
       d = new Agent({ connections: 64, pipelining: 0, connect, allowH2: false, keepAliveTimeout: 20000 });
@@ -148,11 +152,22 @@ class Transport {
       if (!h['accept-encoding']) h['accept-encoding'] = 'identity'; // ranges must be byte-exact
       const cookie = await this.cookieHeader(current, ses);
       if (cookie) h.cookie = cookie;
+      // Our own deadline as well as undici's: a proxy that drops a CONNECT tunnel can leave undici's
+      // request pending even after its signal is aborted.
       const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(Object.assign(new Error('Connection timed out'), { code: 'ETIMEDOUT' })), timeoutMs);
+      let timer;
+      const pending = request(current, { method: 'GET', headers: h, dispatcher, signal: ac.signal, headersTimeout: timeoutMs, bodyTimeout: timeoutMs });
+      const deadline = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const e = Object.assign(new Error('Connection timed out'), { code: 'ETIMEDOUT' });
+          ac.abort(e);
+          reject(e);
+          pending.then((late) => { try { late.body.on('error', () => {}); late.body.destroy(); } catch {} }, () => {});
+        }, timeoutMs);
+      });
       let resp;
       try {
-        resp = await request(current, { method: 'GET', headers: h, dispatcher, signal: ac.signal, headersTimeout: timeoutMs, bodyTimeout: timeoutMs });
+        resp = await Promise.race([pending, deadline]);
       } finally {
         clearTimeout(timer);
       }

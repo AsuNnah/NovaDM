@@ -19,7 +19,7 @@ h2{font-size:13px;font-weight:600;color:var(--fg2);text-transform:none;margin:28
 .lbl{flex:1;min-width:0;}
 .lbl b{display:block;font-weight:500;}
 .lbl span{display:block;color:var(--fg3);font-size:12.5px;}
-select,input[type=number],input[type=text]{height:32px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;padding:0 10px;outline:none;}
+select,input[type=number],input[type=text],input[type=password]{height:32px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;padding:0 10px;outline:none;}
 select:focus,input:focus{border-color:var(--accent);}
 input[type=number]{width:96px;}
 input[type=text]{width:280px;}
@@ -68,6 +68,18 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <button id="chooseDir">Change</button>
     </div>
     <div class="row">
+      <div class="lbl"><b>Ask before each download</b><span>Shows the file name, folder and options before a download starts. Videos from the media button start right away.</span></div>
+      <label class="sw"><input type="checkbox" id="askEach"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Resume unfinished downloads when NovaDM starts</b><span>Downloads that were running when NovaDM closed continue by themselves.</span></div>
+      <label class="sw"><input type="checkbox" id="autoResume"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Notifications</b><span>Tell me when a download finishes or fails.</span></div>
+      <label class="sw"><input type="checkbox" id="notifyOnComplete"><i></i></label>
+    </div>
+    <div class="row">
       <div class="lbl"><b>Sort into folders by type</b><span>Video, Music, Documents, Archives, Programs, Images</span></div>
       <label class="sw"><input type="checkbox" id="categoryFolders"><i></i></label>
     </div>
@@ -102,6 +114,44 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     <div class="row">
       <div class="lbl"><b>Ignore media smaller than (KB)</b><span>Hides short clips and sounds from the detected list.</span></div>
       <input type="number" id="minMediaKB" min="0" step="50" />
+    </div>
+  </div>
+
+  <h2>Clipboard</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Offer to download copied links</b><span>When you copy a link to one of the file types below (in any app), NovaDM asks whether to download it. Nothing is saved or sent anywhere.</span></div>
+      <label class="sw"><input type="checkbox" id="clipboardWatch"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>File types</b><span>Separated by spaces. .m3u8 streams always count.</span></div>
+      <input type="text" id="clipboardExtensions" style="width:320px" spellcheck="false" />
+    </div>
+  </div>
+
+  <h2>Proxy</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Proxy</b><span>Used for browsing and for downloads.</span></div>
+      <select id="proxyMode"><option value="system">Use Windows settings</option><option value="none">No proxy</option><option value="manual">Manual</option><option value="pac">Automatic configuration script (PAC)</option></select>
+    </div>
+    <div class="row" id="proxyManualRow" hidden>
+      <div class="lbl"><b>Server</b><span>host:port, for example 127.0.0.1:8080</span></div>
+      <select id="proxyType"><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks5">SOCKS5</option><option value="socks4">SOCKS4</option></select>
+      <input type="text" id="proxyServer" placeholder="host:port" style="width:200px" spellcheck="false" />
+    </div>
+    <div class="row" id="proxyBypassRow" hidden>
+      <div class="lbl"><b>No proxy for</b><span>Separated by ; for example &lt;local&gt;;*.example.com</span></div>
+      <input type="text" id="proxyBypass" style="width:260px" spellcheck="false" />
+    </div>
+    <div class="row" id="proxyPacRow" hidden>
+      <div class="lbl"><b>Script address</b></div>
+      <input type="text" id="proxyPac" placeholder="http://" style="width:320px" spellcheck="false" />
+    </div>
+    <div class="row" id="proxyAuthRow" hidden>
+      <div class="lbl"><b>Sign-in (if the proxy asks)</b><span id="proxyPassState">The password is stored encrypted by Windows.</span></div>
+      <input type="text" id="proxyUser" placeholder="User name" style="width:150px" spellcheck="false" />
+      <input type="password" id="proxyPass" placeholder="Password" style="width:150px" />
     </div>
   </div>
 

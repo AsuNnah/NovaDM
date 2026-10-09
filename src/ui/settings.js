@@ -3,9 +3,10 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames'];
+const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch'];
+const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser'];
 const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6] };
-const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport'];
+const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType'];
 
 function flashSaved() {
   const s = $('saved');
@@ -53,6 +54,14 @@ function render() {
   for (const k of TOGGLES) $(k).checked = !!current[k];
   for (const k of Object.keys(NUMBERS)) if (document.activeElement !== $(k)) $(k).value = current[k];
   for (const k of SELECTS) $(k).value = current[k];
+  for (const k of TEXTS) if (document.activeElement !== $(k)) $(k).value = current[k] || '';
+  $('askEach').checked = !current.skipEditor;
+  const pm = current.proxyMode;
+  $('proxyManualRow').hidden = pm !== 'manual';
+  $('proxyBypassRow').hidden = pm !== 'manual';
+  $('proxyPacRow').hidden = pm !== 'pac';
+  $('proxyAuthRow').hidden = pm !== 'manual' && pm !== 'pac';
+  $('proxyPass').placeholder = current.proxyHasPassword ? 'Password saved' : 'Password';
   if (document.activeElement !== $('secureDnsCustom')) $('secureDnsCustom').value = current.secureDnsCustom || '';
   $('downloadDir').textContent = current.downloadDir || '';
   $('downloadDir').title = current.downloadDir || '';
@@ -108,6 +117,14 @@ async function init() {
     });
   }
   $('secureDnsCustom').addEventListener('change', () => save({ secureDnsCustom: $('secureDnsCustom').value.trim() }));
+  for (const k of TEXTS) $(k).addEventListener('change', () => save({ [k]: $(k).value.trim() }));
+  $('askEach').addEventListener('change', () => save({ skipEditor: !$('askEach').checked }));
+  $('proxyPass').addEventListener('change', async () => {
+    const r = await bridge.setProxyPassword($('proxyPass').value);
+    $('proxyPass').value = '';
+    if (r && r.ok === false) $('proxyPassState').textContent = r.error;
+    current = await bridge.getSettings(); render(); flashSaved();
+  });
   $('chooseDir').addEventListener('click', async () => { current = await bridge.chooseDownloadDir(); render(); });
 }
 

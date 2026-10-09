@@ -39,6 +39,15 @@ function defaults() {
     autoResume: false, // resume unfinished downloads when NovaDM starts
     notifyOnComplete: true,
 
+    // Proxy (browsing and downloads): system | none | manual | pac
+    proxyMode: 'system',
+    proxyType: 'http', // http | https | socks4 | socks5
+    proxyServer: '', // host:port
+    proxyBypass: '<local>',
+    proxyPac: '',
+    proxyUser: '',
+    proxyPassEnc: '', // encrypted with Windows DPAPI (safeStorage)
+
     // Auto downloader
     clipboardWatch: true,
     clipboardExtensions: 'zip rar 7z exe msi apk iso mp4 mkv avi webm mov mp3 m4a flac pdf epub torrent m3u8',
@@ -72,7 +81,10 @@ class Settings extends EventEmitter {
 
   get(key) { return this.data[key]; }
 
-  all() { return { ...this.data, searchEngines: SEARCH_ENGINES }; }
+  all() {
+    const { proxyPassEnc, ...rest } = this.data;
+    return { ...rest, proxyHasPassword: !!proxyPassEnc, searchEngines: SEARCH_ENGINES };
+  }
 
   set(patch) {
     const changed = {};

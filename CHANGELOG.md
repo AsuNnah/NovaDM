@@ -8,6 +8,59 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [0.3.0] — 2026-10-09
+
+The everyday basics of a download manager (roadmap phase 2).
+
+### Added
+- **Page downloads go to NovaDM.** Files a page starts (download links, buttons, "attachment"
+  answers) used to go to Chromium's own downloader; now NovaDM's engine takes them over, with the
+  page as Referer and the tab's cookies. Links that can't be fetched again (`blob:`/`data:` links,
+  answers to form POSTs) are still saved by the browser, into NovaDM's folders, and shown in the
+  list.
+- **New download dialog**: file name, size (asked from the server when unknown), folder, speed
+  limit for this download, optional checksum to verify, "Add paused", and a notice when the same
+  link is already in the list (with "Resume that one"). "Don't ask again" turns it off; the
+  setting is "Ask before each download".
+- **Copied links**: when a link to a file type on your list is copied in any app, NovaDM asks
+  whether to download it (Settings → Clipboard). NovaDM's own "Copy link" actions don't trigger it.
+- **Several links at once**: the Downloads page box accepts many links and batch patterns
+  (`img[001-120].jpg`, `part[a-f].zip`); a pick list shows them first.
+- **Notifications** when a download finishes (click opens it; programs and archives open their
+  folder) or fails (click opens the Downloads page).
+- **Resume unfinished downloads when NovaDM starts** (Settings → Downloads).
+- **Per-download speed limit**, in the dialog and in Properties (applies immediately).
+- **Checksum check** after download (MD5, SHA-1, SHA-256 or SHA-512); a mismatch is shown in the
+  list and in the notification.
+- **Refresh link** for downloads whose link stopped working: open the download page and start the
+  download (or play the video) again — NovaDM continues the old download from the new link — or
+  paste a new link. The new link must be the same file (same size); progress is kept.
+- **Proxy** (Settings → Proxy): Windows settings, no proxy, a manual HTTP/HTTPS/SOCKS4/SOCKS5
+  server with exceptions, or a PAC script; sign-in with a user name and a password stored
+  encrypted by Windows. Used by pages and downloads.
+- Downloads from private tabs use the private session's cookies and aren't saved in the list.
+
+### Fixed
+- **With a speed limit, streamed videos (HLS) could lose the end of segments** (a damaged video),
+  and HTTP downloads stalled for several seconds on each connection. The stream could report
+  "finished" while NovaDM was still waiting on the limiter for the last chunk. Present since 0.1.0
+  whenever a speed limit was set.
+- A link that expired in the middle of a download was retried forever; it now stops with "The
+  download link expired" and keeps the progress for Refresh link.
+- NovaDM's own connections through a proxy could hang forever when the proxy refused to tunnel;
+  they now time out and fall back to the browser's connections, and plain `http://` links behind a
+  proxy always use the browser's connections.
+- An error box ("Cannot read properties of null (reading 'contentView')") could appear when
+  quitting with extensions installed.
+- Downloads added paused showed as "Queued" forever.
+- The clipboard is read correctly with Electron 44 (its clipboard API is now asynchronous).
+
+### Tests
+- 56 unit tests (new: links, patterns and checksum kinds; speed-limited HTTP and HLS; a link that
+  expires mid-download; proxy fallback).
+- In-app self-test `tools/selftest-phase2.js` for every feature above, against local servers
+  (including a proxy with sign-in).
+
 ## [0.2.0] — 2026-10-09
 
 Faster, crash-safe downloads (roadmap phase 1), and the rename to NovaDM.
@@ -88,6 +141,7 @@ First packaged version: `Swoop-Setup-0.1.0.exe` and `Swoop-Portable-0.1.0.exe`.
 - Speed limit, maximum active downloads, category folders, names from page titles
 - Windows installer (NSIS) and portable build
 
-[Unreleased]: ../../compare/v0.2.0...HEAD
+[Unreleased]: ../../compare/v0.3.0...HEAD
+[0.3.0]: ../../compare/v0.2.0...v0.3.0
 [0.2.0]: ../../compare/v0.1.0...v0.2.0
 [0.1.0]: ../../releases/tag/v0.1.0

@@ -1,12 +1,17 @@
 'use strict';
 const path = require('path');
-const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol } = require('electron');
+const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, session: electronSession } = require('electron');
 const { Settings } = require('./settings');
 const { AdBlocker } = require('./adblock');
 const { PopupGuard } = require('./popup');
 const { MediaRegistry } = require('./media/registry');
 const { DownloadManager } = require('./download/manager');
 const { Transport } = require('./transport');
+const { AddFlow } = require('./add-flow');
+const { ClipboardWatcher } = require('./clipboard-watch');
+const { notify } = require('./notify');
+const { applyProxy, proxyCredentials } = require('./proxy');
+const util = require('./util');
 const { Browser } = require('./browser');
 const net = require('./net');
 const { registerIpc } = require('./ipc');
@@ -40,7 +45,7 @@ const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
 
 let win, chromeView, overlayView;
-let settings, adblock, popup, media, downloads, browser;
+let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport;
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
@@ -51,6 +56,7 @@ function contentBounds() {
 }
 
 function layout() {
+  if (!win || win.isDestroyed()) return;
   const [w, h] = win.getContentSize();
   chromeView.setBounds({ x: 0, y: 0, width: w, height: CHROME_HEIGHT });
   const cb = contentBounds();
@@ -59,7 +65,9 @@ function layout() {
 }
 
 function restack() {
-  // Keep z-order: page tab (bottom) < overlay < chrome (top).
+  // Keep z-order: page tab (bottom) < overlay < chrome (top). Nothing to do once the window is gone
+  // (tabs are still being closed while NovaDM quits).
+  if (!win || win.isDestroyed()) return;
   const root = win.contentView;
   try { root.addChildView(overlayView); } catch {}
   try { root.addChildView(chromeView); } catch {}
@@ -103,7 +111,8 @@ function createWindow() {
   win.on('resize', layout);
   win.on('maximize', () => sendUI('window-state', { maximized: true }));
   win.on('unmaximize', () => sendUI('window-state', { maximized: false }));
-  win.on('closed', () => { win = null; });
+  win.on('close', () => { browser.shuttingDown = true; });
+  win.on('closed', () => { browser.shuttingDown = true; win = null; });
 
   // Open links that must leave the app (none by default) in the OS browser.
   chromeView.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
@@ -130,7 +139,8 @@ function wireEvents() {
     sendPopupState();
   });
   browser.on('page-changed', (tabId) => { blockedPopups.delete(tabId); sendPopupState(); });
-  browser.on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win }));
+  browser.on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win, addDownload: (spec, o) => addFlow.request(spec, o) }));
+  browser.on('download', onPageDownload);
   // Chrome extensions see normal (not private) tabs.
   browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
   browser.on('tab-selected', (tab) => { if (extensions.ready && !tab.incognito) extensions.selectTab(tab.wc); });
@@ -144,13 +154,66 @@ function wireEvents() {
 
   media.on('changed', (tabId) => {
     if (browser.activeId === tabId) sendMediaState();
+    refreshFromMedia(tabId);
   });
   adblock.on('blocked', (wcId, n) => {
     const tab = browser.activeTab();
     if (tab && tab.wcId === wcId) sendUI('adblock-count', { count: n });
   });
   downloads.on('changed', () => sendUI('downloads', { list: downloads.list(), summary: downloads.activeSummary() }));
-  downloads.on('completed', (rec) => sendUI('download-complete', { name: rec.name, id: rec.id }));
+  downloads.on('completed', (rec) => {
+    sendUI('download-complete', { name: rec.name, id: rec.id });
+    if (!settings.get('notifyOnComplete')) return;
+    const bad = rec.verify === 'mismatch';
+    notify({
+      title: bad ? 'Download finished, but the checksum does not match' : 'Download finished',
+      body: rec.name,
+      // Programs and archives open their folder; other files open directly.
+      onClick: () => (['programs', 'archives'].includes(rec.category) || bad ? shell.showItemInFolder(rec.savePath) : shell.openPath(rec.savePath)),
+    });
+  });
+  downloads.on('failed', (rec) => {
+    if (!settings.get('notifyOnComplete')) return;
+    notify({
+      title: 'Download failed', body: `${rec.name}: ${rec.error || 'error'}`,
+      onClick: () => { if (win) { win.focus(); browser.openInternal('downloads'); } },
+    });
+  });
+}
+
+// A page started a download (link to a file, Content-Disposition: attachment...). Web links go to
+// NovaDM's own engine; anything it can't fetch again (blob:/data: links, form POST answers) stays
+// with the browser, saved straight into the download folder and shown in the list.
+function onPageDownload(event, item, info) {
+  const http = /^https?:\/\//i.test(info.url);
+  if (http && !info.viaPost) {
+    event.preventDefault();
+    addFlow.request({
+      kind: 'http', url: info.url, sources: [info.url], name: info.name || '', size: info.size, mime: info.mime,
+      headers: info.pageUrl && /^https?:/i.test(info.pageUrl) ? { referer: info.pageUrl } : {}, pageUrl: info.pageUrl,
+      tabId: info.tabId, incognito: info.incognito, allowRename: !info.name,
+    }, { origin: 'page' });
+    return;
+  }
+  const name = util.sanitizeFilename(info.name || 'download');
+  const dir = downloads.categoryDir(util.categoryOf(name, info.mime));
+  try { require('fs').mkdirSync(dir, { recursive: true }); } catch {}
+  item.setSavePath(util.uniquePath(require('path').join(dir, name), downloads.reservedPaths()));
+  downloads.addNative(item, info);
+}
+
+// Refresh link for a stream: when the page opened for it plays the video again, take the new playlist.
+function refreshFromMedia(tabId) {
+  const id = addFlow.armedFor(tabId);
+  if (id == null) return;
+  const rec = downloads.get(id);
+  if (!rec || rec.kind !== 'hls') return;
+  const item = media.list(tabId).items.find((i) => i.kind === 'hls' && i.encryption !== 'drm');
+  if (!item) return;
+  const full = media.get(tabId, item.id);
+  const want = rec.meta && rec.meta.height;
+  const variant = (full.variants || []).find((v) => v.resolution && v.resolution.height === want) || (full.variants || [])[0];
+  addFlow.request({ kind: 'hls', playlistUrl: variant ? variant.url : full.url, headers: full.headers, tabId }, { origin: 'media' });
 }
 
 let pendingPermission = null;
@@ -194,16 +257,17 @@ function downloadItem(tabId, itemId, variantUrl) {
   const view = list.items.find((i) => i.id === itemId);
   const chosen = (item.variants || []).find((v) => v.url === variantUrl) || item.variants[0];
   const name = (view && (chosen ? view.variants.find((v) => v.url === chosen.url) : view)?.name) || view?.name;
+  const add = (spec) => addFlow.request({ ...spec, tabId, incognito: !!(tab && tab.incognito) }, { origin: 'media' });
   if (item.kind === 'hls') {
     const res = chosen && chosen.resolution;
-    downloads.add({
+    add({
       kind: 'hls', name, playlistUrl: chosen ? chosen.url : item.url, mirrors: item.mirrors,
       headers: item.headers, pageUrl: item.pageUrl, size: (chosen && chosen.sizeEstimate) || item.sizeEstimate,
       convertTs: settings.get('convertTsToMp4') !== false, category: 'video',
       meta: { duration: (chosen && chosen.duration) || item.duration || 0, width: res ? res.width : 0, height: res ? res.height : 0 },
     });
   } else {
-    downloads.add({
+    add({
       kind: 'http', name, url: item.url, sources: [item.url], mirrors: item.mirrors,
       headers: item.headers, pageUrl: item.pageUrl, size: item.size,
       mime: item.mime, category: item.kind === 'audio' ? 'music' : item.kind === 'subtitle' ? 'documents' : 'video',
@@ -237,8 +301,45 @@ app.whenReady().then(async () => {
   });
   adblock = new AdBlocker(settings);
   browser = new Browser({ settings, media, adblock, popup });
-  downloads = new DownloadManager(settings, browser.normalSession, {
-    transport: new Transport({ session: browser.normalSession, settings }),
+  transport = new Transport({ session: browser.normalSession, settings });
+  downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
+  addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
+
+  // Proxy for pages and downloads (system settings unless the user chose otherwise).
+  const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession];
+  applyProxy(settings, proxySessions());
+  settings.on('change', (c) => {
+    if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => transport.close());
+  });
+  net.setProxyCredentials(() => proxyCredentials(settings));
+  transport.proxyCredentials = () => proxyCredentials(settings);
+  // Pages through a proxy that wants a sign-in. Answered once per address and minute, so a wrong
+  // password ends in an error page instead of an endless loop.
+  const proxyLogins = new Map();
+  app.on('login', (event, _wc, details, authInfo, callback) => {
+    if (!authInfo.isProxy) return;
+    const key = details.url;
+    const last = proxyLogins.get(key);
+    if (last && Date.now() - last < 60000) return;
+    const creds = proxyCredentials(settings);
+    if (!creds) return;
+    proxyLogins.set(key, Date.now());
+    if (proxyLogins.size > 200) proxyLogins.delete(proxyLogins.keys().next().value);
+    event.preventDefault();
+    callback(creds.user, creds.pass);
+  });
+
+  // Copied download links (another app, a chat...) are offered as downloads.
+  clipboardWatcher = new ClipboardWatcher(settings);
+  clipboardWatcher.on('links', (links) => {
+    addFlow.requestLinks(links, { origin: 'clipboard' });
+    if (win && !win.isFocused()) {
+      notify({
+        title: links.length === 1 ? 'Download link copied' : `${links.length} download links copied`,
+        body: links.length === 1 ? util.filenameFromUrl(links[0]) || links[0] : 'Click to choose which to download',
+        onClick: () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } },
+      });
+    }
   });
 
   // Grabber thumbnails: novadm-thumb://img/?u=<image url>&r=<page url>. Fetched through the browsing
@@ -258,6 +359,8 @@ app.whenReady().then(async () => {
 
   createWindow();
   wireEvents();
+  // "Resume unfinished downloads when NovaDM starts".
+  if (settings.get('autoResume')) setTimeout(() => downloads.resumeInterrupted(), 1500);
   // Extensions start after the window exists; tabs opened before that are registered now.
   extensions.init({ browser, getWindow: () => win })
     .then(() => {
@@ -271,7 +374,7 @@ app.whenReady().then(async () => {
     .catch((e) => console.error('extensions init failed', e));
 
   const ipcHandlers = registerIpc({
-    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions }),
+    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow }),
     setPanel, sendUI, sendMediaState,
     downloadItem,
     reviewBlockedPopup,
@@ -300,6 +403,9 @@ app.whenReady().then(async () => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
     if (op === 'set') settings.set(arg || {});
+    if (op === 'proxyPassword') {
+      try { settings.set({ proxyPassEnc: require('./proxy').encryptPassword(String(arg || '')) }); } catch (e) { return { ok: false, error: e.message }; }
+    }
     if (op === 'chooseDir') {
       const { dialog } = require('electron');
       const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });
@@ -346,7 +452,7 @@ app.whenReady().then(async () => {
   if (process.env.NOVADM_SELFTEST) {
     const t = require(path.resolve(process.env.NOVADM_SELFTEST));
     setTimeout(() => {
-      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView }))
+      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher }))
         .catch((e) => console.error('selftest failed', e));
     }, Number(process.env.NOVADM_SELFTEST_DELAY) || 3000);
   }

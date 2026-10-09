@@ -41,6 +41,13 @@ function fmtDate(t) {
 }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+const VERIFY_TEXT = {
+  ok: 'Checksum matches',
+  mismatch: '<span class="err">Checksum does NOT match</span>',
+  checking: 'Checking checksum…',
+  error: '<span class="err">Checksum could not be checked</span>',
+};
+
 function statusText(d) {
   const pct = Math.floor(d.percent || 0);
   const parts = d.segments ? `Part ${d.doneSegments || 0} of ${d.segments}` : '';
@@ -54,7 +61,7 @@ function statusText(d) {
     case 'queued': return ['Queued', d.received > 0 ? `${pct}% · ${sizeTxt}` : '', parts].filter(Boolean).join(' · ');
     case 'paused': return ['Paused', `${pct}%`, sizeTxt, parts].filter(Boolean).join(' · ');
     case 'error': return `<span class="err">Failed: ${esc(d.error || 'unknown error')}</span>` + (parts ? ' · ' + parts : '');
-    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt)].filter(Boolean).join(' · ');
+    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt), VERIFY_TEXT[d.verify] || ''].filter(Boolean).join(' · ');
     default: return d.state;
   }
 }
@@ -145,6 +152,7 @@ function updateRow(el, d) {
 
 function primaryAction(d) {
   if (!d) return;
+  if (d.state === 'error' && d.errorCode === 'LINK_EXPIRED') return showRefresh(d);
   if (['downloading', 'connecting'].includes(d.state)) api.call('downloads.pause', { id: d.id });
   else if (d.state === 'done') api.call('downloads.showInFolder', { id: d.id });
   else api.call('downloads.resume', { id: d.id });
@@ -204,6 +212,7 @@ function openMenu(anchor, d) {
   hr();
   add('Copy download link', () => api.call('downloads.copyLink', { id: d.id }));
   if (d.pageUrl) { add('Copy page link', () => api.call('downloads.copyLink', { id: d.id, which: 'page' })); add('Open download page', () => api.call('downloads.openPage', { id: d.id })); }
+  if (d.state !== 'done' && !d.native) add('Refresh link…', () => showRefresh(d));
   add('Download again', () => api.call('downloads.redownload', { id: d.id }));
   hr();
   if (d.state === 'done') add('Remove from list', () => api.call('downloads.remove', { id: d.id }));
@@ -222,6 +231,31 @@ function modal(html) {
   wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) closeLayer(); });
   $('layer').appendChild(wrap);
   return wrap;
+}
+
+// Refresh link: continue a download whose link stopped working, from a new link to the same file.
+function showRefresh(d) {
+  const w = modal(`<h2>Refresh link</h2>
+    <p>Continue <b>${esc(d.name)}</b> from a new link. What was already downloaded is kept.</p>
+    ${d.pageUrl ? `<p><button class="pri" id="rPage">Open the download page</button><br><span style="color:var(--fg3);font-size:12px">Then start the download (or play the video) there again. NovaDM picks up the new link and continues.</span></p>` : ''}
+    <p>Or paste a new link to the same file:</p>
+    <p><input type="text" id="rUrl" placeholder="https://" style="width:100%" spellcheck="false"></p>
+    <p class="err" id="rErr" hidden></p>
+    <div class="foot"><button id="rCancel">Cancel</button><button class="pri" id="rUse">Use this link</button></div>`);
+  w.querySelector('#rCancel').onclick = closeLayer;
+  const page = w.querySelector('#rPage');
+  if (page) page.onclick = async () => {
+    const r = await api.call('downloads.refreshFromPage', { id: d.id });
+    if (r && r.ok) closeLayer(); else { const e = w.querySelector('#rErr'); e.textContent = (r && r.error) || 'Could not open the page'; e.hidden = false; }
+  };
+  w.querySelector('#rUse').onclick = async () => {
+    const btn = w.querySelector('#rUse');
+    btn.disabled = true; btn.textContent = 'Checking…';
+    const r = await api.call('downloads.refreshLink', { id: d.id, url: w.querySelector('#rUrl').value });
+    if (r && r.ok) return closeLayer();
+    btn.disabled = false; btn.textContent = 'Use this link';
+    const e = w.querySelector('#rErr'); e.textContent = (r && r.error) || 'That link did not work'; e.hidden = false;
+  };
 }
 
 function confirmDelete(list) {
@@ -264,11 +298,20 @@ async function showProperties(id) {
     ${row('Active time', p.activeMs ? fmtDur(p.activeMs) : '—')}
     ${row(p.state === 'done' ? 'Date finished' : 'Last written', fmtDate(p.state === 'done' ? p.completedAt : p.modifiedAt))}
     ${extra.length ? row('Additional information', extra.map(esc).join('<br>')) : ''}
+    ${p.state !== 'done' && !p.native ? row('Speed limit', `<input type="number" id="pLimit" min="0" step="100" value="${p.speedLimitKBps || 0}" style="width:90px"> KB/s for this download <button id="pLimitSet">Set</button> <span style="color:var(--fg3)">(0 = no limit)</span>`) : ''}
+    ${p.expectedHash ? row('Checksum check', `${esc(VERIFY_TEXT[p.verify] ? VERIFY_TEXT[p.verify].replace(/<[^>]+>/g, '') : 'When the download finishes')}<br><span class="hash">${esc(p.expectedHash)}</span>`) : ''}
+    ${p.native ? row('Handled by', 'The browser (this kind of link cannot be fetched again, so it cannot resume after NovaDM closes)') : ''}
+    ${p.incognito ? row('Private', 'Started from a private tab: not kept in the list after NovaDM closes') : ''}
     ${row('MD5 checksum', '<span class="hash" id="h-md5"></span> <button id="c-md5">Calculate</button>')}
     ${row('SHA-256 checksum', '<span class="hash" id="h-sha256"></span> <button id="c-sha256">Calculate</button>')}
   </div><div class="foot"><button id="pFolder">Show in folder</button><button class="pri" id="pClose">Close</button></div>`);
   w.querySelector('#pClose').onclick = closeLayer;
   w.querySelector('#pFolder').onclick = () => api.call('downloads.showInFolder', { id });
+  const limitBtn = w.querySelector('#pLimitSet');
+  if (limitBtn) limitBtn.onclick = async () => {
+    await api.call('downloads.setSpeedLimit', { id, kbps: Number(w.querySelector('#pLimit').value) || 0 });
+    limitBtn.textContent = 'Saved'; setTimeout(() => { limitBtn.textContent = 'Set'; }, 900);
+  };
   w.querySelectorAll('a[data-act]').forEach((a) => {
     a.onclick = () => {
       if (a.dataset.act === 'page') api.call('downloads.openPage', { id });

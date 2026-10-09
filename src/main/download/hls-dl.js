@@ -384,33 +384,44 @@ class HlsDownload extends EventEmitter {
     return t.open(url, { ...opts, direct });
   }
 
+  // Read a whole response. Chunks are taken in order and the speed limit may make them wait; 'end'
+  // can arrive while the last one is still waiting, so it is handled after it (no truncated segments).
   readLimited(conn) {
     return new Promise((resolve, reject) => {
       const chunks = [];
-      const stall = () => { conn.abort(); reject(new Error('stalled')); };
+      let finished = false;
+      const finish = (err, value) => { if (finished) return; finished = true; clearTimeout(idle); if (err) reject(err); else resolve(value); };
+      const stall = () => { conn.abort(); finish(new Error('stalled')); };
       let idle = setTimeout(stall, this.timeoutMs);
-      conn.res.on('data', async (chunk) => {
-        if (this._stopping) { conn.abort(); return; }
-        if (this.limiter || this.taskLimiter) {
-          conn.res.pause();
-          let off = 0;
-          while (off < chunk.length) {
-            let n = Math.min(chunk.length - off, 64 * 1024);
-            if (this.limiter) n = await this.limiter.take(n);
-            if (this.taskLimiter) n = await this.taskLimiter.take(n);
-            off += n;
-          }
-          conn.res.resume();
+      let chain = Promise.resolve();
+      const limited = !!(this.limiter || this.taskLimiter);
+      const take = async (chunk) => {
+        let off = 0;
+        while (off < chunk.length) {
+          let n = Math.min(chunk.length - off, 64 * 1024);
+          if (this.limiter) n = await this.limiter.take(n);
+          if (this.taskLimiter) n = await this.taskLimiter.take(n);
+          off += n;
         }
+      };
+      const keep = (chunk) => {
         clearTimeout(idle); idle = setTimeout(stall, this.timeoutMs);
         chunks.push(chunk);
         this.receivedBytes += chunk.length;
         this.sample(chunk.length);
         this.emitUpdate();
+      };
+      conn.res.on('data', (chunk) => {
+        if (finished) return;
+        if (this._stopping) { conn.abort(); return; }
+        if (!limited) return keep(chunk);
+        conn.res.pause();
+        chain = chain.then(() => take(chunk)).then(() => { if (finished) return; keep(chunk); conn.res.resume(); }, (e) => finish(e));
       });
-      conn.res.on('end', () => { clearTimeout(idle); resolve(Buffer.concat(chunks)); });
-      conn.res.on('error', (e) => { clearTimeout(idle); reject(e); });
-      conn.res.on('aborted', () => { clearTimeout(idle); reject(new Error('aborted')); });
+      const after = (fn) => { chain = chain.then(fn, fn); };
+      conn.res.on('end', () => after(() => finish(null, Buffer.concat(chunks))));
+      conn.res.on('error', (e) => after(() => finish(e)));
+      conn.res.on('aborted', () => after(() => finish(new Error('aborted'))));
     });
   }
 

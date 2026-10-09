@@ -43,6 +43,19 @@ AB Download Manager, XDM). No code from any of them is included.
   images) with sizes, filters and bulk download
 - DRM-protected streams (Widevine) are detected and labelled; NovaDM does not decrypt DRM
 
+### Adding downloads
+- **Every download goes through NovaDM**: files a page starts (links, buttons, "attachment"
+  answers) are taken over by NovaDM's engine. Links it can't fetch again (`blob:`/`data:`, form
+  POST answers) are saved by the browser into the same folders and listed too.
+- **New download dialog**: file name, size, folder, a speed limit for this download, an optional
+  checksum to verify, "Add paused", and a warning when the same link is already in the list. It
+  can be turned off ("start downloads right away").
+- **Copied links**: copy a link to a file type on your list in any app, and NovaDM offers to
+  download it.
+- **Several at once**: paste many links, or a pattern like `https://site/img[001-120].jpg` or
+  `file[a-f].zip`, and pick which to download.
+- Videos from the media button and images from the grabber start right away.
+
 ### Download manager
 - Multi-connection HTTP downloads (up to 32 connections) with pause, resume and retry.
   Connections are added while they still make the download faster (slow start), and slow parts
@@ -56,11 +69,22 @@ AB Download Manager, XDM). No code from any of them is included.
   keys and the playlist are kept, so a paused stream still resumes after its links expire.
 - Clear errors for full disks, expired links and servers that limit connections (429/503 are
   retried after the time the server asks for)
+- **Refresh link**: when a link expires, open the download's page and start it (or play the
+  video) again, and NovaDM continues the old download from the new link. You can also paste a new
+  link. What was already downloaded is kept.
+- **Notifications** when a download finishes or fails; click to open it
+- **Resume unfinished downloads when NovaDM starts** (optional); quitting pauses downloads cleanly
+- Speed limit for all downloads and for each download (also changeable while it runs)
+- **Checksum check**: give an MD5, SHA-1 or SHA-256 when adding, and NovaDM verifies the file
+- **Proxy** for browsing and downloads: Windows settings, none, HTTP/HTTPS/SOCKS server, or a PAC
+  script, with sign-in (the password is encrypted by Windows)
+- Downloads from private tabs use the private session and are not kept in the list
 - Downloads page in the style of 1DM: category tabs, search, bulk actions, progress, speed and
   time left, and a box to paste a link (file or `.m3u8` stream)
 - **Properties** for each download: page and download links, mirrors, save path, resume support,
-  size, average speed, dates, active time, parts, and MD5 / SHA-256 checksums; "Download again"
-- Global speed limit, maximum active downloads, category folders, file names from page titles
+  size, average speed, dates, active time, parts, connections, speed limit, checksum check, and
+  MD5 / SHA-256 checksums; "Download again" and "Refresh link"
+- Maximum active downloads, category folders, file names from page titles
 
 ## Running from source
 
@@ -121,6 +145,9 @@ src/main/                 Electron main process
   media/                  media detection, HLS parsing, TS→MP4
   download/               download manager, HTTP and HLS engines, speed limiter
   transport.js            NovaDM's own HTTP client for extra connections (undici)
+  add-flow.js             how downloads get added: dialog, duplicates, link lists, Refresh link
+  clipboard-watch.js      copied-link watcher
+  proxy.js, notify.js     proxy settings and sign-in; Windows notifications
 src/ui/                   toolbar, panels, downloads, settings, new tab pages
 test/                     unit tests (node --test)
 tools/                    self-tests, diagnostics, icon generator
@@ -132,6 +159,10 @@ assets/                   app icon
 NovaDM has no telemetry and no accounts. Everything it stores (settings, the downloads list, tabs,
 extensions, cookies) stays in `%APPDATA%\NovaDM` on your computer. The only network requests it makes
 on its own are ad-block list updates and Secure DNS lookups to the provider you choose.
+
+The clipboard watcher only checks copied text for download links while NovaDM runs; nothing is
+saved or sent, and it can be turned off. Downloads from private tabs are not written to the list.
+A proxy password is stored encrypted with Windows' data protection.
 
 Profiles from the earlier name of this project ("Swoop") are moved to `%APPDATA%\NovaDM`
 automatically on first start.

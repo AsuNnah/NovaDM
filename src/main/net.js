@@ -22,6 +22,10 @@ function replayableHeaders(requestHeaders) {
 
 const REFERER_TAG = 'x-novadm-referer';
 
+// Proxy login for NovaDM's own requests: () => { user, pass } | null (set by main from settings).
+let proxyCreds = () => null;
+function setProxyCredentials(fn) { proxyCreds = fn || (() => null); }
+
 /** Must be installed on every session NovaDM downloads with (see open()). */
 function installRefererHook(ses) {
   ses.webRequest.onBeforeSendHeaders((details, callback) => {
@@ -95,6 +99,14 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
         abort() { try { req.abort(); } catch {} },
       });
     });
+    // Answer the proxy's sign-in once; if it asks again the password is wrong: give up (407) instead
+    // of looping forever.
+    let triedLogin = false;
+    req.on('login', (authInfo, callback) => {
+      const c = authInfo.isProxy && !triedLogin ? proxyCreds() : null;
+      triedLogin = true;
+      if (c) callback(c.user, c.pass); else callback();
+    });
     req.on('error', (err) => fail(err));
     req.on('abort', () => fail(new Error('Aborted')));
     req.end();
@@ -150,4 +162,4 @@ async function probe(url, opts = {}) {
   };
 }
 
-module.exports = { open, readBody, fetchBuffer, fetchText, probe, replayableHeaders, installRefererHook, HttpError };
+module.exports = { open, readBody, fetchBuffer, fetchText, probe, replayableHeaders, installRefererHook, HttpError, setProxyCredentials };

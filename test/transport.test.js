@@ -99,3 +99,25 @@ test('direct transport opens more than 6 connections to one server at once', asy
   await Promise.all(conns.map(read));
   assert.ok(stats.peak >= 12, 'parallel connections: ' + stats.peak);
 });
+
+test('behind a proxy: http links use the browser stack; a proxy that drops the tunnel falls back in time', async (t) => {
+  // A proxy that hangs up on CONNECT (like proxies that only tunnel to port 443, or not at all).
+  const proxy = http.createServer((req, res) => { res.writeHead(502); res.end(); });
+  proxy.on('connect', (req, socket) => socket.destroy());
+  t.after(() => proxy.close());
+  const port = await listen(proxy);
+  const calls = [];
+  const browserOpen = async (url) => { calls.push(url); return { status: 200, transport: 'browser', abort() {} }; };
+  const tr = new Transport({ session: fakeSession({ proxy: `PROXY 127.0.0.1:${port}` }), settings: settings(), browserOpen });
+  t.after(() => tr.close());
+
+  const plain = await tr.open('http://files.example.com/a.zip', { direct: true, timeoutMs: 1500 });
+  assert.equal(plain.transport, 'browser');
+
+  const t0 = Date.now();
+  const tls = await tr.open('https://cdn.example.com/b.zip', { direct: true, timeoutMs: 1500 });
+  assert.equal(tls.transport, 'browser');
+  assert.ok(Date.now() - t0 < 5000, 'no hang: ' + (Date.now() - t0) + ' ms');
+  assert.deepEqual(calls, ['http://files.example.com/a.zip', 'https://cdn.example.com/b.zip']);
+  assert.equal(tr.useDirect('https://cdn.example.com/c.zip'), false);
+});

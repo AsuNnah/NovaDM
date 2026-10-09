@@ -21,6 +21,7 @@ if (INTERNAL) {
       getSettings: () => ipcRenderer.invoke('novadm:internal-settings', 'get'),
       setSettings: (patch) => ipcRenderer.invoke('novadm:internal-settings', 'set', patch),
       chooseDownloadDir: () => ipcRenderer.invoke('novadm:internal-settings', 'chooseDir'),
+      setProxyPassword: (pw) => ipcRenderer.invoke('novadm:internal-settings', 'proxyPassword', pw),
       // Downloads page: allowed actions are checked again in the main process.
       call: (method, args) => ipcRenderer.invoke('novadm:internal-call', method, args),
       on: (name, cb) => {

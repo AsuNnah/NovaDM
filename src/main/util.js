@@ -137,7 +137,61 @@ function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// http(s) links in a piece of text (clipboard, pasted lists), in order, without duplicates.
+function extractLinks(text, max = 1000) {
+  const out = [];
+  const seen = new Set();
+  const re = /https?:\/\/[^\s"'<>()\[\]{}]+(?:\[[^\s\]]*\][^\s"'<>()\[\]{}]*)*/gi;
+  let m;
+  while ((m = re.exec(String(text || ''))) && out.length < max) {
+    const u = m[0].replace(/[.,;:!?]+$/, '');
+    if (!seen.has(u)) { seen.add(u); out.push(u); }
+  }
+  return out;
+}
+
+/**
+ * Batch pattern: "https://site/img[001-120].jpg" or "file[a-f].zip" expands to every link in the
+ * range (zero-padding kept). Several ranges multiply. Returns [url] unchanged when there is none.
+ */
+function expandPattern(url, max = 10000) {
+  const m = /\[(\d+)-(\d+)\]|\[([a-z])-([a-z])\]/i.exec(url);
+  if (!m) return [url];
+  const before = url.slice(0, m.index);
+  const after = url.slice(m.index + m[0].length);
+  const items = [];
+  if (m[1] !== undefined) {
+    const a = Number(m[1]); const b = Number(m[2]);
+    const width = m[1].length === m[2].length && m[1].startsWith('0') ? m[1].length : 0;
+    const step = a <= b ? 1 : -1;
+    for (let i = a; step > 0 ? i <= b : i >= b; i += step) {
+      items.push(width ? String(i).padStart(width, '0') : String(i));
+      if (items.length > max) break;
+    }
+  } else {
+    const a = m[3].charCodeAt(0); const b = m[4].charCodeAt(0);
+    const step = a <= b ? 1 : -1;
+    for (let c = a; step > 0 ? c <= b : c >= b; c += step) items.push(String.fromCharCode(c));
+  }
+  const out = [];
+  for (const it of items) {
+    for (const rest of expandPattern(before + it + after, max)) {
+      out.push(rest);
+      if (out.length >= max) return out;
+    }
+  }
+  return out;
+}
+
+/** Which hash a checksum string is (by length): 'md5' | 'sha1' | 'sha256' | 'sha512' | ''. */
+function hashKind(hex) {
+  const h = String(hex || '').trim().toLowerCase();
+  if (!/^[0-9a-f]+$/.test(h)) return '';
+  return { 32: 'md5', 40: 'sha1', 64: 'sha256', 128: 'sha512' }[h.length] || '';
+}
+
 module.exports = {
   CATEGORIES, CATEGORY_LABELS, MIME_EXT, extOf, categoryOf, sanitizeFilename, filenameFromDisposition,
   filenameFromUrl, ensureExt, uniquePath, headerValue, hostOf, siteOf, delay, uid,
+  extractLinks, expandPattern, hashKind,
 };

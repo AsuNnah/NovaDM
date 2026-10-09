@@ -293,3 +293,22 @@ test('429 from the server shrinks parallel fetches and the download still finish
   for (let i = 0; i < N; i++) assert.equal(out[i * 2048], i);
   assert.ok(dl.steady && dl.target < 3, 'stopped growing after 429, target ' + dl.target);
 });
+
+test('speed-limited HLS keeps every byte of every segment', async (t) => {
+  const { RateLimiter } = require('../src/main/download/limiter');
+  const N = 8;
+  const routes = {};
+  let playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:1\n';
+  const parts = [];
+  for (let i = 0; i < N; i++) { parts.push(crypto.randomBytes(96 * 1024)); routes[`/l${i}.bin`] = { body: parts[i] }; playlist += `#EXTINF:1,\nl${i}.bin\n`; }
+  playlist += '#EXT-X-ENDLIST\n';
+  const server = serve(routes); t.after(() => server.close());
+  const base = await listen(server);
+  const save = tmp();
+  const dl = new HlsDownload({
+    id: 'l1', savePath: save, playlistUrl: base + '/l.m3u8', openConn: nodeOpen, convertTs: false, concurrency: 3,
+    taskLimiter: new RateLimiter(256 * 1024), fetchText: async () => ({ text: playlist, finalUrl: base + '/l.m3u8' }),
+  });
+  await new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); dl.start(); });
+  assert.ok(fs.readFileSync(save).equals(Buffer.concat(parts)), 'output is every segment, complete and in order');
+});

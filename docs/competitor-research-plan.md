@@ -161,6 +161,14 @@ undici MIT; NovaDM already uses GPL-3 for extension support.
 
 ## 8. Suggested order
 
+Progress (see CHANGELOG.md for details):
+
+| Phase | Status |
+|---|---|
+| 1. Engine speed + stability | Done in 0.2.0 (S1–S6, T1–T3, T5, T6) |
+| 2. Half-done basics | Done in 0.3.0 (A2, A3, A5, A6, A7, A8, A9, A11, A16, B4) + page downloads go to NovaDM |
+| 3–7 | Not started |
+
 1. **Engine speed + stability** (S1–S5, T1–T3, T6) — biggest benefit for what you download most.
 2. **Wire the half-done basics** (A5, A6, A16) + per-download limit, proxy, free-space, duplicates (A2, A3, A11)
    + Refresh link (A8) + saved HLS keys (B4).

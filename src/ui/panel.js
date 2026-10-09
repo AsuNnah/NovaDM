@@ -15,6 +15,7 @@ const PLACE = {
   shields: { right: '206px', width: '320px' },
   menu: { right: '12px', width: '240px' },
   prompt: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '420px' },
+  dialog: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '480px', top: '40px' },
 };
 function place(name) {
   pop.removeAttribute('style');
@@ -22,6 +23,7 @@ function place(name) {
   Object.assign(pop.style, PLACE[name] || PLACE.menu);
   if (name === 'grabber') pop.classList.add('grab');
   if (name === 'prompt') pop.classList.add('prompt');
+  if (name === 'dialog') pop.classList.add('prompt', 'dlg');
 }
 
 function close() { api.call('panel.close'); current = null; }
@@ -40,6 +42,9 @@ api.on('downloads', (d) => { dlData = d; if (current === 'downloads') render(); 
 api.on('shields', (d) => { shieldsData = d; if (current === 'shields') render(); });
 api.on('popup-ask', (d) => showPopupPrompt(d));
 api.on('permission-ask', (d) => showPermissionPrompt(d));
+api.on('download-ask', (d) => showDownloadAsk(d));
+api.on('download-ask-update', (d) => updateDownloadAsk(d));
+api.on('links-ask', (d) => showLinksAsk(d));
 
 function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -416,6 +421,123 @@ function respondPerm(allow) {
 }
 
 function hostOf(u) { try { return new URL(u).host; } catch { return u || ''; } }
+
+// ---- new download dialog ----
+let ask = null; // { reqId, nameEdited, origName, folder }
+function showDownloadAsk(d) {
+  current = 'download-ask'; place('dialog');
+  ask = { reqId: d.reqId, nameEdited: false, origName: d.name, folder: d.folder };
+  content.innerHTML = '';
+  const title = d.origin === 'clipboard' ? 'Download the copied link?' : 'New download';
+  content.append(el('div', 'hdr', `<div class="t">${title}</div><div class="sp"></div>${d.incognito ? '<span class="tag">Private tab</span>' : ''}`));
+  const frm = el('div', 'frm');
+  frm.innerHTML = `
+    <div class="k">File name</div><div class="v"><input class="inp" id="na-name" spellcheck="false"></div>
+    <div class="k">Size</div><div class="v"><span class="txt" id="na-size"></span></div>
+    <div class="k">From</div><div class="v"><span class="txt" id="na-from"></span></div>
+    <div class="k">Save to</div><div class="v"><span class="txt" id="na-folder"></span><button class="btn sm" id="na-change">Change</button></div>`;
+  content.append(frm);
+  const name = frm.querySelector('#na-name');
+  name.value = d.name;
+  name.addEventListener('input', () => { ask.nameEdited = name.value !== ask.origName; });
+  frm.querySelector('#na-size').textContent = d.size > 0 ? (d.sizeIsEstimate ? 'About ' : '') + fmtSize(d.size) : (d.kind === 'hls' ? 'Stream' : 'Checking…');
+  const from = frm.querySelector('#na-from'); from.textContent = hostOf(d.url); from.title = d.url;
+  showAskFolder(d.folder);
+  frm.querySelector('#na-change').onclick = async () => {
+    const r = await api.call('add.chooseFolder', { current: ask.folder });
+    if (r && r.folder && ask) { ask.folderChosen = true; showAskFolder(r.folder); }
+  };
+
+  const more = el('details', 'more');
+  more.innerHTML = `<summary>More options</summary><div class="frm" style="padding:6px 0 0">
+    <div class="k">Speed limit</div><div class="v"><input class="inp num" id="na-limit" type="number" min="0" step="100" value="0"><span style="color:var(--fg3);font-size:12px">KB/s for this download (0 = no limit)</span></div>
+    <div class="k">Checksum</div><div class="v"><input class="inp" id="na-hash" placeholder="Optional: MD5, SHA-1 or SHA-256 to check" spellcheck="false"></div></div>`;
+  content.append(more);
+
+  if (d.duplicate) {
+    const n = el('div', 'notice');
+    const st = d.duplicate.state === 'done' ? 'already downloaded' : 'already in your list (' + d.duplicate.state + ')';
+    n.innerHTML = `<span>This link is ${esc(st)}: <b>${esc(d.duplicate.name)}</b></span><span class="sp"></span>`;
+    if (d.duplicate.state !== 'done') { const b = el('button', 'btn sm', 'Resume that one'); b.onclick = () => respondAsk('resumeExisting'); n.append(b); }
+    content.append(n);
+  }
+  const warn = el('div', 'notice warn', '');
+  warn.id = 'na-warn'; warn.hidden = true;
+  content.append(warn);
+  content.append(el('label', 'chk', '<input type="checkbox" id="na-dontask"> Don&#39;t ask again: start downloads right away'));
+  const acts = el('div', 'acts');
+  const cancel = el('button', 'btn', 'Cancel'); cancel.onclick = () => close();
+  const paused = el('button', 'btn', 'Add paused'); paused.onclick = () => respondAsk('paused');
+  const go = el('button', 'btn pri', 'Download'); go.id = 'na-go'; go.onclick = () => respondAsk('start');
+  acts.append(cancel, el('div', 'sp'), paused, go);
+  content.append(acts);
+  name.addEventListener('keydown', (e) => { if (e.key === 'Enter') respondAsk('start'); });
+  setTimeout(() => { name.focus(); const dot = name.value.lastIndexOf('.'); name.setSelectionRange(0, dot > 0 ? dot : name.value.length); }, 30);
+}
+function showAskFolder(f) {
+  if (!ask) return;
+  ask.folder = f;
+  const x = document.getElementById('na-folder');
+  if (x) { x.textContent = f; x.title = f; }
+}
+function updateDownloadAsk(d) {
+  if (current !== 'download-ask' || !ask || ask.reqId !== d.reqId) return;
+  const size = document.getElementById('na-size');
+  if (d.size > 0) size.textContent = fmtSize(d.size);
+  else if (size.textContent === 'Checking…') size.textContent = 'Unknown';
+  if (d.name && !ask.nameEdited) { const n = document.getElementById('na-name'); n.value = d.name; ask.origName = d.name; }
+  if (d.folder && !ask.folderChosen) showAskFolder(d.folder);
+  if (d.warning) { const w = document.getElementById('na-warn'); w.textContent = d.warning; w.hidden = false; }
+}
+function respondAsk(action) {
+  if (!ask) return;
+  const v = (id) => { const e = document.getElementById(id); return e ? e.value : ''; };
+  const dont = document.getElementById('na-dontask');
+  api.call('add.respond', {
+    reqId: ask.reqId, action, name: ask.nameEdited ? v('na-name').trim() : '', folder: ask.folder,
+    speedLimitKBps: Number(v('na-limit')) || 0, checksum: v('na-hash').trim(), dontAsk: !!(dont && dont.checked),
+  });
+  ask = null; current = null;
+}
+
+// Several links at once: pick which to download.
+function showLinksAsk(d) {
+  current = 'links-ask'; place('dialog');
+  ask = { reqId: d.reqId, folder: '' };
+  content.innerHTML = '';
+  const title = d.origin === 'clipboard' ? `${d.links.length} download links copied` : `Download ${d.links.length} links`;
+  content.append(el('div', 'hdr', `<div class="t">${esc(title)}</div>`));
+  const list = el('div', 'links');
+  d.links.forEach((l, i) => {
+    list.append(el('label', 'lrow', `<input type="checkbox" data-i="${i}" checked><div class="nm2"><div>${esc(l.name)}</div><div class="u">${esc(l.url)}</div></div>`));
+  });
+  content.append(list);
+  const frm = el('div', 'frm', '<div class="k">Save to</div><div class="v"><span class="txt" id="la-folder"></span><button class="btn sm" id="la-change">Change</button></div>');
+  content.append(frm);
+  const showFolder = () => { const x = document.getElementById('la-folder'); x.textContent = ask.folder || 'Sorted by file type'; x.title = ask.folder || ''; };
+  showFolder();
+  frm.querySelector('#la-change').onclick = async () => {
+    const r = await api.call('add.chooseFolder', { current: d.folder });
+    if (r && r.folder && ask) { ask.folder = r.folder; showFolder(); }
+  };
+  const acts = el('div', 'acts');
+  const go = el('button', 'btn pri', '');
+  go.id = 'la-go';
+  const count = () => list.querySelectorAll('input:checked').length;
+  const upd = () => { go.textContent = `Download ${count()}`; go.disabled = !count(); };
+  const all = el('button', 'btn sm', 'All'); all.onclick = () => { list.querySelectorAll('input').forEach((c) => { c.checked = true; }); upd(); };
+  const none = el('button', 'btn sm', 'None'); none.onclick = () => { list.querySelectorAll('input').forEach((c) => { c.checked = false; }); upd(); };
+  const cancel = el('button', 'btn', 'Cancel'); cancel.onclick = () => close();
+  list.addEventListener('change', upd);
+  upd();
+  go.onclick = () => {
+    const selected = [...list.querySelectorAll('input:checked')].map((c) => Number(c.dataset.i));
+    api.call('add.respond', { reqId: ask.reqId, action: 'start', selected, folder: ask.folder });
+    ask = null; current = null;
+  };
+  acts.append(all, none, el('div', 'sp'), cancel, go);
+  content.append(acts);
+}
 
 // ---- icons ----
 function playSvg() { return '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'; }

@@ -332,7 +332,13 @@ class HttpDownload extends EventEmitter {
     const c = { seg, speed: 0, samples: [], buf: [], bufLen: 0, bufStart: 0, writeChain: Promise.resolve(), closed: false, abort: null, retries: 0, direct: !!(initial && initial.transport === 'direct') };
     seg.conn = c;
     this.conns.add(c);
-    this.runConnection(c, initial).finally(() => {
+    this.runConnection(c, initial).catch((err) => {
+      // A dead link (403/410 after data, 404...) or a full disk ends the download. Other errors end
+      // only this connection while others are still running (they pick up its part).
+      if (this._stopping || this._finishing) return;
+      const fatal = (err instanceof HttpError && err.fatal) || ['LINK_EXPIRED', 'NO_SPACE', 'ENOSPC'].includes(err && err.code);
+      if (fatal || this.activeConns() <= 1) this.fail(err);
+    }).finally(() => {
       c.closed = true;
       this.conns.delete(c);
       if (c.seg && c.seg.conn === c) c.seg.conn = null;
@@ -422,42 +428,48 @@ class HttpDownload extends EventEmitter {
       c.bufStart = seg.start + seg.got;
       armIdle();
       const res = conn.res;
-      res.on('data', async (chunk) => {
+      // Chunks are handled strictly in order, one at a time (speed limits make handling wait). The
+      // stream can report 'end' while the last chunk is still waiting: end/error are handled after it.
+      let chain = Promise.resolve();
+      const handle = async (chunk) => {
+        let off = 0;
+        while (off < chunk.length && !settled) {
+          let n = chunk.length - off;
+          if (this.limiter) n = await this.limiter.take(Math.min(n, 64 * 1024));
+          if (this.taskLimiter) n = await this.taskLimiter.take(Math.min(n, 64 * 1024));
+          if (settled) return;
+          let piece = chunk.subarray(off, off + n);
+          off += n;
+          const room = seg.end === Infinity ? piece.length : seg.end - (seg.start + seg.got);
+          if (room <= 0) { conn.abort(); return done(); }
+          if (piece.length > room) piece = piece.subarray(0, room);
+          c.buf.push(piece); c.bufLen += piece.length;
+          seg.got += piece.length;
+          this._sinceCheckpoint += piece.length;
+          this.sample(c, piece.length);
+          if (c.bufLen >= WRITE_CHUNK) this.flushConn(c);
+          if (seg.end !== Infinity && seg.start + seg.got >= seg.end) { conn.abort(); return done(); }
+        }
+        this.emitUpdate();
+      };
+      res.on('data', (chunk) => {
         if (settled) return;
         if (this._stopping) { conn.abort(); return done(); }
         res.pause();
-        try {
-          let off = 0;
-          while (off < chunk.length && !settled) {
-            let n = chunk.length - off;
-            if (this.limiter) n = await this.limiter.take(Math.min(n, 64 * 1024));
-            if (this.taskLimiter) n = await this.taskLimiter.take(Math.min(n, 64 * 1024));
-            let piece = chunk.subarray(off, off + n);
-            off += n;
-            const room = seg.end === Infinity ? piece.length : seg.end - (seg.start + seg.got);
-            if (room <= 0) { conn.abort(); return done(); }
-            if (piece.length > room) piece = piece.subarray(0, room);
-            c.buf.push(piece); c.bufLen += piece.length;
-            seg.got += piece.length;
-            this._sinceCheckpoint += piece.length;
-            this.sample(c, piece.length);
-            if (c.bufLen >= WRITE_CHUNK) this.flushConn(c);
-            if (seg.end !== Infinity && seg.start + seg.got >= seg.end) { conn.abort(); return done(); }
-          }
-          this.emitUpdate();
+        chain = chain.then(() => handle(chunk)).then(() => {
+          if (settled) return;
           armIdle();
-          if (!settled) res.resume();
-        } catch (err) {
-          conn.abort(); done(err);
-        }
+          res.resume();
+        }, (err) => { conn.abort(); done(err); });
       });
-      res.on('end', () => {
+      const after = (fn) => { chain = chain.then(fn, fn); };
+      res.on('end', () => after(() => {
         if (seg.end === Infinity) { seg.end = seg.start + seg.got; this.size = seg.end; return done(); }
         if (seg.start + seg.got >= seg.end) return done();
         done(new Error('Connection closed early'));
-      });
-      res.on('error', (e) => done(seg.start + seg.got >= seg.end ? null : e));
-      res.on('aborted', () => done(seg.start + seg.got >= seg.end || this._stopping ? null : new Error('Connection aborted')));
+      }));
+      res.on('error', (e) => after(() => done(seg.start + seg.got >= seg.end ? null : e)));
+      res.on('aborted', () => after(() => done(seg.start + seg.got >= seg.end || this._stopping ? null : new Error('Connection aborted'))));
     });
   }
 

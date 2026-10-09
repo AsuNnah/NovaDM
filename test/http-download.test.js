@@ -38,6 +38,8 @@ function makeServer(state, opts = {}) {
       if (off >= slice.length) return res.end();
       const n = Math.min(chunkKB * 1024, slice.length - off);
       state.bytes += n;
+      // Link expires part-way: open responses are cut, new requests get 403 (see the handler).
+      if (opts.expireAfterBytes && state.bytes > opts.expireAfterBytes) return res.destroy();
       const ok = res.write(slice.subarray(off, off + n)); off += n;
       if (throttleMs) setTimeout(tick, throttleMs); else if (ok) setImmediate(tick); else res.once('drain', tick);
     };
@@ -46,6 +48,7 @@ function makeServer(state, opts = {}) {
   return http.createServer((req, res) => {
     state.requests++;
     if (opts.expireAfter && state.requests > opts.expireAfter) { res.writeHead(410); return res.end('gone'); }
+    if (opts.expireAfterBytes && state.bytes > opts.expireAfterBytes) { res.writeHead(403); return res.end('expired'); }
     if (state.active >= maxConcurrent) { res.writeHead(403); return res.end('too many connections'); }
     if (tooMany > 0 && state.requests > 1) { tooMany--; res.writeHead(429, { 'Retry-After': String(retryAfter) }); return res.end(); }
     state.active++; state.peak = Math.max(state.peak, state.active);
@@ -232,4 +235,33 @@ test('a download paused by the 0.1.0 engine resumes without starting over', asyn
   await run(new HttpDownload(base({ savePath: save, url: url + '/f.mp4', connections: 4 })));
   assert.ok(same(save, st.body));
   assert.ok(st.bytes <= 2.5 * MB + 256 * 1024, `downloaded again: ${st.bytes} bytes`);
+});
+
+test('a link that expires during the download fails with LINK_EXPIRED instead of retrying forever', async (t) => {
+  const st = { body: crypto.randomBytes(4 * 1024 * 1024) };
+  const server = makeServer(st, { throttleMs: 5, expireAfterBytes: 1024 * 1024 }); t.after(() => server.close()); const url = await listen(server);
+  const save = tmp();
+  const dl = new HttpDownload(base({ savePath: save, url: url + '/f.mp4', connections: 4, retries: 3 }));
+  const t0 = Date.now();
+  const err = await new Promise((r) => { dl.on('done', () => r(null)); dl.on('error', r); dl.start(); });
+  assert.ok(err, 'should fail');
+  assert.equal(err.code, 'LINK_EXPIRED');
+  assert.ok(Date.now() - t0 < 15000, 'failed promptly');
+  assert.ok(fs.existsSync(save + '.part.meta'), 'progress kept for Refresh link');
+});
+
+test('a speed-limited download from a fast server finishes without "closed early" retries', async (t) => {
+  const { RateLimiter } = require('../src/main/download/limiter');
+  const st = { body: crypto.randomBytes(1024 * 1024) };
+  const server = makeServer(st); t.after(() => server.close()); const url = await listen(server);
+  const save = tmp();
+  const dl = new HttpDownload(base({ savePath: save, url: url + '/f.mp4', connections: 2, taskLimiter: new RateLimiter(256 * 1024) }));
+  const sleeps = [];
+  const origSleep = dl.sleep.bind(dl);
+  dl.sleep = (ms) => { sleeps.push(ms); return origSleep(ms); };
+  const t0 = Date.now();
+  await run(dl);
+  assert.ok(same(save, st.body));
+  assert.deepEqual(sleeps, [], 'no retry backoff happened');
+  assert.ok(Date.now() - t0 >= 2500, 'the limit was applied (1 MB at 256 KB/s after a 256 KB burst)');
 });

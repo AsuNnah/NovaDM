@@ -12,12 +12,18 @@ const { JsonStore } = require('../store');
 const util = require('../util');
 
 class DownloadManager extends EventEmitter {
-  /** opts: { transport } - the direct/browser transport for HTTP and HLS engines (see transport.js). */
+  /**
+   * opts: { transport, privateSession } - transport: direct/browser HTTP for the engines (see
+   * transport.js); privateSession: the private tabs' session (their downloads use its cookies).
+   */
   constructor(settings, session, opts = {}) {
     super();
     this.settings = settings;
     this.session = session;
+    this.privateSession = opts.privateSession || session;
     this.transport = opts.transport || null;
+    this.taskLimiters = new Map(); // id -> RateLimiter (per-download speed limit)
+    this.natives = new Map(); // id -> Electron DownloadItem (downloads the browser itself handles)
     this.limiter = new RateLimiter((settings.get('speedLimitKBps') || 0) * 1024);
     this.store = new JsonStore(path.join(app.getPath('userData'), 'downloads.json'), { items: [] });
     this.records = new Map(); // id -> record (serialisable)
@@ -35,13 +41,16 @@ class DownloadManager extends EventEmitter {
       // Downloads that were running or waiting when the app closed come back paused (and are
       // remembered, so "resume unfinished downloads on start" can pick them up).
       if (['downloading', 'connecting', 'queued'].includes(rec.state)) { rec.state = 'paused'; rec.wasRunning = true; }
+      // The browser's own downloads (blob:/data: links) can't continue after a restart.
+      if (rec.native && rec.state !== 'done') { rec.state = 'error'; rec.error = 'Interrupted when NovaDM closed'; rec.wasRunning = false; }
       rec.speed = 0;
       this.records.set(rec.id, rec);
     }
   }
 
   persist() {
-    this.store.data.items = [...this.records.values()].map((r) => ({
+    // Downloads from private tabs leave no trace in the saved list (the file itself stays).
+    this.store.data.items = [...this.records.values()].filter((r) => !r.incognito).map((r) => ({
       id: r.id, kind: r.kind, name: r.name, savePath: r.savePath, sources: r.sources,
       playlistUrl: r.playlistUrl, mirrors: r.mirrors, headers: r.headers, pageUrl: r.pageUrl,
       category: r.category, state: r.state, size: r.size, received: r.received,
@@ -49,6 +58,8 @@ class DownloadManager extends EventEmitter {
       allowRename: r.allowRename, resumable: r.resumable, segments: r.segments, doneSegments: r.doneSegments,
       activeMs: r.activeMs || 0, meta: r.meta || null, percent: r.percent || 0,
       wasRunning: !!r.wasRunning, errorCode: r.errorCode || null,
+      speedLimitKBps: r.speedLimitKBps || 0, expectedHash: r.expectedHash || '', verify: r.verify || '',
+      native: !!r.native,
     }));
     this.store.save();
   }
@@ -87,7 +98,7 @@ class DownloadManager extends EventEmitter {
   add(spec) {
     const id = util.uid();
     const category = spec.category || util.categoryOf(spec.name || util.filenameFromUrl(spec.url || ''), spec.mime);
-    let dir = this.categoryDir(category);
+    let dir = spec.dir || this.categoryDir(category);
     if (spec.subdir) dir = path.join(dir, util.sanitizeFilename(spec.subdir, 'Page'));
     const name = util.sanitizeFilename(spec.name || util.filenameFromUrl(spec.url || spec.playlistUrl) || 'download');
     const savePath = util.uniquePath(path.join(dir, name), this.reservedPaths());
@@ -95,12 +106,15 @@ class DownloadManager extends EventEmitter {
       id, kind: spec.kind, name: path.basename(savePath), savePath,
       sources: spec.sources || (spec.url ? [spec.url] : []), playlistUrl: spec.playlistUrl || '',
       mirrors: spec.mirrors || [], headers: spec.headers || {}, pageUrl: spec.pageUrl || '',
-      category, state: 'queued', size: spec.size ?? -1, received: 0, speed: 0,
+      category, state: spec.start === false ? 'paused' : 'queued', size: spec.size ?? -1, received: 0, speed: 0,
       convertTs: spec.convertTs !== false, addedAt: Date.now(), completedAt: 0, error: null,
       // Name guessed from the URL: let the engine use the server's filename / add an extension.
       allowRename: spec.allowRename ?? !spec.name,
       meta: spec.meta || null, // { duration, width, height } for videos, shown in Properties
       activeMs: 0, resumable: null,
+      speedLimitKBps: Math.max(0, Number(spec.speedLimitKBps) || 0),
+      expectedHash: util.hashKind(spec.expectedHash) ? spec.expectedHash.trim().toLowerCase() : '',
+      verify: '', incognito: !!spec.incognito,
     };
     this.records.set(id, rec);
     this.persist();
@@ -112,6 +126,11 @@ class DownloadManager extends EventEmitter {
   enqueue(id) {
     const rec = this.records.get(id);
     if (!rec || rec.state === 'done') return;
+    if (rec.native) {
+      const item = this.natives.get(id);
+      if (item && item.canResume()) { item.resume(); rec.state = 'downloading'; this.emitRecord(rec); return; }
+      if (!item) return; // gone with the last session: use "Download again"
+    }
     rec.state = 'queued';
     rec.error = null; rec.errorCode = null;
     rec.wasRunning = false;
@@ -136,10 +155,27 @@ class DownloadManager extends EventEmitter {
     }
   }
 
+  taskLimiter(rec) {
+    let l = this.taskLimiters.get(rec.id);
+    if (!l) { l = new RateLimiter(0); this.taskLimiters.set(rec.id, l); }
+    l.setRate((rec.speedLimitKBps || 0) * 1024);
+    return l;
+  }
+
+  /** Per-download speed limit in KB/s (0 = only the global limit). Applies immediately. */
+  setSpeedLimit(id, kbps) {
+    const rec = this.records.get(id);
+    if (!rec) return;
+    rec.speedLimitKBps = Math.max(0, Number(kbps) || 0);
+    const l = this.taskLimiters.get(id);
+    if (l) l.setRate(rec.speedLimitKBps * 1024);
+    this.persist(); this.emitRecord(rec);
+  }
+
   makeEngine(rec) {
     const common = {
-      id: rec.id, savePath: rec.savePath, headers: rec.headers, session: this.session,
-      limiter: this.limiter, transport: this.transport, retries: this.settings.get('retries'),
+      id: rec.id, savePath: rec.savePath, headers: rec.headers, session: rec.incognito ? this.privateSession : this.session,
+      limiter: this.limiter, taskLimiter: this.taskLimiter(rec), transport: this.transport, retries: this.settings.get('retries'),
       retryDelayMs: (this.settings.get('retryDelaySec') || 3) * 1000,
       timeoutMs: (this.settings.get('timeoutSec') || 30) * 1000,
     };
@@ -187,9 +223,12 @@ class DownloadManager extends EventEmitter {
       rec.state = 'done'; rec.completedAt = Date.now(); rec.speed = 0; rec.percent = 100;
       try { rec.size = fs.statSync(rec.savePath).size; rec.received = rec.size; } catch {}
       this.engines.delete(rec.id);
+      this.taskLimiters.delete(rec.id);
       this.persist(); this.emitRecord(rec);
-      this.emit('completed', rec);
-      this.pump();
+      this.finishVerify(rec).finally(() => {
+        this.emit('completed', rec);
+        this.pump();
+      });
     });
     engine.on('error', (err) => {
       if (!current()) return;
@@ -198,6 +237,7 @@ class DownloadManager extends EventEmitter {
       rec.connections = 0;
       this.engines.delete(rec.id);
       this.persist(); this.emitRecord(rec);
+      this.emit('failed', rec);
       this.pump();
     });
     engine.start();
@@ -206,6 +246,12 @@ class DownloadManager extends EventEmitter {
   pause(id) {
     const rec = this.records.get(id);
     if (!rec || rec.state === 'done') return;
+    if (rec.native) {
+      const item = this.natives.get(id);
+      if (item && item.canResume !== undefined) { try { item.pause(); } catch {} }
+      rec.state = 'paused'; rec.speed = 0;
+      return this.emitRecord(rec);
+    }
     this.queue = this.queue.filter((q) => q !== id);
     const engine = this.engines.get(id);
     this.engines.delete(id);
@@ -254,11 +300,14 @@ class DownloadManager extends EventEmitter {
     const engine = this.engines.get(id);
     this.engines.delete(id);
     this.records.delete(id);
+    this.taskLimiters.delete(id);
+    const item = this.natives.get(id);
+    if (item) { this.natives.delete(id); try { item.cancel(); } catch {} }
     this.persist(); this.emitList();
     if (engine) { try { await engine.cancel(); } catch {} }
     if (rec._pausing) await rec._pausing;
     if (deleteFile) {
-      for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta']) {
+      for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8']) {
         try { fs.rmSync(f, { force: true }); } catch {}
       }
     }
@@ -292,13 +341,137 @@ class DownloadManager extends EventEmitter {
 
   get(id) { return this.records.get(id); }
 
-  /** File hash for the Properties dialog. algo: 'md5' | 'sha256'. */
+  // Compare the finished file with the checksum given when it was added.
+  async finishVerify(rec) {
+    if (!rec.expectedHash) return;
+    const kind = util.hashKind(rec.expectedHash);
+    rec.verify = 'checking'; this.emitRecord(rec);
+    try {
+      const got = await this.checksum(rec.id, kind);
+      rec.verify = got === rec.expectedHash ? 'ok' : 'mismatch';
+    } catch {
+      rec.verify = 'error';
+    }
+    this.persist(); this.emitRecord(rec);
+  }
+
+  /** Same link already in the list? Returns that record (unfinished ones first) or null. */
+  findDuplicate(spec) {
+    const norm = (u) => String(u || '').replace(/#.*$/, '');
+    const want = norm(spec.kind === 'hls' ? spec.playlistUrl : (spec.url || (spec.sources || [])[0]));
+    if (!want) return null;
+    let found = null;
+    for (const r of this.records.values()) {
+      const have = norm(r.kind === 'hls' ? r.playlistUrl : r.sources[0]);
+      if (have !== want) continue;
+      if (r.state !== 'done') return r;
+      if (!found && fs.existsSync(r.savePath)) found = r;
+    }
+    return found;
+  }
+
+  /** Resume downloads that were running or waiting when NovaDM last closed. */
+  resumeInterrupted() {
+    let n = 0;
+    for (const r of this.records.values()) if (r.wasRunning && r.state === 'paused' && !r.native) { this.enqueue(r.id); n++; }
+    return n;
+  }
+
+  /**
+   * Refresh link: continue an unfinished download from a new address (for links that expired).
+   * HTTP: the new link must be the same file (same size when known). Progress is kept.
+   */
+  async refreshLink(id, newUrl, info = {}) {
+    const rec = this.records.get(id);
+    if (!rec || rec.state === 'done') throw new Error('Nothing to refresh');
+    if (!/^https?:\/\//i.test(newUrl || '')) throw new Error('Not a web address');
+    const wasActive = this.engines.has(id);
+    if (wasActive) { this.pause(id); if (rec._pausing) await rec._pausing; }
+    if (rec.kind === 'hls') {
+      rec.playlistUrl = newUrl;
+      if (info.headers) rec.headers = info.headers;
+      try { fs.rmSync(rec.savePath + '.part.m3u8', { force: true }); } catch {}
+    } else {
+      let size = info.size;
+      if (!(size > 0)) {
+        try {
+          const net = require('../net');
+          const p = await net.probe(newUrl, { session: rec.incognito ? this.privateSession : this.session, headers: info.headers || rec.headers, timeoutMs: 15000 });
+          size = p.size; newUrl = p.finalUrl || newUrl;
+        } catch (e) {
+          throw new Error('The new link does not work: ' + (e.message || e));
+        }
+      }
+      if (rec.size > 0 && size > 0 && size !== rec.size) throw new Error('The new link is a different file (size does not match)');
+      rec.sources = [newUrl];
+      if (info.headers) rec.headers = info.headers;
+      // Saved validators belong to the old link (another server may send other ETags): drop them.
+      try {
+        const metaPath = rec.savePath + '.part.meta';
+        const m = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+        m.sources = [newUrl]; m.validator = null;
+        fs.writeFileSync(metaPath, JSON.stringify(m));
+      } catch {}
+    }
+    rec.error = null; rec.errorCode = null;
+    this.persist();
+    this.enqueue(id);
+    return rec;
+  }
+
+  /**
+   * Track a download the browser handles itself (blob:/data: links, or when NovaDM can't
+   * re-request the link). item: Electron DownloadItem, already given its save path.
+   */
+  addNative(item, spec) {
+    const id = util.uid();
+    const savePath = item.getSavePath();
+    const rec = {
+      id, kind: 'http', native: true, name: path.basename(savePath), savePath,
+      sources: [item.getURL().slice(0, 2000)], playlistUrl: '', mirrors: [], headers: {}, pageUrl: spec.pageUrl || '',
+      category: util.categoryOf(path.basename(savePath), item.getMimeType()), state: 'downloading',
+      size: item.getTotalBytes() || -1, received: 0, speed: 0, convertTs: false, addedAt: Date.now(),
+      completedAt: 0, error: null, allowRename: false, meta: null, activeMs: 0, resumable: false,
+      speedLimitKBps: 0, expectedHash: '', verify: '', incognito: !!spec.incognito, runStartedAt: Date.now(),
+    };
+    this.records.set(id, rec);
+    this.natives.set(id, item);
+    let last = { t: Date.now(), b: 0 };
+    item.on('updated', (_e, state) => {
+      const now = Date.now();
+      const b = item.getReceivedBytes();
+      if (now - last.t >= 500) { rec.speed = Math.max(0, Math.round((b - last.b) / ((now - last.t) / 1000))); last = { t: now, b }; }
+      rec.received = b;
+      rec.size = item.getTotalBytes() || rec.size;
+      rec.state = state === 'interrupted' ? 'paused' : item.isPaused() ? 'paused' : 'downloading';
+      this.emitRecord(rec);
+    });
+    item.once('done', (_e, state) => {
+      this.natives.delete(id);
+      this.addActiveTime(rec);
+      rec.speed = 0;
+      if (state === 'completed') {
+        rec.state = 'done'; rec.completedAt = Date.now(); rec.received = item.getReceivedBytes(); rec.size = rec.received;
+        this.persist(); this.emitRecord(rec);
+        this.emit('completed', rec);
+      } else if (this.records.has(id)) {
+        rec.state = 'error'; rec.error = state === 'cancelled' ? 'Cancelled' : 'Download interrupted';
+        this.persist(); this.emitRecord(rec);
+        if (state !== 'cancelled') this.emit('failed', rec);
+      }
+    });
+    this.persist();
+    this.emitList();
+    return rec;
+  }
+
+  /** File hash for the Properties dialog. algo: 'md5' | 'sha1' | 'sha256' | 'sha512'. */
   checksum(id, algo) {
     const r = this.records.get(id);
     if (!r || r.state !== 'done') return Promise.reject(new Error('Only finished downloads can be checked'));
     const crypto = require('crypto');
     return new Promise((resolve, reject) => {
-      const h = crypto.createHash(algo === 'md5' ? 'md5' : 'sha256');
+      const h = crypto.createHash(['md5', 'sha1', 'sha256', 'sha512'].includes(algo) ? algo : 'sha256');
       fs.createReadStream(r.savePath).on('data', (d) => h.update(d)).on('error', reject).on('end', () => resolve(h.digest('hex')));
     });
   }
@@ -317,6 +490,8 @@ class DownloadManager extends EventEmitter {
       avgSpeed: activeMs > 1000 ? Math.round(r.received / (activeMs / 1000)) : 0,
       meta: r.meta || null, convertTs: r.convertTs,
       connections: r.state === 'downloading' ? r.connections || 0 : 0, directConnections: r.directConnections || 0,
+      speedLimitKBps: r.speedLimitKBps || 0, expectedHash: r.expectedHash || '', verify: r.verify || '',
+      native: !!r.native, incognito: !!r.incognito,
     };
   }
 
@@ -329,6 +504,7 @@ class DownloadManager extends EventEmitter {
       sizeIsEstimate: hls && r.state !== 'done', resumable: r.resumable,
       pageUrl: r.pageUrl, addedAt: r.addedAt, completedAt: r.completedAt, error: r.error,
       segments: r.segments, doneSegments: r.doneSegments, activeMs: this.activeMs(r),
+      errorCode: r.errorCode || null, verify: r.verify || '', native: !!r.native, incognito: !!r.incognito,
     };
   }
 

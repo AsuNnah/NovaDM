@@ -25,6 +25,7 @@ class Browser extends EventEmitter {
     this.normalSession = electronSession.fromPartition('persist:browser');
     this.incognitoSession = electronSession.fromPartition('novadm-incognito');
     this._sessionsReady = new Set();
+    this._nonGet = new Map(); // url -> time: recent POST/PUT responses (their downloads can't be re-requested)
     this.parentView = null; // set by main: the BaseWindow contentView to add tab views to
     // Messages from the detect preload in any tab (page meta, detected media, EME, nav).
     ipcMain.on('novadm:tab', (event, msg) => {
@@ -44,6 +45,23 @@ class Browser extends EventEmitter {
     net.installRefererHook(ses);
     if (this.adblock) this.adblock.attach(ses);
     this.installSniffer(ses);
+    // Downloads started by pages go to NovaDM (see main.js) instead of Chromium's downloader.
+    ses.on('will-download', (event, item, wc) => this.onWillDownload(event, item, wc, ses));
+  }
+
+  onWillDownload(event, item, wc, ses) {
+    const tabId = wc && !wc.isDestroyed() ? this.tabIdForWc(wc.id) : null;
+    const tab = tabId != null ? this.tabs.get(tabId) : null;
+    const url = item.getURL();
+    const posted = this._nonGet.get(url);
+    const info = {
+      url, name: item.getFilename(), size: item.getTotalBytes() || -1, mime: item.getMimeType(),
+      pageUrl: tab ? tab.url : (wc && !wc.isDestroyed() ? wc.getURL() : ''), tabId,
+      incognito: tab ? !!tab.incognito : ses === this.incognitoSession,
+      // A form POST that answered with a file: asking again with GET would not get the same file.
+      viaPost: !!(posted && Date.now() - posted < 120000),
+    };
+    this.emit('download', event, item, info);
   }
 
   // Capture request headers (for replay) and classify responses into the media registry.
@@ -55,6 +73,10 @@ class Browser extends EventEmitter {
       this.media.recordRequestHeaders(details.id, net.replayableHeaders(details.requestHeaders));
     });
     ses.webRequest.onResponseStarted({ urls: ['http://*/*', 'https://*/*'] }, (details) => {
+      if (details.method && details.method !== 'GET' && details.resourceType === 'mainFrame') {
+        this._nonGet.set(details.url, Date.now());
+        if (this._nonGet.size > 50) this._nonGet.delete(this._nonGet.keys().next().value);
+      }
       if (!details.webContents) return;
       const tabId = this.tabIdForWc(details.webContents.id);
       if (tabId == null) return;
@@ -286,7 +308,7 @@ class Browser extends EventEmitter {
     const tab = this.tabs.get(id);
     tab.view.setBounds(this.bounds);
     tab.view.setVisible(true);
-    if (this.parentView) this.parentView.addChildView(tab.view); // raise to top
+    try { if (this.parentView) this.parentView.addChildView(tab.view); } catch {} // raise to top
     if (this.onRestack) this.onRestack(); // keep chrome + overlay above the page
     this.emit('tab-selected', tab);
     this.refreshTabState(tab);
@@ -304,6 +326,7 @@ class Browser extends EventEmitter {
     this.media.removeTab(tab.id);
     try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {}
     try { tab.wc.close(); } catch {}
+    if (this.shuttingDown) { this.emitTabs(); return; } // window closing: no replacement tab
     if (this.activeId === id) {
       const next = this.order[idx] || this.order[idx - 1] || null;
       this.activeId = null;

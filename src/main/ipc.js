@@ -1,7 +1,9 @@
 'use strict';
 const { ipcMain, shell, clipboard, dialog } = require('electron');
-const { siteOf } = require('./util');
+const { siteOf, extractLinks, expandPattern } = require('./util');
 const grabber = require('./grabber');
+const { copyText } = require('./clipboard-watch');
+const { encryptPassword } = require('./proxy');
 
 const GRAB_CATEGORY = { image: 'images', video: 'video', audio: 'music', document: 'documents', archive: 'archives', program: 'programs' };
 
@@ -27,11 +29,12 @@ function registerIpc(ctx) {
     'nav.stop': (a) => getManagers().browser.stop(a && a.tabId),
 
     // ---- panels ----
-    'panel.open': (a) => { setPanel(true); sendUI('open-panel', { name: a.name, anchor: a.anchor }); if (a.name === 'media') sendMediaState(); if (a.name === 'downloads') pushDownloads(); if (a.name === 'shields') pushShields(); },
+    'panel.open': (a) => { getManagers().addFlow.dismiss(); setPanel(true); sendUI('open-panel', { name: a.name, anchor: a.anchor }); if (a.name === 'media') sendMediaState(); if (a.name === 'downloads') pushDownloads(); if (a.name === 'shields') pushShields(); },
     'panel.close': () => {
       // Closing a permission prompt without answering counts as "Block".
       const p = getPendingPermission();
       if (p) { try { p.cb(false); } catch {} clearPendingPermission(); }
+      getManagers().addFlow.dismiss();
       setPanel(false);
       sendUI('close-panel', {});
     },
@@ -62,18 +65,27 @@ function registerIpc(ctx) {
     'downloads.openPage': (a) => { const r = getManagers().downloads.get(a.id); if (r && /^https?:/i.test(r.pageUrl || '')) getManagers().browser.createTab({ url: r.pageUrl }); },
     'downloads.copyLink': (a) => {
       const r = getManagers().downloads.get(a.id);
-      if (r) clipboard.writeText(a.which === 'page' ? (r.pageUrl || '') : (r.kind === 'hls' ? r.playlistUrl : (r.sources[0] || '')));
+      if (r) copyText(a.which === 'page' ? (r.pageUrl || '') : (r.kind === 'hls' ? r.playlistUrl : (r.sources[0] || '')));
     },
     'downloads.openFolder': () => shell.openPath(getManagers().settings.get('downloadDir')),
     'downloads.openPageTab': () => getManagers().browser.openInternal('downloads'),
     'downloads.openFile': (a) => { const r = getManagers().downloads.get(a.id); if (r) shell.openPath(r.savePath); },
     'downloads.showInFolder': (a) => { const r = getManagers().downloads.get(a.id); if (r) shell.showItemInFolder(r.state === 'done' ? r.savePath : r.savePath + '.part'); },
+    // One link, several (pasted list) or a batch pattern like img[001-100].jpg.
     'downloads.addUrl': async (a) => {
-      const url = (a.url || '').trim();
-      if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'Enter a http(s) link' };
-      getManagers().downloads.add({ kind: /\.m3u8(\?|$)/i.test(url) ? 'hls' : 'http', url, playlistUrl: /\.m3u8(\?|$)/i.test(url) ? url : '', name: '' });
-      return { ok: true };
+      const links = extractLinks(a.url || '', 1000).flatMap((u) => expandPattern(u, 5000));
+      if (!links.length) return { ok: false, error: 'Enter a http(s) link' };
+      return getManagers().addFlow.requestLinks(links, { origin: 'manual' });
     },
+    'downloads.setSpeedLimit': (a) => { getManagers().downloads.setSpeedLimit(a.id, a.kbps); return { ok: true }; },
+    'downloads.refreshFromPage': (a) => getManagers().addFlow.refreshFromPage(a.id),
+    'downloads.refreshLink': async (a) => {
+      try { await getManagers().downloads.refreshLink(a.id, String(a.url || '').trim()); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
+    },
+
+    // ---- new download dialog ----
+    'add.respond': (a) => getManagers().addFlow.respond(a),
+    'add.chooseFolder': async (a) => ({ folder: await getManagers().addFlow.chooseFolder(a.current) }),
 
     // ---- content grabber ----
     'grab.scan': async (a) => {
@@ -146,6 +158,9 @@ function registerIpc(ctx) {
     // ---- settings ----
     'settings.get': () => getManagers().settings.all(),
     'settings.set': (a) => { getManagers().settings.set(a.patch || {}); return getManagers().settings.all(); },
+    'settings.setProxyPassword': (a) => {
+      try { getManagers().settings.set({ proxyPassEnc: encryptPassword(a.password || '') }); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
+    },
     'settings.chooseDownloadDir': async () => {
       const { win } = getManagers();
       const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
@@ -154,8 +169,8 @@ function registerIpc(ctx) {
     },
 
     // ---- misc ----
-    'clipboard.read': () => clipboard.readText(),
-    'util.copy': (a) => clipboard.writeText(a.text || ''),
+    'clipboard.read': async () => String((await clipboard.readText()) || ''),
+    'util.copy': (a) => copyText(a.text || ''),
   };
 
   function shieldsState() {
