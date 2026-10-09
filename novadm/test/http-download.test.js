@@ -23,11 +23,11 @@ function nodeOpen(url, { headers = {}, range, timeoutMs = 10000 } = {}) {
 
 /**
  * Test server.
- * opts: ranges, throttleMs (per 32 KB), dropFirst (range responses cut in half), maxConcurrent (403 above),
+ * opts: ranges, throttleMs (pause between chunks), chunkKB (default 32), dropFirst (range responses cut in half), maxConcurrent (403 above),
  *       tooMany (first N extra requests get 429 + Retry-After), etag, expireAfter (410 after N requests)
  */
 function makeServer(state, opts = {}) {
-  const { ranges = true, throttleMs = 0, maxConcurrent = Infinity, retryAfter = 1 } = opts;
+  const { ranges = true, throttleMs = 0, chunkKB = 32, maxConcurrent = Infinity, retryAfter = 1 } = opts;
   let drops = opts.dropFirst || 0;
   let tooMany = opts.tooMany || 0;
   state.active = 0; state.peak = 0; state.requests = 0; state.bytes = 0;
@@ -36,7 +36,7 @@ function makeServer(state, opts = {}) {
     const tick = () => {
       if (res.destroyed) return;
       if (off >= slice.length) return res.end();
-      const n = Math.min(32 * 1024, slice.length - off);
+      const n = Math.min(chunkKB * 1024, slice.length - off);
       state.bytes += n;
       const ok = res.write(slice.subarray(off, off + n)); off += n;
       if (throttleMs) setTimeout(tick, throttleMs); else if (ok) setImmediate(tick); else res.once('drain', tick);
@@ -81,8 +81,10 @@ test('downloads and reassembles the file correctly', async (t) => {
 });
 
 test('slow start opens more connections over time and parts are re-split', async (t) => {
+  // About 0.5 MB/s per connection, so there is still enough work left when slow start wants to grow
+  // (the engine doesn't split parts that finish within 1.5 s anyway).
   const st = { body: crypto.randomBytes(12 * 1024 * 1024) };
-  const server = makeServer(st, { throttleMs: 10 }); t.after(() => server.close()); const url = await listen(server);
+  const server = makeServer(st, { throttleMs: 20, chunkKB: 16 }); t.after(() => server.close()); const url = await listen(server);
   const save = tmp();
   const dl = new HttpDownload(base({ savePath: save, url: url + '/f.mp4', connections: 8 }));
   await run(dl);
