@@ -6,7 +6,9 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
-Nothing yet.
+- NovaDM is licensed under the GNU GPL, version 3 or later (`LICENSE`). Before this it had no
+  license. GPL-3.0 is required by electron-chrome-extensions, which NovaDM uses under its GPL-3.0
+  option.
 
 ## [1.2.3] — 2026-10-09
 

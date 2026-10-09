@@ -8,7 +8,7 @@ Research 2026-10-09 (after 1.2.0). Sources at the end.
 |---|---|
 | A Windows browser + download manager like 1DM | Done (0.1–0.8) |
 | ~40 features from the competitor research (7 phases) | Done, except **auto-update** (needs signed builds) and **more languages** |
-| Repo in `D:\Claude\Android to Windows\NovaDM`, private GitHub, version control, README + changelog per version | Done (tags v0.1.0 … v1.2.0) |
+| Private GitHub repo, version control, README + changelog per version | Done (tags v0.1.0 … v1.2.0) |
 | Never upload private data | Followed (privacy scan before every push) |
 | Brave-style speed | Done 1.1 (Shields rules, unload tabs, reader view, benchmark) |
 | Live DASH recording | Done 1.1 |

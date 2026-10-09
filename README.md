@@ -265,6 +265,12 @@ automatically on first start.
 
 ## License
 
-No license has been chosen yet; all rights reserved. Note that NovaDM uses
-[electron-chrome-extensions](https://github.com/samuelmaddock/electron-browser-shell), which is
-GPL-3.0, so any public release must be GPL-3.0 compatible.
+NovaDM is free software: you can redistribute it and/or modify it under the terms of the
+[GNU General Public License](LICENSE), version 3 or (at your option) any later version. It comes
+with no warranty.
+
+Libraries keep their own licenses: electron-chrome-extensions (GPL-3.0, the reason NovaDM is
+GPL), Ghostery adblocker (MPL-2.0), hls.js, mux.js and Mozilla Readability (Apache-2.0), undici
+and electron-chrome-web-store (MIT). Electron and Chromium's licenses ship with the app
+(`LICENSES.chromium.html`). Add-ons NovaDM can download (aria2, FFmpeg, yt-dlp) are separate
+programs under their own licenses.
