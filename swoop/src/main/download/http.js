@@ -1,51 +1,181 @@
 'use strict';
-// Multi-part HTTP download: splits a file into parallel connections over mirrors, writes each
-// range in place into a single .part file, supports pause/resume, retries and dynamic splitting.
+// Multi-connection HTTP download, engine v2.
+//
+//  - The first request (no probe) becomes connection #1; extra connections split work off it.
+//  - Slow start: 1 -> 2 -> 4 -> 8 -> ... connections, growing only while total speed still rises; a 403
+//    on an extra connection means "server connection limit" (hold), 429/503 back off (Retry-After).
+//  - Work stealing by time left (bytes left / speed), minimum split size, 5 s cooldown per victim.
+//  - Per-connection write cache (1 MB), positional writes into one preallocated .part file.
+//  - Checkpoint every 30 s / 64 MB: flush caches, fdatasync, then save progress atomically. A resume
+//    sends If-Range with the saved ETag/Last-Modified and starts over if the file changed.
+//  - Extra connections use the direct transport (no 6-per-server cap) when the server is HTTP/1.x.
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const net = require('../net');
+const util = require('../util');
 const { HttpError } = net;
 
-const MIN_PART = 512 * 1024; // don't split below this
+const MIN_PART = 512 * 1024; // smallest piece worth giving to another connection
+const WRITE_CHUNK = 1024 * 1024; // write cache per connection
+const CHECKPOINT_MS = 30000;
+const CHECKPOINT_BYTES = 64 * 1024 * 1024;
+const STEAL_SECONDS = 3; // only help connections with more than this much time left
+const STEAL_COOLDOWN_MS = 5000;
+const TICK_MS = 500;
+const BROWSER_H1_CAP = 6; // Chromium's per-server limit for HTTP/1.1
 
 class HttpDownload extends EventEmitter {
   /**
    * @param {object} opts
-   *   id, savePath, sources [url, ...] (first is primary; rest are mirrors), headers,
-   *   session, connections, limiter, retries, retryDelayMs, timeoutMs, size (optional known size)
-   *   openConn (optional, for tests) => net.open-compatible
+   *   id, savePath, sources [url, ...] (first is primary, rest mirrors), headers, session, transport,
+   *   connections (max), limiter (global), taskLimiter (per download), retries, retryDelayMs, timeoutMs,
+   *   size (known size, optional), allowRename, minSplitBytes,
+   *   openConn (tests): replaces both transports
    */
   constructor(opts) {
     super();
     this.id = opts.id;
-    this.savePath = opts.savePath;
-    this.partPath = opts.savePath + '.part';
-    this.metaPath = opts.savePath + '.part.meta';
+    this.setSavePath(opts.savePath);
     this.sources = opts.sources && opts.sources.length ? opts.sources.slice() : [opts.url];
     this.headers = opts.headers || {};
     this.session = opts.session;
-    this.connections = Math.min(32, Math.max(1, opts.connections || 8));
+    this.transport = opts.transport || null;
+    this.maxConnections = Math.min(32, Math.max(1, opts.connections || 8));
     this.limiter = opts.limiter;
+    this.taskLimiter = opts.taskLimiter || null;
     this.retries = opts.retries ?? 10;
     this.retryDelayMs = opts.retryDelayMs ?? 3000;
     this.timeoutMs = opts.timeoutMs ?? 30000;
-    this.open = opts.openConn || net.open;
+    this.openConn = opts.openConn || null;
     this.allowRename = !!opts.allowRename;
+    this.minPart = opts.minSplitBytes || MIN_PART;
 
     this.size = opts.size ?? -1;
     this.resumable = false;
-    this.received = 0;
-    this.state = 'queued'; // queued | connecting | downloading | paused | done | error
+    this.validator = null; // { etag, lastModified }
+    this.httpMajor = 1;
+    this.state = 'queued';
     this.error = null;
-    this.segments = []; // { start, end, pos } half-open [start, end)
-    this.active = new Map(); // segIndex -> connection controller
+    this.segments = []; // { start, end (exclusive, Infinity = unknown), done (written), got (received), conn, lastSteal }
+    this.conns = new Set();
     this.fd = null;
-    this._stopping = false;
+    this.cap = 1; // current connection target (slow start)
+    this.steady = false;
+    this.lastStepSpeed = 0;
+    this.stepStartedAt = 0;
+    this.holdUntil = 0; // after 429/503: don't open new connections before this time
+    this.connectMs = 0;
     this._srcIdx = 0;
+    this._stopping = false;
     this._lastEmit = 0;
     this._speedSamples = [];
+    this._sinceCheckpoint = 0;
+    this._lastCheckpoint = 0;
+    this._tick = null;
+    this._finishing = false;
+    this._doneResolve = null;
   }
+
+  setSavePath(p) {
+    this.savePath = p;
+    this.partPath = p + '.part';
+    this.metaPath = p + '.part.meta';
+  }
+
+  get received() { return this.segments.reduce((s, x) => s + x.got, 0); }
+
+  // ---- lifecycle ---------------------------------------------------------------------------------
+
+  async start() {
+    if (this.state === 'downloading' || this.state === 'connecting') return;
+    this._stopping = false;
+    this.error = null;
+    this.state = 'connecting';
+    this.emitUpdate(true);
+    try {
+      const first = await this.prepare();
+      if (this._stopping) { if (first) first.conn.abort(); return; }
+      this.state = 'downloading';
+      await this.run(first);
+      if (this._stopping) return;
+      await this.finish();
+    } catch (err) {
+      if (!this._stopping) this.fail(err);
+    }
+  }
+
+  async prepare() {
+    fs.mkdirSync(path.dirname(this.savePath), { recursive: true });
+    const meta = this.loadMeta();
+    if (meta) {
+      const resumed = await this.tryResume(meta);
+      if (resumed) return resumed;
+    }
+    return this.freshStart();
+  }
+
+  // Fresh download: the first response (Range: bytes=0-) is kept and streams as connection #1.
+  async freshStart() {
+    this.segments = [];
+    const url = this.sources[0];
+    const conn = await this.requestWithRetry(url, { range: 'bytes=0-', first: true });
+    const h = conn.headers;
+    const cr = /bytes\s+(\d+)-(\d+)\/(\d+|\*)/i.exec(h['content-range'] || '');
+    if (conn.status === 206 && cr) {
+      this.size = cr[3] === '*' ? -1 : Number(cr[3]);
+      this.resumable = this.size > 0 && Number(cr[1]) === 0;
+    } else {
+      const cl = Number(h['content-length']);
+      this.size = cl > 0 ? cl : -1;
+      this.resumable = this.size > 0 && /\bbytes\b/i.test(h['accept-ranges'] || '');
+    }
+    if (conn.status === 206 && cr && Number(cr[1]) !== 0) { conn.abort(); throw new Error('Server sent the wrong part of the file'); }
+    this.validator = { etag: h.etag || '', lastModified: h['last-modified'] || '' };
+    this.applyServerName({ mime: (h['content-type'] || '').split(';')[0].trim().toLowerCase(), disposition: h['content-disposition'] || '' });
+    this.checkFreeSpace();
+    this.fd = fs.openSync(this.partPath, 'w');
+    if (this.size > 0) { try { fs.ftruncateSync(this.fd, this.size); } catch {} }
+    const seg = this.newSegment(0, this.size > 0 ? this.size : Infinity);
+    this.saveMeta(); // progress file exists from the start
+    return { conn, seg };
+  }
+
+  // Resume: request the first unfinished part with If-Range; a full (200) answer means the file changed.
+  async tryResume(meta) {
+    let st;
+    try { st = fs.statSync(this.partPath); } catch { return null; }
+    if (meta.size > 0 && st.size !== meta.size) return null;
+    const segs = meta.segments.map((s) => ({ start: s.start, end: s.end === -1 ? Infinity : s.end, done: s.done, got: s.done, conn: null, lastSteal: 0 }));
+    if (!segs.length || !meta.resumable) return null;
+    const covered = segs.slice().sort((a, b) => a.start - b.start);
+    for (let i = 1; i < covered.length; i++) if (covered[i].start !== covered[i - 1].end) return null; // gaps: start over
+    this.size = meta.size; this.resumable = true; this.validator = meta.validator || null;
+    this.segments = covered;
+    const first = this.segments.find((s) => s.start + s.done < s.end);
+    if (!first) { this.fd = fs.openSync(this.partPath, 'r+'); return { conn: null, seg: null }; }
+    const headers = {};
+    if (this.validator && (this.validator.etag || this.validator.lastModified)) headers['if-range'] = this.validator.etag || this.validator.lastModified;
+    const from = first.start + first.done;
+    const conn = await this.requestWithRetry(this.sources[0], { range: `bytes=${from}-${first.end - 1}`, first: true, extraHeaders: headers });
+    if (conn.status === 200) {
+      // File changed on the server (or ranges dropped): start over with this full response.
+      conn.abort();
+      try { fs.rmSync(this.partPath, { force: true }); } catch {}
+      return null;
+    }
+    this.fd = fs.openSync(this.partPath, 'r+');
+    this.resumedFrom = this.received;
+    return { conn, seg: first };
+  }
+
+  newSegment(start, end) {
+    const s = { start, end, done: 0, got: 0, conn: null, lastSteal: 0 };
+    this.segments.push(s);
+    return s;
+  }
+
+  // ---- connections ------------------------------------------------------------------------------
 
   nextSource() {
     const u = this.sources[this._srcIdx % this.sources.length];
@@ -53,89 +183,389 @@ class HttpDownload extends EventEmitter {
     return u;
   }
 
-  async start() {
-    if (this.state === 'downloading' || this.state === 'connecting') return;
-    this._stopping = false;
-    this.state = 'connecting';
-    this.emitUpdate(true);
-    try {
-      await this.prepare();
-      if (this._stopping) return;
-      this.state = 'downloading';
-      await this.run();
-    } catch (err) {
-      if (this._stopping) return;
-      this.fail(err);
-    }
+  /** Open one request, choosing the transport. */
+  async request(url, { range, first = false, extraHeaders = {}, direct = null }) {
+    const headers = { ...this.headers, ...extraHeaders };
+    const timeoutMs = this.connectMs ? Math.min(this.timeoutMs, Math.max(8000, this.connectMs * 5)) : this.timeoutMs;
+    if (this.openConn) return this.openConn(url, { session: this.session, headers, range, timeoutMs });
+    const useDirect = direct != null ? direct
+      : this.transport && (first ? this.transport.mode() === 'direct' : this.transport.useDirect(url) && (this.transport.mode() === 'direct' || this.httpMajor < 2));
+    if (this.transport) return this.transport.open(url, { session: this.session, headers, range, timeoutMs, direct: useDirect, firstConnection: first });
+    return net.open(url, { session: this.session, headers, range, timeoutMs });
   }
 
-  async prepare() {
-    fs.mkdirSync(path.dirname(this.savePath), { recursive: true });
-    // Resume from an earlier attempt if metadata matches.
-    if (this.loadMeta()) {
-      this.fd = fs.openSync(this.partPath, 'r+');
-      return;
-    }
-    const info = await this.probePrimary();
-    this.size = info.size;
-    this.resumable = info.resumable;
-    this.applyServerName(info);
-    this.fd = fs.openSync(this.partPath, 'w');
-    if (this.size > 0) {
-      try { fs.ftruncateSync(this.fd, this.size); } catch {}
-    }
-    if (this.resumable && this.size > MIN_PART * 2) {
-      const n = Math.min(this.connections, Math.max(1, Math.floor(this.size / MIN_PART)));
-      const chunk = Math.floor(this.size / n);
-      for (let i = 0; i < n; i++) {
-        const start = i * chunk;
-        const end = i === n - 1 ? this.size : start + chunk;
-        this.segments.push({ start, end, pos: start });
-      }
-    } else {
-      this.segments.push({ start: 0, end: this.size > 0 ? this.size : Infinity, pos: 0 });
-    }
-    this.saveMeta();
-  }
-
-  async probePrimary() {
+  async requestWithRetry(url, opts) {
     let lastErr;
     for (let attempt = 0; attempt <= this.retries; attempt++) {
       if (this._stopping) throw new Error('stopped');
+      const t0 = Date.now();
       try {
-        return await this.probeOnce(this.sources[0]);
+        const conn = await this.request(url, opts);
+        if (conn.status >= 400) {
+          conn.abort();
+          const err = new HttpError(conn.status);
+          err.retryAfter = retryAfterMs(conn.headers['retry-after']);
+          throw err;
+        }
+        if (opts.first) {
+          this.connectMs = Date.now() - t0;
+          const v = conn.res && (conn.res.httpVersionMajor || Number(String(conn.res.httpVersion || conn.httpVersion || '1').split('.')[0]));
+          this.httpMajor = v || 1;
+        }
+        return conn;
       } catch (err) {
         lastErr = err;
-        if (err instanceof HttpError && err.fatal) throw err;
-        await this.backoff(attempt);
+        if (err instanceof HttpError && err.fatal) throw classifyFatal(err, this.received);
+        await this.sleep(err.retryAfter || this.backoffMs(attempt));
       }
     }
     throw lastErr;
   }
 
-  // Headers-only probe via a 1-byte range request, using the injected connection opener.
-  async probeOnce(url) {
-    const conn = await this.open(url, { session: this.session, headers: this.headers, range: 'bytes=0-0', timeoutMs: this.timeoutMs });
-    conn.abort();
-    if (conn.status >= 400) throw new HttpError(conn.status);
-    const h = conn.headers || {};
-    const cr = /bytes\s+\d+-\d+\/(\d+)/i.exec(h['content-range'] || '');
-    let size = -1;
-    let resumable = false;
-    if (conn.status === 206 && cr) { size = Number(cr[1]); resumable = true; }
-    else if (h['content-length'] && conn.status === 200) size = Number(h['content-length']);
-    if (!resumable && /\bbytes\b/i.test(h['accept-ranges'] || '') && size > 0) resumable = true;
-    return {
-      size, resumable, finalUrl: conn.finalUrl,
-      mime: (h['content-type'] || '').split(';')[0].trim().toLowerCase(),
-      disposition: h['content-disposition'] || '',
-    };
+  activeConns() { return [...this.conns].filter((c) => !c.closed).length; }
+
+  capLimit() {
+    let cap = this.resumable && this.size > 0 ? this.maxConnections : 1;
+    // Extra connections through the browser stack on HTTP/1.1 can't exceed Chromium's per-server limit.
+    const directOk = this.openConn || (this.transport && this.transport.useDirect(this.sources[0]) && (this.transport.mode() === 'direct' || this.httpMajor < 2));
+    if (!directOk && this.httpMajor < 2) cap = Math.min(cap, BROWSER_H1_CAP);
+    return cap;
   }
+
+  async run(first) {
+    this._lastCheckpoint = Date.now();
+    this.stepStartedAt = Date.now();
+    const finished = new Promise((r) => { this._doneResolve = r; });
+    this._tick = setInterval(() => this.tick(), TICK_MS);
+    if (first && first.conn) this.startConnection(first.seg, first.conn);
+    // On resume, other unfinished parts are picked up as the slow start opens connections.
+    this.cap = Math.max(1, Math.min(this.capLimit(), first && first.conn ? 1 : 2));
+    this.fillConnections();
+    this.checkDone();
+    await finished;
+    clearInterval(this._tick); this._tick = null;
+  }
+
+  // Controller: speed sampling, slow-start growth, checkpoints, progress.
+  tick() {
+    if (this._stopping || this._finishing) return;
+    const now = Date.now();
+    const speed = this.speed();
+    const limit = this.capLimit();
+    if (!this.steady && this.resumable && now >= this.holdUntil && now - this.stepStartedAt >= 1500) {
+      const grew = this.lastStepSpeed === 0 || speed > this.lastStepSpeed * 1.1;
+      if (this.cap >= limit) this.steady = true;
+      else if (grew || this.cap < 2) {
+        this.lastStepSpeed = speed;
+        this.cap = Math.min(limit, this.cap * 2);
+        this.stepStartedAt = now;
+      } else {
+        this.steady = true; // more connections stopped helping: stay here
+        this.cap = Math.max(1, this.activeConns());
+      }
+    }
+    this.fillConnections();
+    if (now - this._lastCheckpoint >= CHECKPOINT_MS || this._sinceCheckpoint >= CHECKPOINT_BYTES) this.checkpoint().catch(() => {});
+    this.emitUpdate();
+  }
+
+  // Open connections up to the current target: unassigned parts first, then split the slowest.
+  fillConnections() {
+    if (this._stopping || this._finishing) return;
+    while (this.activeConns() < this.cap && Date.now() >= this.holdUntil) {
+      const seg = this.pickWork();
+      if (!seg) break;
+      this.startConnection(seg, null);
+    }
+  }
+
+  pickWork() {
+    const free = this.segments.find((s) => !s.conn && s.start + s.got < s.end);
+    if (free) return free;
+    if (!this.resumable) return null;
+    return this.stealFrom();
+  }
+
+  // Take half of the remaining work of the part with the most time left.
+  stealFrom() {
+    const now = Date.now();
+    let victim = null; let worst = STEAL_SECONDS;
+    for (const s of this.segments) {
+      if (!s.conn || s.end === Infinity || now - s.lastSteal < STEAL_COOLDOWN_MS) continue;
+      const remain = s.end - (s.start + s.got);
+      if (remain < this.minPart * 2) continue;
+      const sp = s.conn.speed || 0;
+      const secs = sp > 0 ? remain / sp : STEAL_SECONDS + 1 + remain / 1e9;
+      if (secs > worst) { worst = secs; victim = s; }
+    }
+    if (!victim) return null;
+    const from = victim.start + victim.got;
+    const mid = from + Math.floor((victim.end - from) / 2);
+    const fresh = this.newSegment(mid, victim.end);
+    victim.end = mid;
+    victim.lastSteal = now;
+    fresh.lastSteal = now;
+    return fresh;
+  }
+
+  startConnection(seg, initial) {
+    const c = { seg, speed: 0, samples: [], buf: [], bufLen: 0, bufStart: 0, writeChain: Promise.resolve(), closed: false, abort: null, retries: 0 };
+    seg.conn = c;
+    this.conns.add(c);
+    this.runConnection(c, initial).finally(() => {
+      c.closed = true;
+      this.conns.delete(c);
+      if (c.seg && c.seg.conn === c) c.seg.conn = null;
+      if (!this._stopping) { this.fillConnections(); this.checkDone(); }
+    });
+  }
+
+  async runConnection(c, initial) {
+    let conn = initial;
+    while (!this._stopping) {
+      const seg = c.seg;
+      if (seg.start + seg.got >= seg.end) {
+        await this.flushConn(c);
+        // Done with this part: help the slowest connection, or stop.
+        const next = this.pickWork();
+        if (!next || this.activeConns() > this.cap) return;
+        if (c.seg.conn === c) c.seg.conn = null;
+        c.seg = next; next.conn = c;
+        conn = null;
+        continue;
+      }
+      try {
+        if (!conn) {
+          const from = seg.start + seg.got;
+          const range = this.resumable && seg.end !== Infinity ? `bytes=${from}-${seg.end - 1}` : (from > 0 ? `bytes=${from}-` : undefined);
+          conn = await this.request(this.nextSource(), { range });
+          if (conn.status >= 400) {
+            conn.abort();
+            const err = new HttpError(conn.status);
+            err.retryAfter = retryAfterMs(conn.headers['retry-after']);
+            throw err;
+          }
+          if (range && conn.status !== 206) {
+            conn.abort();
+            if (from > 0 || seg !== this.segments[0]) {
+              // Server ignores ranges for extra connections: continue with one connection only.
+              this.resumable = false; this.cap = 1; this.steady = true;
+              seg.conn = null;
+              return;
+            }
+          }
+        }
+        await this.pump(c, conn);
+        conn = null;
+        c.retries = 0;
+      } catch (err) {
+        conn = null;
+        await this.flushConn(c).catch(() => {});
+        if (this._stopping) return;
+        const status = err instanceof HttpError ? err.status : 0;
+        const others = this.activeConns() - 1;
+        if ((status === 403 || status === 429 || status === 503) && others > 0) {
+          // Too many connections for this server: hold at the current count and let others take this part.
+          this.cap = Math.max(1, others);
+          this.steady = true;
+          if (status !== 403) this.holdUntil = Date.now() + (err.retryAfter || 5000);
+          return;
+        }
+        if (status === 429 || status === 503) this.holdUntil = Date.now() + (err.retryAfter || 5000);
+        if (err instanceof HttpError && err.fatal) throw classifyFatal(err, this.received);
+        if (!this.resumable && seg.got > 0) {
+          // No ranges: the only way to retry is from the beginning.
+          seg.got = 0; seg.done = 0; c.bufLen = 0; c.buf = [];
+        }
+        if (++c.retries > this.retries) throw err;
+        await this.sleep(err.retryAfter || this.backoffMs(c.retries));
+      }
+    }
+  }
+
+  // Stream one response into its part, honouring the part's (possibly shrinking) end.
+  pump(c, conn) {
+    return new Promise((resolve, reject) => {
+      const seg = c.seg;
+      let idle;
+      let settled = false;
+      const done = (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(idle);
+        c.abort = null;
+        if (err) reject(err); else resolve();
+      };
+      const armIdle = () => { clearTimeout(idle); idle = setTimeout(() => { conn.abort(); done(new Error('Connection stalled')); }, this.timeoutMs); };
+      c.abort = () => { conn.abort(); done(); };
+      c.bufStart = seg.start + seg.got;
+      armIdle();
+      const res = conn.res;
+      res.on('data', async (chunk) => {
+        if (settled) return;
+        if (this._stopping) { conn.abort(); return done(); }
+        res.pause();
+        try {
+          let off = 0;
+          while (off < chunk.length && !settled) {
+            let n = chunk.length - off;
+            if (this.limiter) n = await this.limiter.take(Math.min(n, 64 * 1024));
+            if (this.taskLimiter) n = await this.taskLimiter.take(Math.min(n, 64 * 1024));
+            let piece = chunk.subarray(off, off + n);
+            off += n;
+            const room = seg.end === Infinity ? piece.length : seg.end - (seg.start + seg.got);
+            if (room <= 0) { conn.abort(); return done(); }
+            if (piece.length > room) piece = piece.subarray(0, room);
+            c.buf.push(piece); c.bufLen += piece.length;
+            seg.got += piece.length;
+            this._sinceCheckpoint += piece.length;
+            this.sample(c, piece.length);
+            if (c.bufLen >= WRITE_CHUNK) this.flushConn(c);
+            if (seg.end !== Infinity && seg.start + seg.got >= seg.end) { conn.abort(); return done(); }
+          }
+          this.emitUpdate();
+          armIdle();
+          if (!settled) res.resume();
+        } catch (err) {
+          conn.abort(); done(err);
+        }
+      });
+      res.on('end', () => {
+        if (seg.end === Infinity) { seg.end = seg.start + seg.got; this.size = seg.end; return done(); }
+        if (seg.start + seg.got >= seg.end) return done();
+        done(new Error('Connection closed early'));
+      });
+      res.on('error', (e) => done(seg.start + seg.got >= seg.end ? null : e));
+      res.on('aborted', () => done(seg.start + seg.got >= seg.end || this._stopping ? null : new Error('Connection aborted')));
+    });
+  }
+
+  // Write this connection's cache at its file position. Returns when written.
+  flushConn(c) {
+    if (!c.bufLen) return c.writeChain;
+    const buf = c.buf.length === 1 ? c.buf[0] : Buffer.concat(c.buf, c.bufLen);
+    const pos = c.bufStart;
+    const seg = c.seg;
+    c.buf = []; c.bufStart += buf.length; c.bufLen = 0;
+    c.writeChain = c.writeChain.then(() => this.writeAt(pos, buf)).then(() => {
+      // Only bytes that reached the file count as done (used for checkpoints/resume).
+      seg.done = Math.max(seg.done, pos + buf.length - seg.start);
+    });
+    return c.writeChain;
+  }
+
+  writeAt(pos, buf) {
+    return new Promise((resolve, reject) => {
+      let written = 0;
+      const step = () => fs.write(this.fd, buf, written, buf.length - written, pos + written, (err, n) => {
+        if (err) return reject(err);
+        written += n;
+        if (written < buf.length) step(); else resolve();
+      });
+      step();
+    });
+  }
+
+  // Flush caches, force data to disk, then record progress. Progress never claims unwritten data.
+  async checkpoint() {
+    if (this._checkpointing || this.fd === null) return;
+    this._checkpointing = true;
+    try {
+      await Promise.all([...this.conns].map((c) => this.flushConn(c)));
+      await new Promise((r) => fs.fdatasync(this.fd, () => r()));
+      this.saveMeta();
+      this._sinceCheckpoint = 0;
+      this._lastCheckpoint = Date.now();
+    } finally {
+      this._checkpointing = false;
+    }
+  }
+
+  checkDone() {
+    if (this._finishing || this._stopping) return;
+    const unfinished = this.segments.some((s) => s.start + s.done < s.end || s.end === Infinity);
+    const working = this.activeConns() > 0;
+    if (!unfinished && !working && this._doneResolve) { this._finishing = true; this._doneResolve(); }
+    else if (!working && unfinished && this._doneResolve && !this.pickWorkPossible()) {
+      // Nothing running and nothing can start: report instead of waiting forever.
+      this._finishing = true;
+      this.error = this.error || new Error('Download stopped before finishing');
+      this._doneResolve();
+    }
+  }
+
+  pickWorkPossible() {
+    return Date.now() < this.holdUntil || this.segments.some((s) => !s.conn && s.start + s.got < s.end);
+  }
+
+  // ---- finishing / stopping --------------------------------------------------------------------
+
+  async finish() {
+    if (this.error) throw this.error;
+    await Promise.all([...this.conns].map((c) => this.flushConn(c)));
+    if (this.fd !== null) await new Promise((r) => fs.fdatasync(this.fd, () => r()));
+    this.closeFd();
+    const total = this.segments.reduce((s, x) => s + x.done, 0);
+    if (this.size > 0 && total < this.size) throw new Error('Incomplete download');
+    if (this.size < 0) this.size = total;
+    try { fs.truncateSync(this.partPath, this.size); } catch {}
+    fs.renameSync(this.partPath, this.savePath);
+    try { fs.rmSync(this.metaPath, { force: true }); } catch {}
+    this.state = 'done';
+    this.emit('done');
+    this.emitUpdate(true);
+  }
+
+  /** Stop and keep progress. Resolves after caches are written and progress saved. */
+  async pause() {
+    if (this.state !== 'downloading' && this.state !== 'connecting') return;
+    this.state = 'paused';
+    await this.stopAll();
+    this.emitUpdate(true);
+  }
+
+  async stopAll() {
+    this._stopping = true;
+    for (const c of this.conns) if (c.abort) try { c.abort(); } catch {}
+    if (this._tick) { clearInterval(this._tick); this._tick = null; }
+    if (this._doneResolve) this._doneResolve();
+    await Promise.all([...this.conns].map((c) => this.flushConn(c).catch(() => {})));
+    if (this.fd !== null) {
+      await new Promise((r) => fs.fdatasync(this.fd, () => r()));
+      if (this.resumable) this.saveMeta();
+      this.closeFd();
+    }
+  }
+
+  async cancel() {
+    await this.stopAll();
+    for (const f of [this.partPath, this.metaPath]) { try { fs.rmSync(f, { force: true }); } catch {} }
+    this.state = 'queued';
+  }
+
+  fail(err) {
+    this.error = err;
+    this.state = 'error';
+    this._stopping = true;
+    if (this._tick) { clearInterval(this._tick); this._tick = null; }
+    for (const c of this.conns) if (c.abort) try { c.abort(); } catch {}
+    Promise.all([...this.conns].map((c) => this.flushConn(c).catch(() => {}))).then(() => {
+      if (this.fd !== null && this.resumable) this.saveMeta();
+      this.closeFd();
+    });
+    this.emit('error', err);
+    this.emitUpdate(true);
+  }
+
+  closeFd() {
+    if (this.fd !== null) { try { fs.closeSync(this.fd); } catch {} this.fd = null; }
+  }
+
+  // ---- naming, space, meta ---------------------------------------------------------------------
 
   // When the name was guessed from the URL, prefer the server's filename and add a missing extension.
   applyServerName(info) {
     if (!this.allowRename) return;
-    const util = require('../util');
     const dir = path.dirname(this.savePath);
     let name = path.basename(this.savePath);
     const fromServer = util.filenameFromDisposition(info.disposition);
@@ -147,251 +577,65 @@ class HttpDownload extends EventEmitter {
     this.emit('renamed', this.savePath);
   }
 
-  setSavePath(p) {
-    this.savePath = p;
-    this.partPath = p + '.part';
-    this.metaPath = p + '.part.meta';
-  }
-
-  async run() {
-    const pump = [];
-    const launch = () => {
-      while (this.active.size < this.connections) {
-        const idx = this.pickSegment();
-        if (idx < 0) break;
-        pump.push(this.downloadSegment(idx));
-      }
-    };
-    launch();
-    this._relaunch = launch;
-    await Promise.all(pump);
-    // Drain any segments added by dynamic splitting after the first wave.
-    while (!this._stopping && this.hasUnfinished()) {
-      const more = [];
-      let idx;
-      while (this.active.size < this.connections && (idx = this.pickSegment()) >= 0) more.push(this.downloadSegment(idx));
-      if (!more.length) break;
-      await Promise.all(more);
-    }
-    if (this._stopping) return;
-    if (this.hasUnfinished()) throw this.error || new Error('Download incomplete');
-    this.finish();
-  }
-
-  pickSegment() {
-    for (let i = 0; i < this.segments.length; i++) {
-      const s = this.segments[i];
-      if (!this.active.has(i) && s.pos < s.end) return i;
-    }
-    // All remaining segments are being worked on: split the one with most bytes left.
-    if (this.resumable && this.active.size < this.connections) {
-      let bestIdx = -1; let bestRem = MIN_PART * 2;
-      for (const [i, ctrl] of this.active) {
-        const s = this.segments[i];
-        const rem = s.end - Math.max(s.pos, ctrl.pos || s.pos);
-        if (rem > bestRem) { bestRem = rem; bestIdx = i; }
-      }
-      if (bestIdx >= 0) {
-        const s = this.segments[bestIdx];
-        const ctrl = this.active.get(bestIdx);
-        const from = Math.max(s.pos, ctrl.pos || s.pos);
-        const mid = from + Math.floor((s.end - from) / 2);
-        const newSeg = { start: mid, end: s.end, pos: mid };
-        s.end = mid;
-        ctrl.end = mid;
-        this.segments.push(newSeg);
-        return this.segments.length - 1;
-      }
-    }
-    return -1;
-  }
-
-  async downloadSegment(idx) {
-    const seg = this.segments[idx];
-    const ctrl = { pos: seg.pos, end: seg.end, abort: null };
-    this.active.set(idx, ctrl);
-    let attempt = 0;
+  checkFreeSpace() {
+    if (!(this.size > 0)) return;
     try {
-      while (seg.pos < seg.end && !this._stopping) {
-        try {
-          await this.transfer(idx, seg, ctrl);
-          attempt = 0;
-        } catch (err) {
-          if (this._stopping) return;
-          if (err instanceof HttpError && err.fatal) throw err;
-          if (++attempt > this.retries) throw err;
-          await this.backoff(attempt);
-        }
+      const st = fs.statfsSync(path.dirname(this.savePath));
+      const free = Number(st.bavail) * Number(st.bsize);
+      if (free > 0 && free < this.size + 16 * 1024 * 1024) {
+        const err = new Error(`Not enough disk space (${util.formatBytes ? util.formatBytes(this.size) : this.size + ' bytes'} needed)`);
+        err.code = 'NO_SPACE';
+        throw err;
       }
     } catch (err) {
-      this.error = err;
-      this.stopAll(false);
-    } finally {
-      this.active.delete(idx);
+      if (err.code === 'NO_SPACE') throw err;
     }
-  }
-
-  transfer(idx, seg, ctrl) {
-    return new Promise((resolve, reject) => {
-      const url = this.nextSource();
-      const useRange = this.resumable && seg.end !== Infinity;
-      const range = useRange ? `bytes=${seg.pos}-${seg.end - 1}` : (seg.pos > 0 ? `bytes=${seg.pos}-` : undefined);
-      let conn;
-      let idle;
-      const resetIdle = () => {
-        clearTimeout(idle);
-        idle = setTimeout(() => { cleanup(); if (conn) conn.abort(); reject(new Error('stalled')); }, this.timeoutMs);
-      };
-      const cleanup = () => { clearTimeout(idle); ctrl.abort = null; };
-      this.open(url, { session: this.session, headers: this.headers, range, timeoutMs: this.timeoutMs })
-        .then((c) => {
-          conn = c;
-          ctrl.abort = () => c.abort();
-          if (c.status >= 400) { cleanup(); c.abort(); return reject(new HttpError(c.status)); }
-          if (useRange && c.status !== 206) {
-            // Server ignored the range: only safe for the first segment from position 0.
-            if (seg.start !== 0 || seg.pos !== 0) { cleanup(); c.abort(); return reject(new Error('range not supported')); }
-            this.resumable = false;
-          }
-          resetIdle();
-          c.res.on('data', async (chunk) => {
-            if (this._stopping) { cleanup(); c.abort(); return; }
-            c.res.pause();
-            try {
-              let off = 0;
-              while (off < chunk.length && !this._stopping) {
-                const want = chunk.length - off;
-                const allow = this.limiter ? await this.limiter.take(Math.min(want, 64 * 1024)) : want;
-                const slice = chunk.subarray(off, off + allow);
-                let writeLen = slice.length;
-                if (seg.end !== Infinity && seg.pos + writeLen > seg.end) writeLen = seg.end - seg.pos;
-                if (writeLen <= 0) { cleanup(); c.abort(); return resolve(); }
-                await this.writeAt(seg.pos, slice.subarray(0, writeLen));
-                seg.pos += writeLen; ctrl.pos = seg.pos;
-                this.received += writeLen;
-                off += slice.length;
-                this.sample(writeLen);
-                this.emitUpdate();
-                if (seg.pos >= seg.end) { cleanup(); c.abort(); return resolve(); }
-              }
-              resetIdle();
-              if (!this._stopping) c.res.resume();
-            } catch (err) {
-              cleanup(); c.abort(); reject(err);
-            }
-          });
-          c.res.on('end', () => {
-            cleanup();
-            if (seg.end === Infinity) { seg.end = seg.pos; this.size = this.received; resolve(); }
-            else if (seg.pos >= seg.end) resolve();
-            else reject(new Error('connection closed early'));
-          });
-          c.res.on('error', (err) => { cleanup(); reject(err); });
-          c.res.on('aborted', () => { cleanup(); if (seg.pos < seg.end && !this._stopping) reject(new Error('aborted')); else resolve(); });
-        })
-        .catch((err) => { cleanup(); reject(err); });
-    });
-  }
-
-  writeAt(pos, buf) {
-    return new Promise((resolve, reject) => {
-      fs.write(this.fd, buf, 0, buf.length, pos, (err) => (err ? reject(err) : resolve()));
-    });
-  }
-
-  sample(bytes) {
-    const now = Date.now();
-    this._speedSamples.push([now, bytes]);
-    const cutoff = now - 3000;
-    while (this._speedSamples.length && this._speedSamples[0][0] < cutoff) this._speedSamples.shift();
-  }
-
-  speed() {
-    if (this._speedSamples.length < 2) return 0;
-    const span = (Date.now() - this._speedSamples[0][0]) / 1000;
-    if (span <= 0) return 0;
-    const total = this._speedSamples.reduce((s, x) => s + x[1], 0);
-    return Math.round(total / span);
-  }
-
-  hasUnfinished() {
-    return this.segments.some((s) => s.pos < s.end);
-  }
-
-  async backoff(attempt) {
-    const ms = Math.min(this.retryDelayMs * Math.pow(1.6, attempt), 30000);
-    await new Promise((r) => setTimeout(r, ms));
-  }
-
-  pause() {
-    if (this.state !== 'downloading' && this.state !== 'connecting') return;
-    this.state = 'paused';
-    this.stopAll(true);
-    this.saveMeta();
-    this.emitUpdate(true);
-  }
-
-  stopAll(markStopping) {
-    if (markStopping) this._stopping = true;
-    for (const ctrl of this.active.values()) if (ctrl.abort) try { ctrl.abort(); } catch {}
-  }
-
-  cancel() {
-    this._stopping = true;
-    this.stopAll(true);
-    this.closeFd();
-    try { fs.rmSync(this.partPath, { force: true }); } catch {}
-    try { fs.rmSync(this.metaPath, { force: true }); } catch {}
-    this.state = 'queued';
-  }
-
-  finish() {
-    this.closeFd();
-    if (this.size > 0 && this.received < this.size) { this.fail(new Error('Incomplete download')); return; }
-    try {
-      if (this.size > 0) fs.truncateSync(this.partPath, this.size);
-      fs.renameSync(this.partPath, this.savePath);
-      fs.rmSync(this.metaPath, { force: true });
-    } catch (err) { this.fail(err); return; }
-    this.state = 'done';
-    this.emit('done');
-    this.emitUpdate(true);
-  }
-
-  fail(err) {
-    this.error = err;
-    this.state = 'error';
-    this.closeFd();
-    this.saveMeta();
-    this.emit('error', err);
-    this.emitUpdate(true);
-  }
-
-  closeFd() {
-    if (this.fd !== null) { try { fs.closeSync(this.fd); } catch {}; this.fd = null; }
   }
 
   saveMeta() {
     try {
-      fs.writeFileSync(this.metaPath, JSON.stringify({
-        v: 1, sources: this.sources, size: this.size, resumable: this.resumable,
-        received: this.received, segments: this.segments.map((s) => ({ start: s.start, end: s.end === Infinity ? -1 : s.end, pos: s.pos })),
+      const tmp = this.metaPath + '.tmp';
+      fs.writeFileSync(tmp, JSON.stringify({
+        v: 2, sources: this.sources, size: this.size, resumable: this.resumable, validator: this.validator,
+        segments: this.segments.map((s) => ({ start: s.start, end: s.end === Infinity ? -1 : s.end, done: s.done })),
       }));
+      fs.renameSync(tmp, this.metaPath);
     } catch {}
   }
 
   loadMeta() {
     try {
       const m = JSON.parse(fs.readFileSync(this.metaPath, 'utf8'));
-      if (m.v !== 1 || !fs.existsSync(this.partPath)) return false;
-      if (m.size !== this.size && this.size > 0) return false;
-      this.size = m.size; this.resumable = m.resumable; this.received = m.received;
-      this.segments = m.segments.map((s) => ({ start: s.start, end: s.end === -1 ? Infinity : s.end, pos: s.pos }));
-      return this.segments.length > 0;
+      if (m.v !== 2 || !Array.isArray(m.segments)) return null;
+      return m;
     } catch {
-      return false;
+      return null;
     }
   }
+
+  // ---- speed / progress ------------------------------------------------------------------------
+
+  sample(c, bytes) {
+    const now = Date.now();
+    this._speedSamples.push([now, bytes]);
+    c.samples.push([now, bytes]);
+    const cut = now - 3000;
+    while (this._speedSamples.length && this._speedSamples[0][0] < cut) this._speedSamples.shift();
+    while (c.samples.length && c.samples[0][0] < cut) c.samples.shift();
+    const span = c.samples.length > 1 ? (now - c.samples[0][0]) / 1000 : 0;
+    c.speed = span > 0.4 ? c.samples.reduce((s, x) => s + x[1], 0) / span : 0;
+  }
+
+  speed() {
+    if (this._speedSamples.length < 2) return 0;
+    const span = (Date.now() - this._speedSamples[0][0]) / 1000;
+    if (span <= 0) return 0;
+    return Math.round(this._speedSamples.reduce((s, x) => s + x[1], 0) / span);
+  }
+
+  backoffMs(attempt) { return Math.min(this.retryDelayMs * Math.pow(1.6, attempt), 30000); }
+
+  sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
   emitUpdate(force = false) {
     const now = Date.now();
@@ -401,13 +645,33 @@ class HttpDownload extends EventEmitter {
   }
 
   progress() {
+    const received = this.received;
     return {
-      id: this.id, state: this.state, size: this.size, received: this.received,
-      percent: this.size > 0 ? Math.min(100, (this.received / this.size) * 100) : 0,
+      id: this.id, state: this.state, size: this.size, received,
+      percent: this.size > 0 ? Math.min(100, (received / this.size) * 100) : 0,
       speed: this.state === 'downloading' ? this.speed() : 0, resumable: this.resumable,
-      connections: this.active.size, error: this.error ? String(this.error.message || this.error) : null,
+      connections: this.activeConns(), error: this.error ? String(this.error.message || this.error) : null,
+      errorCode: this.error && this.error.code ? this.error.code : null,
     };
   }
 }
 
-module.exports = { HttpDownload, MIN_PART };
+function retryAfterMs(v) {
+  if (!v) return 0;
+  const n = Number(v);
+  if (Number.isFinite(n)) return Math.min(120000, n * 1000);
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? Math.min(120000, Math.max(0, t - Date.now())) : 0;
+}
+
+// 401/403/404/410 after data was received usually means the download link expired.
+function classifyFatal(err, received) {
+  if ([401, 403, 404, 410].includes(err.status) && received > 0) {
+    const e = new Error(`The download link expired (HTTP ${err.status}). Use “Refresh link” to continue.`);
+    e.code = 'LINK_EXPIRED'; e.status = err.status;
+    return e;
+  }
+  return err;
+}
+
+module.exports = { HttpDownload, MIN_PART, retryAfterMs };
