@@ -11,6 +11,8 @@ const { AddFlow } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
 const { applyProxy, proxyCredentials } = require('./proxy');
+const { Scheduler } = require('./scheduler');
+const { Background } = require('./background');
 const util = require('./util');
 const { Browser } = require('./browser');
 const net = require('./net');
@@ -25,6 +27,13 @@ let dnsStatus = { mode: 'starting', servers: [] };
 // Test runs use their own profile so they never touch the user's settings or downloads.
 if (process.env.NOVADM_USERDATA) app.setPath('userData', process.env.NOVADM_USERDATA);
 else migrateOldProfile();
+
+// One NovaDM at a time (per profile): starting it again brings the running one forward.
+const isFirstInstance = app.requestSingleInstanceLock();
+if (!isFirstInstance) app.quit();
+app.on('second-instance', () => showWindow());
+// Started by Windows at sign-in: stay in the tray.
+const startHidden = process.argv.includes('--hidden');
 
 // The app was called "Swoop" before 0.2.0: move that profile (settings, downloads list,
 // extensions, cookies) to NovaDM's folder once, if NovaDM has none yet.
@@ -45,7 +54,7 @@ const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
 
 let win, chromeView, overlayView;
-let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport;
+let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background;
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
@@ -85,10 +94,18 @@ function setPanel(open) {
   if (open) restack();
 }
 
+function showWindow() {
+  if (!app.isReady()) return;
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
 function createWindow() {
   win = new BaseWindow({
     width: 1280, height: 820, minWidth: 680, minHeight: 480, frame: false,
-    backgroundColor: '#1b1d22', title: 'NovaDM',
+    backgroundColor: '#1b1d22', title: 'NovaDM', show: !startHidden,
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
   });
 
@@ -111,7 +128,11 @@ function createWindow() {
   win.on('resize', layout);
   win.on('maximize', () => sendUI('window-state', { maximized: true }));
   win.on('unmaximize', () => sendUI('window-state', { maximized: false }));
-  win.on('close', () => { browser.shuttingDown = true; });
+  win.on('close', (e) => {
+    // Downloads running: keep going in the tray instead of quitting (Settings → Background).
+    if (background && background.keepRunningOnClose()) { e.preventDefault(); background.hideToTray(); return; }
+    browser.shuttingDown = true;
+  });
   win.on('closed', () => { browser.shuttingDown = true; win = null; });
 
   // Open links that must leave the app (none by default) in the OS browser.
@@ -163,6 +184,11 @@ function wireEvents() {
   downloads.on('changed', () => sendUI('downloads', { list: downloads.list(), summary: downloads.activeSummary() }));
   downloads.on('completed', (rec) => {
     sendUI('download-complete', { name: rec.name, id: rec.id });
+    if (rec.scan === 'threat') {
+      // Always shown, whatever the notification setting.
+      notify({ title: 'Microsoft Defender found a threat', body: `${rec.name}: ${rec.scanDetail || 'threat'}`, onClick: () => { showWindow(); browser.openInternal('downloads'); } });
+      return;
+    }
     if (!settings.get('notifyOnComplete')) return;
     const bad = rec.verify === 'mismatch';
     notify({
@@ -285,6 +311,7 @@ function downloadBestVideo(tabId) {
 if (process.platform === 'win32') app.setAppUserModelId('app.novadm.browser');
 
 app.whenReady().then(async () => {
+  if (!isFirstInstance) return;
   settings = new Settings();
   // Secure DNS first, before any page loads (strict mode is set synchronously inside).
   applySecureDns(settings).then((s) => { dnsStatus = s; }).catch(() => {});
@@ -361,6 +388,12 @@ app.whenReady().then(async () => {
   wireEvents();
   // "Resume unfinished downloads when NovaDM starts".
   if (settings.get('autoResume')) setTimeout(() => downloads.resumeInterrupted(), 1500);
+  // Queues with schedules, tray / background, keep-awake and "when all downloads finish".
+  scheduler = new Scheduler({ settings, downloads });
+  downloads.scheduler = scheduler;
+  scheduler.start();
+  background = new Background({ settings, downloads, getWindow: () => win, showWindow, notify, sendUI, setPanel });
+  background.start();
   // Extensions start after the window exists; tabs opened before that are registered now.
   extensions.init({ browser, getWindow: () => win })
     .then(() => {
@@ -374,7 +407,7 @@ app.whenReady().then(async () => {
     .catch((e) => console.error('extensions init failed', e));
 
   const ipcHandlers = registerIpc({
-    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow }),
+    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background }),
     setPanel, sendUI, sendMediaState,
     downloadItem,
     reviewBlockedPopup,
@@ -452,7 +485,7 @@ app.whenReady().then(async () => {
   if (process.env.NOVADM_SELFTEST) {
     const t = require(path.resolve(process.env.NOVADM_SELFTEST));
     setTimeout(() => {
-      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher }))
+      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, getWindow: () => win }))
         .catch((e) => console.error('selftest failed', e));
     }, Number(process.env.NOVADM_SELFTEST_DELAY) || 3000);
   }

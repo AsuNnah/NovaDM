@@ -101,6 +101,34 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     </div>
   </div>
 
+  <h2>Background</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>When the window is closed</b><span>NovaDM can keep downloading from the system tray (next to the clock).</span></div>
+      <select id="closeToTray"><option value="downloading">Keep downloading in the tray, then quit</option><option value="always">Always keep NovaDM in the tray</option><option value="never">Quit (pause downloads)</option></select>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Start NovaDM with Windows</b><span>Starts in the tray, ready for scheduled downloads.</span></div>
+      <label class="sw"><input type="checkbox" id="startWithWindows"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Keep the computer awake while downloading</b><span>Windows won't go to sleep in the middle of a download.</span></div>
+      <label class="sw"><input type="checkbox" id="preventSleep"><i></i></label>
+    </div>
+  </div>
+
+  <h2>Safety</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Scan downloaded files with Microsoft Defender</b><span>The result shows in the Downloads list. A threat is always reported.</span></div>
+      <select id="scanDownloads"><option value="programs">Programs and archives</option><option value="all">All files</option><option value="off">Off</option></select>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Mark downloaded files as coming from the internet</b><span>Like browsers do, so Windows SmartScreen checks programs before they run and Office opens documents in Protected View.</span></div>
+      <label class="sw"><input type="checkbox" id="markOfTheWeb"><i></i></label>
+    </div>
+  </div>
+
   <h2>Video detection</h2>
   <div class="card">
     <div class="row">

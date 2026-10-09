@@ -35,6 +35,8 @@ function registerIpc(ctx) {
       const p = getPendingPermission();
       if (p) { try { p.cb(false); } catch {} clearPendingPermission(); }
       getManagers().addFlow.dismiss();
+      // Closing the "when all downloads finish" countdown cancels it.
+      if (getManagers().background) getManagers().background.cancelCountdown();
       setPanel(false);
       sendUI('close-panel', {});
     },
@@ -82,6 +84,36 @@ function registerIpc(ctx) {
     'downloads.refreshLink': async (a) => {
       try { await getManagers().downloads.refreshLink(a.id, String(a.url || '').trim()); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
     },
+
+    // ---- queues and scheduling ----
+    'downloads.queues': () => {
+      const { downloads, settings } = getManagers();
+      const { nextStart } = require('./scheduler');
+      return {
+        queues: downloads.queues().map((q) => {
+          const next = q.schedule && q.schedule.enabled ? nextStart(q.schedule) : null;
+          return { ...q, next: next ? next.getTime() : 0, active: downloads.queueActive(q.id) };
+        }),
+        afterAllDone: settings.get('afterAllDone') || 'nothing',
+      };
+    },
+    'downloads.saveQueues': (a) => {
+      const { normalizeQueues } = require('./scheduler');
+      const queues = normalizeQueues(a.queues);
+      const { downloads, settings, scheduler } = getManagers();
+      // Downloads in a deleted queue move to Main.
+      const ids = new Set(queues.map((q) => q.id));
+      for (const r of downloads.records.values()) if (!ids.has(r.queue || 'main')) downloads.setQueue(r.id, 'main');
+      settings.set({ queues });
+      if (scheduler) scheduler.tick();
+      return { ok: true, queues };
+    },
+    'downloads.setQueue': (a) => { getManagers().downloads.setQueue(a.id, a.queue); return { ok: true }; },
+    'downloads.startQueue': (a) => { getManagers().downloads.startQueue(a.queue); return { ok: true }; },
+    'downloads.stopQueue': (a) => { getManagers().downloads.stopQueue(a.queue); return { ok: true }; },
+    'downloads.setAfterAllDone': (a) => { getManagers().settings.set({ afterAllDone: ['nothing', 'exit', 'sleep', 'shutdown'].includes(a.action) ? a.action : 'nothing' }); return { ok: true }; },
+    'afterdone.cancel': () => { const b = getManagers().background; if (b) b.cancelCountdown(); getManagers().settings.set({ afterAllDone: 'nothing' }); setPanel(false); sendUI('close-panel', {}); },
+    'afterdone.now': () => { const b = getManagers().background; if (b) b.runAction(true); },
 
     // ---- new download dialog ----
     'add.respond': (a) => getManagers().addFlow.respond(a),

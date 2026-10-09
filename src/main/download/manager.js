@@ -10,11 +10,14 @@ const { HlsDownload } = require('./hls-dl');
 const { RateLimiter } = require('./limiter');
 const { JsonStore } = require('../store');
 const util = require('../util');
+const post = require('./postprocess');
+const { normalizeQueues } = require('../scheduler');
 
 class DownloadManager extends EventEmitter {
   /**
-   * opts: { transport, privateSession } - transport: direct/browser HTTP for the engines (see
-   * transport.js); privateSession: the private tabs' session (their downloads use its cookies).
+   * opts: { transport, privateSession, scanFile } - transport: direct/browser HTTP for the engines
+   * (see transport.js); privateSession: the private tabs' session (their downloads use its
+   * cookies); scanFile (tests): replaces the Defender scan.
    */
   constructor(settings, session, opts = {}) {
     super();
@@ -24,6 +27,9 @@ class DownloadManager extends EventEmitter {
     this.transport = opts.transport || null;
     this.taskLimiters = new Map(); // id -> RateLimiter (per-download speed limit)
     this.natives = new Map(); // id -> Electron DownloadItem (downloads the browser itself handles)
+    this.scanFile = opts.scanFile || post.scanFile;
+    this.scheduler = null; // set by main: decides whether a queue waits for its time window
+    this._finishedSinceIdle = false;
     this.limiter = new RateLimiter((settings.get('speedLimitKBps') || 0) * 1024);
     this.store = new JsonStore(path.join(app.getPath('userData'), 'downloads.json'), { items: [] });
     this.records = new Map(); // id -> record (serialisable)
@@ -59,7 +65,7 @@ class DownloadManager extends EventEmitter {
       activeMs: r.activeMs || 0, meta: r.meta || null, percent: r.percent || 0,
       wasRunning: !!r.wasRunning, errorCode: r.errorCode || null,
       speedLimitKBps: r.speedLimitKBps || 0, expectedHash: r.expectedHash || '', verify: r.verify || '',
-      native: !!r.native,
+      native: !!r.native, queue: r.queue || 'main', scan: r.scan === 'scanning' ? '' : r.scan || '', scanDetail: r.scanDetail || '',
     }));
     this.store.save();
   }
@@ -114,12 +120,14 @@ class DownloadManager extends EventEmitter {
       activeMs: 0, resumable: null,
       speedLimitKBps: Math.max(0, Number(spec.speedLimitKBps) || 0),
       expectedHash: util.hashKind(spec.expectedHash) ? spec.expectedHash.trim().toLowerCase() : '',
-      verify: '', incognito: !!spec.incognito,
+      verify: '', incognito: !!spec.incognito, queue: this.queueIds().includes(spec.queue) ? spec.queue : 'main',
     };
+    // A queue with a schedule keeps new downloads until its time window opens.
+    if (spec.start !== false && this.scheduler && this.scheduler.waitsForSchedule(rec.queue)) rec.state = 'scheduled';
     this.records.set(id, rec);
     this.persist();
     this.emitList();
-    if (spec.start !== false) this.enqueue(id);
+    if (rec.state === 'queued') this.enqueue(id);
     return rec;
   }
 
@@ -145,14 +153,75 @@ class DownloadManager extends EventEmitter {
     return n;
   }
 
+  // ---- queues -----------------------------------------------------------------------------------
+
+  queues() { return normalizeQueues(this.settings.get('queues')); }
+
+  queueIds() { return this.queues().map((q) => q.id); }
+
+  queueLimit(qid) {
+    const q = this.queues().find((x) => x.id === qid);
+    return (q && q.maxActive) || this.settings.get('maxActive') || 3;
+  }
+
+  queueActive(qid) {
+    let n = 0;
+    for (const r of this.records.values()) if ((r.queue || 'main') === qid && (r.state === 'downloading' || r.state === 'connecting')) n++;
+    return n;
+  }
+
+  /** Scheduler: a queue's window opened. Its unfinished downloads start (errors with a dead link don't). */
+  startQueue(qid) {
+    for (const r of [...this.records.values()].sort((a, b) => a.addedAt - b.addedAt)) {
+      if ((r.queue || 'main') !== qid || r.native) continue;
+      if (['scheduled', 'paused'].includes(r.state) || (r.state === 'error' && r.errorCode !== 'LINK_EXPIRED')) this.enqueue(r.id);
+    }
+  }
+
+  /** Scheduler: a queue's window closed. Its downloads pause and wait for the next window. */
+  stopQueue(qid) {
+    for (const r of this.records.values()) {
+      if ((r.queue || 'main') !== qid) continue;
+      if (['downloading', 'connecting', 'queued'].includes(r.state)) this.pause(r.id, 'scheduled');
+    }
+  }
+
+  setQueue(id, qid) {
+    const rec = this.records.get(id);
+    if (!rec || !this.queueIds().includes(qid)) return;
+    rec.queue = qid;
+    if (rec.state === 'scheduled' && !(this.scheduler && this.scheduler.waitsForSchedule(qid))) rec.state = 'paused';
+    else if (['paused', 'queued'].includes(rec.state) && this.scheduler && this.scheduler.waitsForSchedule(qid)) this.pause(id, 'scheduled');
+    this.persist(); this.emitRecord(rec);
+    this.pump();
+  }
+
+  // Start queued downloads while there is room, overall and in each download's queue.
   pump() {
     const max = this.settings.get('maxActive') || 3;
-    while (this.activeCount() < max && this.queue.length) {
-      const id = this.queue.shift();
+    let i = 0;
+    while (this.activeCount() < max && i < this.queue.length) {
+      const id = this.queue[i];
       const rec = this.records.get(id);
-      if (!rec || rec.state === 'done') continue;
+      if (!rec || rec.state === 'done') { this.queue.splice(i, 1); continue; }
+      const qid = rec.queue || 'main';
+      if (this.queueActive(qid) >= this.queueLimit(qid)) { i++; continue; }
+      this.queue.splice(i, 1);
       this.run(rec);
     }
+    this.checkAllDone();
+  }
+
+  // "When all downloads finish": nothing running or waiting, after at least one finished.
+  checkAllDone() {
+    if (!this._finishedSinceIdle || this.activeCount() > 0 || this.queue.length) return;
+    for (const r of this.records.values()) if (r.state === 'connecting' || r._pausing) return;
+    clearTimeout(this._allDoneTimer);
+    this._allDoneTimer = setTimeout(() => {
+      if (this.activeCount() > 0 || this.queue.length) return;
+      this._finishedSinceIdle = false;
+      this.emit('all-done');
+    }, 1500);
   }
 
   taskLimiter(rec) {
@@ -225,7 +294,8 @@ class DownloadManager extends EventEmitter {
       this.engines.delete(rec.id);
       this.taskLimiters.delete(rec.id);
       this.persist(); this.emitRecord(rec);
-      this.finishVerify(rec).finally(() => {
+      this.finishVerify(rec).then(() => this.postProcess(rec)).catch(() => {}).finally(() => {
+        this._finishedSinceIdle = true;
         this.emit('completed', rec);
         this.pump();
       });
@@ -238,12 +308,14 @@ class DownloadManager extends EventEmitter {
       this.engines.delete(rec.id);
       this.persist(); this.emitRecord(rec);
       this.emit('failed', rec);
+      this._finishedSinceIdle = true;
       this.pump();
     });
     engine.start();
   }
 
-  pause(id) {
+  /** Pause, keeping progress. toState 'scheduled' = paused by the scheduler until the next window. */
+  pause(id, toState = 'paused') {
     const rec = this.records.get(id);
     if (!rec || rec.state === 'done') return;
     if (rec.native) {
@@ -256,7 +328,7 @@ class DownloadManager extends EventEmitter {
     const engine = this.engines.get(id);
     this.engines.delete(id);
     this.addActiveTime(rec);
-    rec.state = 'paused'; rec.speed = 0;
+    rec.state = toState; rec.speed = 0;
     if (engine) {
       rec._pausing = Promise.resolve(engine.pause())
         .then(() => {
@@ -340,6 +412,19 @@ class DownloadManager extends EventEmitter {
   }
 
   get(id) { return this.records.get(id); }
+
+  // Mark of the Web, then (for programs and archives by default) a Microsoft Defender scan.
+  async postProcess(rec) {
+    if (this.settings.get('markOfTheWeb') !== false && !rec.native) {
+      post.markOfTheWeb(rec.savePath, { url: rec.kind === 'hls' ? rec.playlistUrl : rec.sources[0], referrer: rec.pageUrl, incognito: rec.incognito });
+    }
+    if (!post.wantsScan(this.settings.get('scanDownloads'), rec.category)) return;
+    rec.scan = 'scanning'; this.emitRecord(rec);
+    const r = await this.scanFile(rec.savePath);
+    rec.scan = r.result; rec.scanDetail = r.detail || '';
+    if (r.result === 'threat') this.emit('threat', rec);
+    this.persist(); this.emitRecord(rec);
+  }
 
   // Compare the finished file with the checksum given when it was added.
   async finishVerify(rec) {
@@ -491,7 +576,7 @@ class DownloadManager extends EventEmitter {
       meta: r.meta || null, convertTs: r.convertTs,
       connections: r.state === 'downloading' ? r.connections || 0 : 0, directConnections: r.directConnections || 0,
       speedLimitKBps: r.speedLimitKBps || 0, expectedHash: r.expectedHash || '', verify: r.verify || '',
-      native: !!r.native, incognito: !!r.incognito,
+      native: !!r.native, incognito: !!r.incognito, scanDetail: r.scanDetail || '',
     };
   }
 
@@ -505,6 +590,7 @@ class DownloadManager extends EventEmitter {
       pageUrl: r.pageUrl, addedAt: r.addedAt, completedAt: r.completedAt, error: r.error,
       segments: r.segments, doneSegments: r.doneSegments, activeMs: this.activeMs(r),
       errorCode: r.errorCode || null, verify: r.verify || '', native: !!r.native, incognito: !!r.incognito,
+      queue: r.queue || 'main', scan: r.scan || '',
     };
   }
 

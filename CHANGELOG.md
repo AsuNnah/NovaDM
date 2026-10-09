@@ -8,6 +8,49 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [0.4.0] — 2026-10-09
+
+Background downloading, scheduling and safety (roadmap phase 3).
+
+### Added
+- **Tray icon and background downloading.** Closing the window while downloads run keeps NovaDM in
+  the system tray (tooltip shows count and speed; menu: open, pause all, resume all, quit).
+  Settings → Background → "When the window is closed": keep downloading then quit (default),
+  always stay in the tray, or quit.
+- **Start NovaDM with Windows** (starts in the tray). For the portable build the portable .exe
+  itself is registered.
+- **Only one NovaDM at a time**: starting it again brings the running window forward.
+- **Keep the computer awake while downloading** (on by default).
+- **Queues and schedules** (Downloads → Queues): named queues, each with its own "at once" limit
+  and an optional schedule (start time, optional end time, days of the week; overnight windows
+  work). Inside the window the queue's downloads run, at the end they pause and wait
+  ("Scheduled · starts …"), and the next window continues them. Start/stop a queue by hand,
+  choose the queue in the New download dialog, or move a download with "Move to queue".
+- **When all downloads finish** (Downloads page): close NovaDM, sleep or shut down, after a 60 s
+  countdown with Cancel and "Do it now". It runs once, then goes back to "do nothing".
+- **Microsoft Defender scan** of finished downloads (Settings → Safety: programs and archives by
+  default, all files, or off). The result shows in the list; a threat is always notified.
+- **Mark of the Web**: downloaded files are marked as coming from the internet (with the page and
+  file address; private tabs record only "internet"), so SmartScreen checks programs and Office
+  uses Protected View, as with browser downloads.
+
+### Changed
+- The download engine stays in NovaDM's main process instead of moving to a separate process as
+  the roadmap suggested: downloads must share the browser session's cookies, Secure DNS and proxy,
+  which only the main process has. Background downloading comes from the tray instead.
+
+### Notes
+- Defender's command-line scanner returns the same exit code for "threat found" and "scan
+  failed", so NovaDM reads its report instead; a scan that can't run shows no result rather than
+  a false alarm.
+
+### Tests
+- 66 unit tests (new: schedule windows incl. overnight and days, scheduler start/stop, Defender
+  report parsing, Mark of the Web).
+- In-app self-test `tools/selftest-phase3.js`: schedule window start/stop/continue, queue limit,
+  Mark of the Web, scan results, countdown (dry run) and cancel, tray on close, keep-awake, second
+  start. All earlier self-tests pass unchanged.
+
 ## [0.3.0] — 2026-10-09
 
 The everyday basics of a download manager (roadmap phase 2).
@@ -141,7 +184,8 @@ First packaged version: `Swoop-Setup-0.1.0.exe` and `Swoop-Portable-0.1.0.exe`.
 - Speed limit, maximum active downloads, category folders, names from page titles
 - Windows installer (NSIS) and portable build
 
-[Unreleased]: ../../compare/v0.3.0...HEAD
+[Unreleased]: ../../compare/v0.4.0...HEAD
+[0.4.0]: ../../compare/v0.3.0...v0.4.0
 [0.3.0]: ../../compare/v0.2.0...v0.3.0
 [0.2.0]: ../../compare/v0.1.0...v0.2.0
 [0.1.0]: ../../releases/tag/v0.1.0

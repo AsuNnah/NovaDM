@@ -38,6 +38,15 @@ function defaults() {
     skipEditor: false, // start downloads without the "new download" dialog
     autoResume: false, // resume unfinished downloads when NovaDM starts
     notifyOnComplete: true,
+    queues: [{ id: 'main', name: 'Main', maxActive: 0, schedule: null }], // see scheduler.js
+    afterAllDone: 'nothing', // nothing | exit | sleep | shutdown (once, then back to nothing)
+
+    // Background and safety
+    closeToTray: 'downloading', // downloading | always | never
+    startWithWindows: false,
+    preventSleep: true, // keep the PC awake while downloading
+    scanDownloads: 'programs', // programs (programs + archives) | all | off
+    markOfTheWeb: true,
 
     // Proxy (browsing and downloads): system | none | manual | pac
     proxyMode: 'system',

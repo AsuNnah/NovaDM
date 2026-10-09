@@ -12,7 +12,7 @@ const TABS = [
   ['all', 'All', () => true],
   ['active', 'Downloading', (d) => ['downloading', 'connecting', 'queued'].includes(d.state)],
   ['done', 'Finished', (d) => d.state === 'done'],
-  ['unfinished', 'Unfinished', (d) => ['paused', 'error'].includes(d.state)],
+  ['unfinished', 'Unfinished', (d) => ['paused', 'error', 'scheduled'].includes(d.state)],
 ];
 const CATS = { video: 'Video', music: 'Music', images: 'Images', documents: 'Documents', archives: 'Archives', programs: 'Programs', other: 'Other' };
 
@@ -41,6 +41,16 @@ function fmtDate(t) {
 }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
+const SCAN_TEXT = {
+  scanning: 'Scanning with Microsoft Defender…',
+  clean: 'No threats found',
+  threat: '<span class="err">Threat found by Microsoft Defender</span>',
+  error: '',
+  unavailable: '',
+};
+let queueInfo = { queues: [], afterAllDone: 'nothing' };
+const queueName = (id) => { const q = queueInfo.queues.find((x) => x.id === id); return q ? q.name : 'Main'; };
+
 const VERIFY_TEXT = {
   ok: 'Checksum matches',
   mismatch: '<span class="err">Checksum does NOT match</span>',
@@ -61,7 +71,12 @@ function statusText(d) {
     case 'queued': return ['Queued', d.received > 0 ? `${pct}% · ${sizeTxt}` : '', parts].filter(Boolean).join(' · ');
     case 'paused': return ['Paused', `${pct}%`, sizeTxt, parts].filter(Boolean).join(' · ');
     case 'error': return `<span class="err">Failed: ${esc(d.error || 'unknown error')}</span>` + (parts ? ' · ' + parts : '');
-    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt), VERIFY_TEXT[d.verify] || ''].filter(Boolean).join(' · ');
+    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt), VERIFY_TEXT[d.verify] || '', SCAN_TEXT[d.scan] || ''].filter(Boolean).join(' · ');
+    case 'scheduled': {
+      const q = queueInfo.queues.find((x) => x.id === d.queue);
+      const when = q && q.next ? 'starts ' + fmtDate(q.next) : 'waits for its schedule';
+      return [`Scheduled (${esc(queueName(d.queue))}) · ${when}`, d.received > 0 ? `${pct}% · ${sizeTxt}` : ''].filter(Boolean).join(' · ');
+    }
     default: return d.state;
   }
 }
@@ -213,6 +228,9 @@ function openMenu(anchor, d) {
   add('Copy download link', () => api.call('downloads.copyLink', { id: d.id }));
   if (d.pageUrl) { add('Copy page link', () => api.call('downloads.copyLink', { id: d.id, which: 'page' })); add('Open download page', () => api.call('downloads.openPage', { id: d.id })); }
   if (d.state !== 'done' && !d.native) add('Refresh link…', () => showRefresh(d));
+  if (d.state !== 'done' && queueInfo.queues.length > 1) {
+    for (const q of queueInfo.queues) if (q.id !== (d.queue || 'main')) add(`Move to queue “${q.name}”`, () => api.call('downloads.setQueue', { id: d.id, queue: q.id }));
+  }
   add('Download again', () => api.call('downloads.redownload', { id: d.id }));
   hr();
   if (d.state === 'done') add('Remove from list', () => api.call('downloads.remove', { id: d.id }));
@@ -231,6 +249,53 @@ function modal(html) {
   wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) closeLayer(); });
   $('layer').appendChild(wrap);
   return wrap;
+}
+
+// ---- queues and schedules ----
+async function loadQueues() {
+  try { queueInfo = await api.call('downloads.queues'); } catch {}
+  const sel = $('afterAllDone');
+  if (sel && document.activeElement !== sel) sel.value = queueInfo.afterAllDone || 'nothing';
+}
+
+const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+function showQueues() {
+  const draft = JSON.parse(JSON.stringify(queueInfo.queues));
+  const w = modal(`<h2>Queues and schedules</h2>
+    <p>Downloads in a queue with a schedule start when its time comes and pause when it ends. Without an end time the queue runs until it's done.</p>
+    <div class="qlist" id="qlist"></div>
+    <div class="foot"><button id="qAdd">New queue</button><span style="flex:1"></span><button id="qCancel">Cancel</button><button class="pri" id="qSave">Save</button></div>`);
+  const list = w.querySelector('#qlist');
+  const render = () => {
+    list.innerHTML = '';
+    draft.forEach((q, i) => {
+      const s = q.schedule || { enabled: false, start: '01:00', stop: '06:00', days: [] };
+      const item = document.createElement('div');
+      item.className = 'qitem';
+      item.innerHTML = `
+        <div class="k">Name</div><div><input type="text" data-f="name" value="${esc(q.name)}" ${q.id === 'main' ? 'disabled' : ''}></div>
+        <div class="k">At once</div><div><input type="number" data-f="maxActive" min="0" max="10" value="${q.maxActive || 0}"> <span class="qnote">downloads (0 = the general setting)</span></div>
+        <div class="k">Schedule</div><div><label><input type="checkbox" data-f="enabled" ${s.enabled ? 'checked' : ''}> Start at</label> <input type="time" data-f="start" value="${esc(s.start || '01:00')}"> until <input type="time" data-f="stop" value="${esc(s.stop || '')}"> <span class="qnote">(empty = no end)</span></div>
+        <div class="k">Days</div><div class="days">${DAY_NAMES.map((n, d) => `<label><input type="checkbox" data-day="${d}" ${!s.days || !s.days.length || s.days.includes(d) ? 'checked' : ''}>${n}</label>`).join('')}</div>
+        <div class="qacts"><button data-a="start">Start now</button><button data-a="stop">Stop now</button><span style="flex:1"></span>${q.id === 'main' ? '' : '<button data-a="del" class="danger">Delete queue</button>'}</div>`;
+      item.addEventListener('change', () => {
+        const v = (f) => item.querySelector(`[data-f="${f}"]`);
+        q.name = v('name').value.trim() || q.name;
+        q.maxActive = Math.max(0, Math.min(10, Number(v('maxActive').value) || 0));
+        const days = [...item.querySelectorAll('[data-day]')].filter((c) => c.checked).map((c) => Number(c.dataset.day));
+        q.schedule = { enabled: v('enabled').checked, start: v('start').value, stop: v('stop').value, days: days.length === 7 ? [] : days };
+      });
+      item.querySelector('[data-a="start"]').onclick = () => api.call('downloads.startQueue', { queue: q.id });
+      item.querySelector('[data-a="stop"]').onclick = () => api.call('downloads.stopQueue', { queue: q.id });
+      const del = item.querySelector('[data-a="del"]');
+      if (del) del.onclick = () => { draft.splice(i, 1); render(); };
+      list.appendChild(item);
+    });
+  };
+  render();
+  w.querySelector('#qAdd').onclick = () => { draft.push({ id: 'q' + Date.now().toString(36), name: 'Queue ' + draft.length, maxActive: 0, schedule: { enabled: true, start: '01:00', stop: '06:00', days: [] } }); render(); };
+  w.querySelector('#qCancel').onclick = closeLayer;
+  w.querySelector('#qSave').onclick = async () => { await api.call('downloads.saveQueues', { queues: draft }); await loadQueues(); renderAll(); closeLayer(); };
 }
 
 // Refresh link: continue a download whose link stopped working, from a new link to the same file.
@@ -338,6 +403,10 @@ async function showProperties(id) {
 $('resumeAll').onclick = () => api.call('downloads.resumeAll');
 $('pauseAll').onclick = () => api.call('downloads.pauseAll');
 $('openFolder').onclick = () => api.call('downloads.openFolder');
+$('queuesBtn').onclick = () => loadQueues().then(showQueues);
+$('afterAllDone').onchange = () => api.call('downloads.setAfterAllDone', { action: $('afterAllDone').value });
+loadQueues().then(renderAll);
+setInterval(loadQueues, 15000);
 $('clearDone').onclick = () => api.call('downloads.clearCompleted');
 async function addUrl() {
   const v = $('addUrl').value.trim();

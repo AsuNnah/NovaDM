@@ -70,7 +70,7 @@ class AddFlow {
     this.setPanel(true);
     if (req.kind === 'many') {
       this.sendUI('links-ask', {
-        reqId: req.id, origin: req.origin, folder: this.downloads.settings.get('downloadDir'),
+        reqId: req.id, origin: req.origin, folder: this.downloads.settings.get('downloadDir'), queues: this.queueChoices(),
         links: req.specs.map((s) => ({ url: s.url, name: s.name || util.filenameFromUrl(s.url) || s.url })),
       });
       return;
@@ -83,9 +83,15 @@ class AddFlow {
       size: s.size > 0 ? s.size : -1, sizeIsEstimate: s.kind === 'hls', folder: s.dir || this.downloads.categoryDir(category),
       pageUrl: s.pageUrl || '', incognito: !!s.incognito,
       duplicate: req.dup ? { id: req.dup.id, name: req.dup.name, state: req.dup.state } : null,
+      queues: this.queueChoices(),
     });
     // Unknown size/name (plain links): ask the server while the dialog is open.
     if (s.kind === 'http' && !(s.size > 0) && !s.native) this.probeFor(req);
+  }
+
+  // Queues to choose from in the dialogs (only shown when there is more than Main).
+  queueChoices() {
+    return this.downloads.queues().map((q) => ({ id: q.id, name: q.name, scheduled: !!(q.schedule && q.schedule.enabled) }));
   }
 
   async probeFor(req) {
@@ -120,13 +126,13 @@ class AddFlow {
       if (req.kind === 'many') {
         const pick = new Set(a.selected || []);
         let n = 0;
-        req.specs.forEach((s, i) => { if (pick.has(i)) { this.downloads.add({ ...s, dir: a.folder || undefined, start }); n++; } });
+        req.specs.forEach((s, i) => { if (pick.has(i)) { this.downloads.add({ ...s, dir: a.folder || undefined, queue: a.queue, start }); n++; } });
         result.count = n;
       } else {
         const s = req.spec;
         const rec = this.downloads.add({
           ...s, name: a.name ? util.sanitizeFilename(a.name) : s.name, allowRename: a.name ? false : s.allowRename,
-          dir: a.folder || s.dir, speedLimitKBps: a.speedLimitKBps, expectedHash: a.checksum, start,
+          dir: a.folder || s.dir, speedLimitKBps: a.speedLimitKBps, expectedHash: a.checksum, queue: a.queue, start,
         });
         result.id = rec.id;
       }

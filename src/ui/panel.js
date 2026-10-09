@@ -45,6 +45,7 @@ api.on('permission-ask', (d) => showPermissionPrompt(d));
 api.on('download-ask', (d) => showDownloadAsk(d));
 api.on('download-ask-update', (d) => updateDownloadAsk(d));
 api.on('links-ask', (d) => showLinksAsk(d));
+api.on('afterdone-ask', (d) => showAfterDone(d));
 
 function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -154,7 +155,7 @@ function dlRow(d) {
   const actions = el('div'); actions.style.display = 'flex'; actions.style.gap = '2px';
   const icon = (title, svg, fn) => { const b = el('div', 'iconbtn'); b.title = title; b.innerHTML = svg; b.onclick = fn; return b; };
   if (d.state === 'downloading' || d.state === 'connecting') actions.append(icon('Pause', pauseSvg(), () => api.call('downloads.pause', { id: d.id })));
-  else if (d.state === 'paused' || d.state === 'error' || d.state === 'queued') actions.append(icon('Resume', playSmSvg(), () => api.call('downloads.resume', { id: d.id })));
+  else if (['paused', 'error', 'queued', 'scheduled'].includes(d.state)) actions.append(icon('Resume', playSmSvg(), () => api.call('downloads.resume', { id: d.id })));
   if (d.state === 'done') { actions.append(icon('Open', folderSvg(), () => api.call('downloads.showInFolder', { id: d.id }))); }
   actions.append(icon('Remove', xSvg(), () => api.call(d.state === 'done' ? 'downloads.remove' : 'downloads.cancel', { id: d.id })));
   row.append(actions);
@@ -435,7 +436,8 @@ function showDownloadAsk(d) {
     <div class="k">File name</div><div class="v"><input class="inp" id="na-name" spellcheck="false"></div>
     <div class="k">Size</div><div class="v"><span class="txt" id="na-size"></span></div>
     <div class="k">From</div><div class="v"><span class="txt" id="na-from"></span></div>
-    <div class="k">Save to</div><div class="v"><span class="txt" id="na-folder"></span><button class="btn sm" id="na-change">Change</button></div>`;
+    <div class="k">Save to</div><div class="v"><span class="txt" id="na-folder"></span><button class="btn sm" id="na-change">Change</button></div>
+    ${queueRow(d.queues, 'na-queue')}`;
   content.append(frm);
   const name = frm.querySelector('#na-name');
   name.value = d.name;
@@ -496,8 +498,41 @@ function respondAsk(action) {
   api.call('add.respond', {
     reqId: ask.reqId, action, name: ask.nameEdited ? v('na-name').trim() : '', folder: ask.folder,
     speedLimitKBps: Number(v('na-limit')) || 0, checksum: v('na-hash').trim(), dontAsk: !!(dont && dont.checked),
+    queue: v('na-queue') || 'main',
   });
   ask = null; current = null;
+}
+
+// Queue choice, only when the user has made queues besides Main.
+function queueRow(queues, id) {
+  if (!queues || queues.length < 2) return '';
+  const opts = queues.map((q) => `<option value="${esc(q.id)}">${esc(q.name)}${q.scheduled ? ' (scheduled)' : ''}</option>`).join('');
+  return `<div class="k">Queue</div><div class="v"><select id="${id}" style="height:30px">${opts}</select></div>`;
+}
+
+// "When all downloads finish": countdown before closing / sleep / shutdown, with Cancel.
+let afterTimer = null;
+function showAfterDone(d) {
+  current = 'afterdone'; place('prompt');
+  content.innerHTML = '';
+  content.append(el('div', 'hdr', '<div class="t">All downloads finished</div>'));
+  const q = el('div', 'q', '');
+  content.append(q);
+  const acts = el('div', 'acts');
+  const cancel = el('button', 'btn pri', 'Cancel'); cancel.onclick = () => { clearInterval(afterTimer); api.call('afterdone.cancel'); current = null; };
+  const now = el('button', 'btn', 'Do it now'); now.onclick = () => { clearInterval(afterTimer); api.call('afterdone.now'); current = null; };
+  acts.append(cancel, now);
+  content.append(acts);
+  const ends = Date.now() + d.seconds * 1000;
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((ends - Date.now()) / 1000));
+    q.innerHTML = `${esc(d.label)} in <b>${left}</b> second${left === 1 ? '' : 's'}.`;
+    if (!left) clearInterval(afterTimer);
+  };
+  clearInterval(afterTimer);
+  tick();
+  afterTimer = setInterval(tick, 250);
+  setTimeout(() => cancel.focus(), 30);
 }
 
 // Several links at once: pick which to download.
@@ -512,7 +547,7 @@ function showLinksAsk(d) {
     list.append(el('label', 'lrow', `<input type="checkbox" data-i="${i}" checked><div class="nm2"><div>${esc(l.name)}</div><div class="u">${esc(l.url)}</div></div>`));
   });
   content.append(list);
-  const frm = el('div', 'frm', '<div class="k">Save to</div><div class="v"><span class="txt" id="la-folder"></span><button class="btn sm" id="la-change">Change</button></div>');
+  const frm = el('div', 'frm', '<div class="k">Save to</div><div class="v"><span class="txt" id="la-folder"></span><button class="btn sm" id="la-change">Change</button></div>' + queueRow(d.queues, 'la-queue'));
   content.append(frm);
   const showFolder = () => { const x = document.getElementById('la-folder'); x.textContent = ask.folder || 'Sorted by file type'; x.title = ask.folder || ''; };
   showFolder();
@@ -532,7 +567,8 @@ function showLinksAsk(d) {
   upd();
   go.onclick = () => {
     const selected = [...list.querySelectorAll('input:checked')].map((c) => Number(c.dataset.i));
-    api.call('add.respond', { reqId: ask.reqId, action: 'start', selected, folder: ask.folder });
+    const q = document.getElementById('la-queue');
+    api.call('add.respond', { reqId: ask.reqId, action: 'start', selected, folder: ask.folder, queue: q ? q.value : 'main' });
     ask = null; current = null;
   };
   acts.append(all, none, el('div', 'sp'), cancel, go);

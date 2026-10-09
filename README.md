@@ -79,6 +79,19 @@ AB Download Manager, XDM). No code from any of them is included.
 - **Proxy** for browsing and downloads: Windows settings, none, HTTP/HTTPS/SOCKS server, or a PAC
   script, with sign-in (the password is encrypted by Windows)
 - Downloads from private tabs use the private session and are not kept in the list
+
+### Background, scheduling and safety
+- **Tray icon**: closing the window while downloads run keeps NovaDM downloading in the tray;
+  optionally always stay in the tray and **start with Windows**
+- **Queues and schedules**: named queues with their own "at once" limit and a time window
+  (start, optional end, days of the week); downloads pause when the window ends and continue in
+  the next one
+- **When all downloads finish**: close NovaDM, sleep or shut down, after a cancellable countdown
+- Keeps the computer awake while downloading
+- **Microsoft Defender scan** of finished programs and archives (or all files), with the result in
+  the list
+- **Mark of the Web** on downloaded files, so Windows SmartScreen and Office Protected View treat
+  them like browser downloads
 - Downloads page in the style of 1DM: category tabs, search, bulk actions, progress, speed and
   time left, and a box to paste a link (file or `.m3u8` stream)
 - **Properties** for each download: page and download links, mirrors, save path, resume support,
@@ -148,6 +161,8 @@ src/main/                 Electron main process
   add-flow.js             how downloads get added: dialog, duplicates, link lists, Refresh link
   clipboard-watch.js      copied-link watcher
   proxy.js, notify.js     proxy settings and sign-in; Windows notifications
+  scheduler.js            download queues and their time windows
+  background.js           tray, start with Windows, keep awake, "when all downloads finish"
 src/ui/                   toolbar, panels, downloads, settings, new tab pages
 test/                     unit tests (node --test)
 tools/                    self-tests, diagnostics, icon generator
