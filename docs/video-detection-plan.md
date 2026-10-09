@@ -1,4 +1,4 @@
-# Swoop — Auto-detect & download (video first): research summary and Windows plan
+# NovaDM — Auto-detect & download (video first): research summary and Windows plan
 
 ## 1. What 1DM does (research summary)
 
@@ -21,14 +21,14 @@ automatic subtitle capture, built-in Preview/Stream, AES key viewer, "skip downl
 row is clicked", a per-site blacklist, and download buttons injected into social-media posts.
 
 **DRM fallback:** 1DM's "DRM protected video handling" blocks the page's DRM (Widevine) request so
-the site's player falls back to an unprotected stream, if the site has one. Swoop gets this
+the site's player falls back to an unprotected stream, if the site has one. NovaDM gets this
 behavior by default: Electron ships without Widevine, so DRM requests always fail and any
-unprotected fallback the site serves is detected like normal media. Swoop watches for the DRM
+unprotected fallback the site serves is detected like normal media. NovaDM watches for the DRM
 request and shows a note in the panel ("This site asked for DRM — showing the unprotected version
 it provided"). Streams that are encrypted with DRM are labelled "Protected — can't download";
-Swoop does not decrypt them.
+NovaDM does not decrypt them.
 
-## 2. Where Swoop can do better on Windows
+## 2. Where NovaDM can do better on Windows
 
 | # | Improvement | How |
 |---|---|---|
@@ -85,11 +85,11 @@ audioSeparate}], parts, encrypted: none|aes128|drm, live, playing, headers{...},
 ## 5. Limits (stated up front)
 
 - DRM-protected streams (Widevine / PlayReady, `SAMPLE-AES`) cannot be downloaded and are labelled.
-  Sites that only offer DRM video (Netflix, Disney+, Spotify) will not play in Swoop at all, because
+  Sites that only offer DRM video (Netflix, Disney+, Spotify) will not play in NovaDM at all, because
   Electron has no Widevine; use Chrome, Edge or Brave for those.
-- Videos with separate audio (DASH, some HLS) need the later FFmpeg step; until then Swoop picks a
+- Videos with separate audio (DASH, some HLS) need the later FFmpeg step; until then NovaDM picks a
   quality that has audio built in, or labels the item "No audio".
-- Some sites' terms forbid downloading; Swoop only saves what the page already streams to you.
+- Some sites' terms forbid downloading; NovaDM only saves what the page already streams to you.
 
 ## 6. UI direction (Brave-like)
 

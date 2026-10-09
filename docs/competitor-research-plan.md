@@ -1,4 +1,4 @@
-# Swoop vs. Motrix, Gopeed, AB Download Manager, XDM — research and plan
+# NovaDM vs. Motrix, Gopeed, AB Download Manager, XDM — research and plan
 
 Plan only, no code. Sources are listed at the end. Research date: 9 Oct 2026.
 
@@ -61,7 +61,7 @@ import/export, cURL import/export of credentials, OkHttp DNS-over-HTTPS availabl
   MP4 or MKV out, **merges separate audio + video**, repairs discontinuous timelines; FFmpeg kept only as a
   retired fallback. Live-stream recording, antivirus scan after download, batch download, clipboard add.
 
-## 3. Where Swoop stands today (relevant parts)
+## 3. Where NovaDM stands today (relevant parts)
 
 - HTTP engine on Chromium's network stack (Electron `net`): same cookies, TLS, proxy and Secure DNS as the
   browser. **Limit: 6 connections per server on HTTP/1.1**, so 8–32 "connections" are capped at 6.
@@ -74,7 +74,7 @@ import/export, cURL import/export of credentials, OkHttp DNS-over-HTTPS availabl
 
 ## 4. Missing features — Category A: Common (most download managers have these)
 
-| # | Feature | Who has it | How in Swoop (technology) | Size |
+| # | Feature | Who has it | How in NovaDM (technology) | Size |
 |---|---|---|---|---|
 | A1 | **Scheduler + named queues** (start/stop time, days, per-queue limit) | AB DM, XDM | Queue model in `DownloadManager`; timer service in main; queue UI on Downloads page | M |
 | A2 | **Per-download speed limit** (plus global) | XDM, aria2 | Second token bucket per task chained after the global `RateLimiter` | S |
@@ -83,21 +83,21 @@ import/export, cURL import/export of credentials, OkHttp DNS-over-HTTPS availabl
 | A5 | **Completion notifications** (setting exists, not wired) + sound | all | Electron `Notification`; click → open file/folder | S |
 | A6 | **Clipboard watcher** (setting exists, not wired) + "add from clipboard", list of links | XDM, AB DM, 1DM | `clipboard.readText()` poll every 1 s; link list dialog | S |
 | A7 | **Batch / pattern download** (`file[001-100].jpg`), import a text list | XDM, AB DM, Gopeed | Pattern expander + list dialog → `downloads.add` | S |
-| A8 | **Auto-retry policy** + **Refresh link** for expired links | XDM, AB DM | On 403/410/expired: open the download page in a tab, the sniffer finds the new URL for the same file (size/name match) and swaps it in. **Swoop can do this automatically because it is a browser** | M |
+| A8 | **Auto-retry policy** + **Refresh link** for expired links | XDM, AB DM | On 403/410/expired: open the download page in a tab, the sniffer finds the new URL for the same file (size/name match) and swaps it in. **NovaDM can do this automatically because it is a browser** | M |
 | A9 | **Checksum verify** against a given MD5/SHA-1/SHA-256 | AB DM | Field in Add / Properties; hash after finish | S |
 | A10 | **After-download actions**: shutdown/sleep, keep PC awake, open file, run command | XDM, AB DM, Motrix 2.0, Gopeed | `powerSaveBlocker`; `shutdown /s /t 60` with cancellable countdown | S |
 | A11 | **Free-space check**, duplicate detection | AB DM | `fs.statfs` before start; same URL/name prompt | S |
 | A12 | **Per-site settings** (connections, User-Agent, login) | AB DM, Motrix (mock UA) | Host → settings map; Chromium `login` event + saved credentials for basic auth | M |
 | A13 | **Categories with custom rules** (by URL pattern / extension) | AB DM | Rules table in Settings | S |
 | A14 | **Import / export** downloads + settings; **paste a cURL command** to add a download with exact headers | AB DM | JSON files; cURL parser | S |
-| A15 | **External browser integration** (send downloads/videos from Brave, Chrome, Edge to Swoop) | all four | Small Chrome extension + Native Messaging host (Swoop.exe registered as host, can launch Swoop) — or local server on 127.0.0.1 like XDM | M |
+| A15 | **External browser integration** (send downloads/videos from Brave, Chrome, Edge to NovaDM) | all four | Small Chrome extension + Native Messaging host (NovaDM.exe registered as host, can launch NovaDM) — or local server on 127.0.0.1 like XDM | M |
 | A16 | **Auto-start downloads / skip the dialog**, auto-resume on start (settings exist, not wired) | all | Wire existing settings; small "New download" dialog (name, folder, connections) | S |
 | A17 | **Mark-of-the-Web** on downloaded files (Windows SmartScreen check for .exe etc.) | browsers | Write `Zone.Identifier` stream with the source URL | S |
 | A18 | Auto-update, themes/accent colour, UI scale, more languages | AB DM, Gopeed | electron-updater (needs signed builds); CSS variables | M |
 
 ## 5. Missing features — Category B: Specific to one app
 
-| # | Feature (from) | Worth it for Swoop? | How (technology) | Size |
+| # | Feature (from) | Worth it for NovaDM? | How (technology) | Size |
 |---|---|---|---|---|
 | B1 | **BitTorrent + magnet**: selective files, seeding limits, DHT/PEX, UPnP, **tracker lists auto-updated** (Motrix, Gopeed) | Yes | **aria2c as a separate process** controlled by JSON-RPC (Motrix's proven pattern, ~5 MB, GPL-2 binary shipped alongside). Alternative: WebTorrent (pure JS, slower, heavier) | L |
 | B2 | **DASH + merge separate audio and video without FFmpeg**, timeline repair (XDM) | Yes — the biggest video gap | Pure-JS fMP4/CMAF muxer: one `moov` with two tracks, interleaved `moof/mdat` (XDM approach). MKV writer for WebM/VP9/Opus | L |
@@ -107,7 +107,7 @@ import/export, cURL import/export of credentials, OkHttp DNS-over-HTTPS availabl
 | B6 | **Site extensions** — JS that turns a page into files, installed from a git URL, with settings/storage (Gopeed) | Yes | Run in a sandbox (QuickJS-wasm or a sandboxed hidden renderer), `onResolve` + `fetch` only. Optional **yt-dlp** add-on for 1,000+ sites (site terms apply) | L |
 | B7 | **Antivirus scan** after download (XDM) | Yes, cheap | Windows Defender `MpCmdRun.exe -Scan -ScanType 3 -File` | S |
 | B8 | **Archive auto-extract** (Gopeed) | Maybe | 7-Zip binary (7zip-bin) or JS unzip for .zip | M |
-| B9 | **REST API + CLI + deep links** (`swoop://`) (Gopeed, AB DM, Motrix 2.0) | Maybe | Local server with API key; `app.setAsDefaultProtocolClient('swoop')` | M |
+| B9 | **REST API + CLI + deep links** (`novadm://`) (Gopeed, AB DM, Motrix 2.0) | Maybe | Local server with API key; `app.setAsDefaultProtocolClient('novadm')` | M |
 | B10 | **Webhooks / post-download scripts** (Gopeed) | Later | Run command / POST JSON on finish | S |
 | B11 | **MCP server** so AI agents can control downloads (Gopeed) | Later | MCP SDK over local HTTP | M |
 | B12 | **ed2k** (Gopeed) | No (niche) | — | — |
@@ -119,7 +119,7 @@ import/export, cURL import/export of credentials, OkHttp DNS-over-HTTPS availabl
 
 | # | Change | Taken from | Why it helps | Size |
 |---|---|---|---|---|
-| S1 | **Direct transport** (`undici`, Node's own HTTP client) next to Chromium `net`. Swoop picks per server: Chromium for HTTP/2 or protected sites; direct when the server is HTTP/1.1 and more than 6 connections are wanted. Keeps Swoop's strengths: cookies copied from the browser session, page headers + Referer replayed, **Secure DNS via `session.resolveHost()`** fed into undici's `connect.lookup`, system/custom proxy via `ProxyAgent`. Falls back to Chromium on 403/TLS refusal | aria2, OkHttp, Go engines (none have the 6-per-host cap) | Removes the 6-connection cap: 16–32 real connections like IDM/Motrix | M |
+| S1 | **Direct transport** (`undici`, Node's own HTTP client) next to Chromium `net`. NovaDM picks per server: Chromium for HTTP/2 or protected sites; direct when the server is HTTP/1.1 and more than 6 connections are wanted. Keeps NovaDM's strengths: cookies copied from the browser session, page headers + Referer replayed, **Secure DNS via `session.resolveHost()`** fed into undici's `connect.lookup`, system/custom proxy via `ProxyAgent`. Falls back to Chromium on 403/TLS refusal | aria2, OkHttp, Go engines (none have the 6-per-host cap) | Removes the 6-connection cap: 16–32 real connections like IDM/Motrix | M |
 | S2 | **Slow-start connections**: start at 1, grow 2 → 4 → 8 → 16 while total speed still rises; stop growing on 403/429/503 and honour `Retry-After` | Gopeed | Finds the best count per server automatically; avoids bans and wasted connections | M |
 | S3 | **Steal by time left, not bytes left**, with a 5 s cooldown and 512 KB minimum | Gopeed + XDM | Slow connections near the end get help; no endless re-splitting | S |
 | S4 | **Reuse the first response** as connection #1 instead of probing with `Range: 0-0` first | Gopeed | Saves a round trip per download; signed one-time links work | S |
@@ -152,12 +152,12 @@ browser integration (A15). C8 REST API / deep links (B9).
 | Torrents | **aria2c sidecar** (JSON-RPC), patched build for >16 connections not needed (only BT/FTP use it) | WebTorrent (pure JS, slower); Gopeed's Go engine (duplicates our HTTP engine) | Mature, tiny, proven by Motrix |
 | DASH / audio+video merge | **Own JS fMP4 muxer** (+ MKV writer later) | FFmpeg only (80 MB, must be downloaded) | XDM shows it works without FFmpeg; fast, no re-encode |
 | Conversions / repair | **FFmpeg on demand** (verified download) | Bundle FFmpeg | Keeps the installer small (Motrix 2.0 approach) |
-| Site extractors | **JS extensions in a sandbox** (Gopeed-style `onResolve`), optional yt-dlp add-on | Hard-coded site support | Extendable without updating Swoop |
-| Browser integration | **Chrome extension + Native Messaging** | Local HTTP server (XDM) | Can start Swoop when it isn't running; no open port |
-| Automation | Local REST API with API key, `swoop://` deep links | — | Same as AB DM / Motrix |
+| Site extractors | **JS extensions in a sandbox** (Gopeed-style `onResolve`), optional yt-dlp add-on | Hard-coded site support | Extendable without updating NovaDM |
+| Browser integration | **Chrome extension + Native Messaging** | Local HTTP server (XDM) | Can start NovaDM when it isn't running; no open port |
+| Automation | Local REST API with API key, `novadm://` deep links | — | Same as AB DM / Motrix |
 
 Licences: aria2 GPL-2 and FFmpeg GPL/LGPL are separate programs (fine to ship alongside or download);
-undici MIT; Swoop already uses GPL-3 for extension support.
+undici MIT; NovaDM already uses GPL-3 for extension support.
 
 ## 8. Suggested order
 

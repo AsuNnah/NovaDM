@@ -1,0 +1,57 @@
+{
+  "name": "novadm",
+  "productName": "NovaDM",
+  "version": "0.1.0",
+  "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
+  "author": "NovaDM",
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test --test-timeout=120000 test/*.test.js",
+    "icon": "node tools/make-icon.js",
+    "dist": "electron-builder --win",
+    "dist:dir": "electron-builder --win dir"
+  },
+  "dependencies": {
+    "@ghostery/adblocker-electron": "2.18.2",
+    "electron-chrome-extensions": "4.9.0",
+    "electron-chrome-web-store": "0.13.0",
+    "hls.js": "1.7.3",
+    "mux.js": "6.3.0",
+    "undici": "7.30.0"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "app.novadm.browser",
+    "productName": "NovaDM",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "NovaDM",
+      "artifactName": "NovaDM-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "NovaDM-Portable-${version}.${ext}"
+    }
+  }
+}

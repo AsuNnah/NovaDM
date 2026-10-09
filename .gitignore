@@ -1,6 +1,6 @@
 # Dependencies and build output
 node_modules/
-swoop/dist/
+dist/
 
 # The original Android APK (third-party, not part of this project)
 *.apk
