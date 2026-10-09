@@ -20,9 +20,11 @@ const MIN_PART = 512 * 1024; // smallest piece worth giving to another connectio
 const WRITE_CHUNK = 1024 * 1024; // write cache per connection
 const CHECKPOINT_MS = 30000;
 const CHECKPOINT_BYTES = 64 * 1024 * 1024;
-const STEAL_SECONDS = 3; // only help connections with more than this much time left
+const STEAL_SECONDS = 3; // a finished connection only helps parts with more than this much time left
+const GROW_STEAL_SECONDS = 1.5; // a new connection may take work from parts with this much time left
 const STEAL_COOLDOWN_MS = 5000;
-const TICK_MS = 500;
+const TICK_MS = 250;
+const RAMP_MS = 1000; // time to measure each slow-start step
 const BROWSER_H1_CAP = 6; // Chromium's per-server limit for HTTP/1.1
 
 class HttpDownload extends EventEmitter {
@@ -50,6 +52,8 @@ class HttpDownload extends EventEmitter {
     this.openConn = opts.openConn || null;
     this.allowRename = !!opts.allowRename;
     this.minPart = opts.minSplitBytes || MIN_PART;
+    this.checkpointMs = opts.checkpointMs || CHECKPOINT_MS;
+    this.checkpointBytes = opts.checkpointBytes || CHECKPOINT_BYTES;
 
     this.size = opts.size ?? -1;
     this.resumable = false;
@@ -62,6 +66,7 @@ class HttpDownload extends EventEmitter {
     this.fd = null;
     this.cap = 1; // current connection target (slow start)
     this.steady = false;
+    this.flatSteps = 0;
     this.lastStepSpeed = 0;
     this.stepStartedAt = 0;
     this.holdUntil = 0; // after 429/503: don't open new connections before this time
@@ -246,26 +251,31 @@ class HttpDownload extends EventEmitter {
     clearInterval(this._tick); this._tick = null;
   }
 
-  // Controller: speed sampling, slow-start growth, checkpoints, progress.
+  // Controller: slow-start growth, checkpoints, progress.
+  // A step is judged only once all its connections are running, by the speed over the last second.
   tick() {
     if (this._stopping || this._finishing) return;
     const now = Date.now();
-    const speed = this.speed();
     const limit = this.capLimit();
-    if (!this.steady && this.resumable && now >= this.holdUntil && now - this.stepStartedAt >= 1500) {
-      const grew = this.lastStepSpeed === 0 || speed > this.lastStepSpeed * 1.1;
+    this.fillConnections();
+    const active = this.activeConns();
+    if (!this.steady && this.resumable && now >= this.holdUntil && active >= this.cap && now - this.stepStartedAt >= RAMP_MS) {
+      const speed = this.recentSpeed(RAMP_MS);
       if (this.cap >= limit) this.steady = true;
-      else if (grew || this.cap < 2) {
+      else if (this.lastStepSpeed === 0 || speed > this.lastStepSpeed * 1.1) {
         this.lastStepSpeed = speed;
+        this.flatSteps = 0;
         this.cap = Math.min(limit, this.cap * 2);
         this.stepStartedAt = now;
+        this.fillConnections();
+      } else if (++this.flatSteps < 2) {
+        this.stepStartedAt = now; // new connections may still be warming up: measure once more
       } else {
         this.steady = true; // more connections stopped helping: stay here
-        this.cap = Math.max(1, this.activeConns());
+        this.cap = Math.max(1, active);
       }
     }
-    this.fillConnections();
-    if (now - this._lastCheckpoint >= CHECKPOINT_MS || this._sinceCheckpoint >= CHECKPOINT_BYTES) this.checkpoint().catch(() => {});
+    if (now - this._lastCheckpoint >= this.checkpointMs || this._sinceCheckpoint >= this.checkpointBytes) this.checkpoint().catch(() => {});
     this.emitUpdate();
   }
 
@@ -273,29 +283,33 @@ class HttpDownload extends EventEmitter {
   fillConnections() {
     if (this._stopping || this._finishing) return;
     while (this.activeConns() < this.cap && Date.now() >= this.holdUntil) {
-      const seg = this.pickWork();
+      const seg = this.pickWork(GROW_STEAL_SECONDS);
       if (!seg) break;
       this.startConnection(seg, null);
+      this.stepStartedAt = Date.now(); // measure the step from when its connections exist
     }
   }
 
-  pickWork() {
+  pickWork(minSeconds = STEAL_SECONDS) {
     const free = this.segments.find((s) => !s.conn && s.start + s.got < s.end);
     if (free) return free;
     if (!this.resumable) return null;
-    return this.stealFrom();
+    return this.stealFrom(minSeconds);
   }
 
-  // Take half of the remaining work of the part with the most time left.
-  stealFrom() {
+  // Take half of the remaining work of the part with the most time left. The cooldown only applies
+  // when a finished connection helps another (prevents thrashing at the end); slow-start growth is
+  // already paced by RAMP_MS.
+  stealFrom(minSeconds = STEAL_SECONDS) {
     const now = Date.now();
-    let victim = null; let worst = STEAL_SECONDS;
+    const cooldown = minSeconds >= STEAL_SECONDS ? STEAL_COOLDOWN_MS : 0;
+    let victim = null; let worst = minSeconds;
     for (const s of this.segments) {
-      if (!s.conn || s.end === Infinity || now - s.lastSteal < STEAL_COOLDOWN_MS) continue;
+      if (!s.conn || s.end === Infinity || now - s.lastSteal < cooldown) continue;
       const remain = s.end - (s.start + s.got);
       if (remain < this.minPart * 2) continue;
       const sp = s.conn.speed || 0;
-      const secs = sp > 0 ? remain / sp : STEAL_SECONDS + 1 + remain / 1e9;
+      const secs = sp > 0 ? remain / sp : minSeconds + 1 + remain / 1e9;
       if (secs > worst) { worst = secs; victim = s; }
     }
     if (!victim) return null;
@@ -624,6 +638,13 @@ class HttpDownload extends EventEmitter {
     while (c.samples.length && c.samples[0][0] < cut) c.samples.shift();
     const span = c.samples.length > 1 ? (now - c.samples[0][0]) / 1000 : 0;
     c.speed = span > 0.4 ? c.samples.reduce((s, x) => s + x[1], 0) / span : 0;
+  }
+
+  recentSpeed(ms) {
+    const cut = Date.now() - ms;
+    let total = 0;
+    for (const [t, b] of this._speedSamples) if (t >= cut) total += b;
+    return total / (ms / 1000);
   }
 
   speed() {
