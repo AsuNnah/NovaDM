@@ -3,10 +3,10 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler'];
-const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser'];
+const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract'];
+const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser', 'afterArgs', 'webhookUrl'];
 const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7], apiPort: [1024, 65535] };
-const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads'];
+const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads', 'theme', 'accent'];
 
 function flashSaved() {
   const s = $('saved');
@@ -63,6 +63,8 @@ function render() {
   $('proxyPacRow').hidden = pm !== 'pac';
   $('proxyAuthRow').hidden = pm !== 'manual' && pm !== 'pac';
   $('proxyPass').placeholder = current.proxyHasPassword ? 'Password saved' : 'Password';
+  $('afterProgramShow').textContent = current.afterProgram || 'None';
+  renderRules();
   if (document.activeElement !== $('secureDnsCustom')) $('secureDnsCustom').value = current.secureDnsCustom || '';
   $('downloadDir').textContent = current.downloadDir || '';
   $('downloadDir').title = current.downloadDir || '';
@@ -130,6 +132,7 @@ async function init() {
   $('chooseDir').addEventListener('click', async () => { current = await bridge.chooseDownloadDir(); render(); });
   initFfmpeg();
   initAria2();
+  initRules();
   initIntegration();
   initYtdlp();
   initSiteExtensions();
@@ -173,6 +176,63 @@ async function initFfmpeg() {
   $('ffChoose').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.choose'));
   $('ffRemove').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.uninstall'));
   refresh();
+}
+
+// ---- rules: categories/folders and per-site settings ----
+const CAT_NAMES = { video: 'Video', music: 'Music', images: 'Images', documents: 'Documents', archives: 'Archives', programs: 'Programs', other: 'Other' };
+function renderRules() {
+  const list = $('ruleList');
+  if (!list || list.contains(document.activeElement)) return;
+  list.innerHTML = '';
+  (current.categoryRules || []).forEach((r, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<div class="mini"><select data-k="by"><option value="type">File type</option><option value="site">Site</option><option value="text">Address contains</option></select>
+      <input type="text" data-k="value" placeholder="e.g. psd ai" spellcheck="false"> <span>→</span>
+      <select data-k="category">${Object.entries(CAT_NAMES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select>
+      <input type="text" data-k="folder" placeholder="Folder (optional)" spellcheck="false"><button data-a="pick">…</button><button data-a="del">Remove</button></div>`;
+    for (const el of row.querySelectorAll('[data-k]')) el.value = r[el.dataset.k] || (el.dataset.k === 'category' ? 'other' : '');
+    row.addEventListener('change', () => saveRules());
+    row.querySelector('[data-a="pick"]').onclick = async () => { const f = await bridge.settingsOp('chooseFolder'); if (f && f.folder) { row.querySelector('[data-k="folder"]').value = f.folder; saveRules(); } };
+    row.querySelector('[data-a="del"]').onclick = () => { row.remove(); saveRules(); };
+    list.append(row);
+  });
+  const sites = $('siteList');
+  if (sites.contains(document.activeElement)) return;
+  sites.innerHTML = '';
+  (current.siteSettings || []).forEach((s) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<div class="mini capped"><label>Site<input type="text" data-k="site" placeholder="example.com" spellcheck="false"></label>
+      <label>Connections<input type="number" data-k="connections" min="0" max="32" title="0 = the general setting"></label>
+      <label>Limit KB/s<input type="number" data-k="speedLimitKBps" min="0" step="50" title="0 = no limit"></label>
+      <label>Browser name<input type="text" data-k="userAgent" placeholder="Optional" spellcheck="false"></label>
+      <label>Sign-in<input type="text" data-k="user" placeholder="User name" spellcheck="false"></label>
+      <label>Password<input type="password" data-p="1" placeholder="${s.hasPassword ? 'Saved' : 'None'}"></label>
+      <button data-a="del">Remove</button></div>`;
+    for (const el of row.querySelectorAll('[data-k]')) el.value = s[el.dataset.k] ?? (el.type === 'number' ? 0 : '');
+    row.addEventListener('change', async (e) => {
+      if (e.target.dataset.p) { await saveSites(); await bridge.settingsOp('sitePassword', { site: row.querySelector('[data-k="site"]').value.trim(), password: e.target.value }); e.target.value = ''; current = await bridge.getSettings(); renderRules(); flashSaved(); return; }
+      saveSites();
+    });
+    row.querySelector('[data-a="del"]').onclick = () => { row.remove(); saveSites(); };
+    sites.append(row);
+  });
+}
+function rowsOf(id) {
+  return [...$(id).querySelectorAll('.row')].map((row) => {
+    const o = {};
+    for (const el of row.querySelectorAll('[data-k]')) o[el.dataset.k] = el.type === 'number' ? Number(el.value) || 0 : el.value.trim();
+    return o;
+  });
+}
+function saveRules() { return save({ categoryRules: rowsOf('ruleList').filter((r) => r.value) }); }
+function saveSites() { return save({ siteSettings: rowsOf('siteList').filter((s) => s.site) }); }
+function initRules() {
+  $('ruleAdd').onclick = async () => { await save({ categoryRules: [...(current.categoryRules || []), { by: 'type', value: '', category: 'other', folder: '' }] }); renderRules(); };
+  $('siteAdd').onclick = async () => { await save({ siteSettings: [...(current.siteSettings || []), { site: '', connections: 0, speedLimitKBps: 0, userAgent: '', user: '' }] }); renderRules(); };
+  $('afterProgramChoose').onclick = async () => { current = await bridge.settingsOp('chooseProgram'); render(); };
+  $('afterProgramClear').onclick = () => save({ afterProgram: '' });
 }
 
 // ---- site extensions ----

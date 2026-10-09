@@ -22,6 +22,11 @@ h2{font-size:13px;font-weight:600;color:var(--fg2);text-transform:none;margin:28
 select,input[type=number],input[type=text],input[type=password]{height:32px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;padding:0 10px;outline:none;}
 select:focus,input:focus{border-color:var(--accent);}
 input[type=number]{width:96px;}
+.mini{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.mini input[type=text],.mini input[type=password]{width:150px;}
+.mini input[type=number]{width:80px;}
+.mini.capped{align-items:flex-end;}
+.mini label{display:flex;flex-direction:column;gap:2px;font-size:11.5px;color:var(--fg3);}
 .ffacts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
 .ffbar{height:4px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:8px;max-width:320px;}
 .ffbar>i{display:block;height:100%;width:0;background:var(--accent);}
@@ -43,6 +48,21 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
 <body>
 <div class="wrap">
   <h1>Settings</h1>
+
+  <h2>Appearance</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Theme</b><span>"Like Windows" follows the Windows setting. Pages that support it follow along.</span></div>
+      <select id="theme"><option value="system">Like Windows</option><option value="dark">Dark</option><option value="light">Light</option></select>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Accent colour</b></div>
+      <select id="accent"><option value="#5b7cfa">Blue</option><option value="#8b5cf6">Violet</option><option value="#ec4899">Pink</option><option value="#ef4444">Red</option><option value="#f59e0b">Amber</option><option value="#10b981">Green</option><option value="#06b6d4">Teal</option></select>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Page size</b><span>Ctrl + plus / minus zooms a page; Ctrl + 0 goes back to 100%. The zoom applies to every page of that site.</span></div>
+    </div>
+  </div>
 
   <h2>Privacy and security</h2>
   <div class="card">
@@ -102,6 +122,44 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <div class="lbl"><b>Speed limit (KB/s)</b><span>0 means no limit.</span></div>
       <input type="number" id="speedLimitKBps" min="0" step="100" />
     </div>
+  </div>
+
+  <h2>After a download</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Unpack archives</b><span>Zip, 7z, rar, tar and similar go into a folder next to them (never ones Microsoft Defender reported). "Extract here" in the Downloads menu does it by hand.</span></div>
+      <label class="sw"><input type="checkbox" id="extractArchives"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>…and delete the archive afterwards</b></div>
+      <label class="sw"><input type="checkbox" id="deleteAfterExtract"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Start a program</b><span>For each finished download. It is started directly, not through a command shell.</span><div class="path" id="afterProgramShow"></div></div>
+      <div class="ffacts"><button id="afterProgramChoose">Choose…</button><button id="afterProgramClear">None</button></div>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Its arguments</b><span>{file} {folder} {name} {url} {page} are filled in.</span></div>
+      <input type="text" id="afterArgs" spellcheck="false" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Tell a web address (webhook)</b><span>Gets a JSON note (POST) when a download finishes or fails.</span></div>
+      <input type="text" id="webhookUrl" placeholder="https://" spellcheck="false" />
+    </div>
+  </div>
+
+  <h2>Rules</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Categories and folders</b><span>The first rule that fits decides the category and, if set, the folder of a new download.</span></div>
+      <button id="ruleAdd">Add rule</button>
+    </div>
+    <div id="ruleList"></div>
+    <div class="row">
+      <div class="lbl"><b>Settings for a site</b><span>Connections, browser name (user agent), speed limit and a sign-in for one site and its subdomains.</span></div>
+      <button id="siteAdd">Add site</button>
+    </div>
+    <div id="siteList"></div>
   </div>
 
   <h2>Background</h2>

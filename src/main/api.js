@@ -12,6 +12,8 @@
 //   GET    /api/v1/downloads/:id               -> { download }
 //   POST   /api/v1/downloads/:id/pause | resume | stop-recording
 //   DELETE /api/v1/downloads/:id[?deleteFile=1]
+//   POST   /mcp                                 Model Context Protocol (JSON-RPC over HTTP), so AI
+//                                                assistants can add and manage downloads (same key)
 const http = require('http');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
@@ -77,13 +79,12 @@ class LocalApi extends EventEmitter {
     if (/^https?:/i.test(origin) || origin === 'null') return send(res, 403, { error: 'Not allowed from web pages' });
     const url = new URL(req.url, 'http://local');
     const parts = url.pathname.replace(/\/+$/, '').split('/').filter(Boolean); // api, v1, ...
+    if (parts[0] === 'mcp' && parts.length === 1) return this.handleMcpHttp(req, res);
     if (parts[0] !== 'api' || parts[1] !== 'v1') return send(res, 404, { error: 'Not found' });
     const route = parts.slice(2);
     if (req.method === 'OPTIONS') return send(res, 204, null);
     if (req.method === 'GET' && route[0] === 'ping') return send(res, 200, { app: 'NovaDM', version: this.version });
-    const auth = String(req.headers.authorization || '');
-    const given = auth.startsWith('Bearer ') ? auth.slice(7).trim() : String(req.headers['x-novadm-key'] || '');
-    if (!safeEqual(given, this.key())) return send(res, 401, { error: 'Missing or wrong key' });
+    if (!this.authorized(req)) return send(res, 401, { error: 'Missing or wrong key' });
 
     const d = this.downloads;
     if (req.method === 'GET' && route[0] === 'status') return send(res, 200, d.activeSummary());
@@ -102,6 +103,72 @@ class LocalApi extends EventEmitter {
       return send(res, 200, { ok: true });
     }
     return send(res, 405, { error: 'Not allowed' });
+  }
+
+  // ---- MCP (streamable HTTP, JSON answers; no server-sent events) ----
+
+  async handleMcpHttp(req, res) {
+    if (!this.authorized(req)) return send(res, 401, { error: 'Missing or wrong key' });
+    if (req.method !== 'POST') return send(res, 405, { error: 'POST JSON-RPC messages here' });
+    let msg;
+    try { msg = await readJson(req); } catch { return send(res, 400, rpcError(null, -32700, 'Parse error')); }
+    if (Array.isArray(msg)) {
+      const out = (await Promise.all(msg.map((m) => this.mcp(m)))).filter(Boolean);
+      return out.length ? send(res, 200, out) : send(res, 202, null);
+    }
+    const answer = await this.mcp(msg);
+    return answer ? send(res, 200, answer) : send(res, 202, null);
+  }
+
+  authorized(req) {
+    const auth = String(req.headers.authorization || '');
+    const given = auth.startsWith('Bearer ') ? auth.slice(7).trim() : String(req.headers['x-novadm-key'] || '');
+    return safeEqual(given, this.key());
+  }
+
+  /** One JSON-RPC message. Notifications (no id) get no answer. */
+  async mcp(m) {
+    if (!m || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return rpcError(m && m.id, -32600, 'Invalid request');
+    const reply = (result) => (m.id === undefined ? null : { jsonrpc: '2.0', id: m.id, result });
+    if (m.method.startsWith('notifications/')) return null;
+    if (m.method === 'initialize') {
+      const asked = m.params && m.params.protocolVersion;
+      return reply({
+        protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(asked) ? asked : '2025-06-18',
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: 'NovaDM', version: this.version },
+        instructions: 'NovaDM is a download manager. add_download shows NovaDM\'s New download dialog to the user unless start is true.',
+      });
+    }
+    if (m.method === 'ping') return reply({});
+    if (m.method === 'tools/list') return reply({ tools: MCP_TOOLS });
+    if (m.method === 'tools/call') {
+      try {
+        const out = await this.callTool((m.params && m.params.name) || '', (m.params && m.params.arguments) || {});
+        return reply({ content: [{ type: 'text', text: JSON.stringify(out, null, 2) }], isError: out && out.ok === false });
+      } catch (e) {
+        return reply({ content: [{ type: 'text', text: e.message }], isError: true });
+      }
+    }
+    return rpcError(m.id, -32601, 'Method not found');
+  }
+
+  async callTool(name, a) {
+    const d = this.downloads;
+    const brief = (x) => ({ id: x.id, name: x.name, state: x.state, percent: Math.round(x.percent || 0), size: x.size, speed: x.speed, error: x.error || undefined });
+    const need = () => { const r = d.get(String(a.id || '')); if (!r) throw new Error('No download with that id'); return r; };
+    switch (name) {
+      case 'add_download': return this.add({ url: a.url, name: a.name, start: a.start === true });
+      case 'list_downloads': {
+        const list = d.list().filter((x) => !a.state || a.state === 'all' || x.state === a.state);
+        return { downloads: list.slice(0, Math.min(200, Number(a.limit) || 50)).map(brief) };
+      }
+      case 'get_status': return d.activeSummary();
+      case 'pause_download': d.pause(need().id); return { ok: true };
+      case 'resume_download': d.resume(need().id); return { ok: true };
+      case 'remove_download': await d.cancel(need().id, a.delete_file === true); return { ok: true };
+      default: throw new Error('Unknown tool ' + name);
+    }
   }
 
   /** Add one or more links. Shown in the New download dialog unless start: true. */
@@ -129,6 +196,17 @@ class LocalApi extends EventEmitter {
     return { ok: true, pending: true };
   }
 }
+
+const MCP_TOOLS = [
+  { name: 'add_download', description: 'Add a download (http/https link, .m3u8/.mpd stream or magnet link). NovaDM shows its New download dialog unless start is true.', inputSchema: { type: 'object', properties: { url: { type: 'string', description: 'The link' }, name: { type: 'string', description: 'File name (optional)' }, start: { type: 'boolean', description: 'Start without asking the user' } }, required: ['url'] } },
+  { name: 'list_downloads', description: 'List downloads with their state and progress.', inputSchema: { type: 'object', properties: { state: { type: 'string', enum: ['all', 'downloading', 'queued', 'paused', 'scheduled', 'done', 'error'] }, limit: { type: 'number' } } } },
+  { name: 'get_status', description: 'How many downloads are running and the total speed.', inputSchema: { type: 'object', properties: {} } },
+  { name: 'pause_download', description: 'Pause a download.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  { name: 'resume_download', description: 'Resume a paused or failed download.', inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } },
+  { name: 'remove_download', description: 'Remove a download from the list (and optionally its file).', inputSchema: { type: 'object', properties: { id: { type: 'string' }, delete_file: { type: 'boolean' } }, required: ['id'] } },
+];
+
+function rpcError(id, code, message) { return { jsonrpc: '2.0', id: id === undefined ? null : id, error: { code, message } }; }
 
 function safeEqual(a, b) {
   const x = Buffer.from(String(a)); const y = Buffer.from(String(b));

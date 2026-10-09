@@ -27,15 +27,15 @@ input:focus{border-color:var(--accent);}
 .addbar input{flex:1;}
 .filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
 .tab{height:30px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--fg2);font-size:12.5px;}
-.tab.on{background:rgba(59,110,245,.16);border-color:transparent;color:var(--accent2);}
+.tab.on{background:color-mix(in srgb,var(--accent) 16%,transparent);border-color:transparent;color:var(--accent2);}
 .chip{height:26px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--fg3);font-size:12px;}
 .chip.on{color:var(--fg);border-color:var(--fg3);}
-.bulk{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;border-radius:10px;background:rgba(59,110,245,.12);font-size:13px;}
+.bulk{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,transparent);font-size:13px;}
 .list{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
 .row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line);}
 .row:first-child{border-top:none;}
 .row:hover{background:var(--card2);}
-.row.sel{background:rgba(59,110,245,.10);}
+.row.sel{background:color-mix(in srgb,var(--accent) 10%,transparent);}
 .row input[type=checkbox]{width:16px;height:16px;flex:none;accent-color:var(--accent);}
 .ico{width:40px;height:40px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;flex:none;color:var(--fg2);position:relative;}
 .ico .dot{position:absolute;right:-2px;bottom:-2px;width:12px;height:12px;border-radius:50%;border:2px solid var(--card);}
@@ -99,6 +99,8 @@ select{height:32px;border-radius:8px;border:1px solid var(--line);background:var
     <button id="openFolder" title="Open the download folder">Open folder</button>
     <button id="clearDone" title="Remove finished downloads from the list (files stay on disk)">Clear finished</button>
     <button id="openTorrent" title="Open a .torrent file">Open torrent</button>
+    <button id="importBtn" title="Add downloads and settings from an export file">Import</button>
+    <button id="exportBtn" title="Save the downloads list and settings to a file">Export</button>
     <button id="queuesBtn" title="Queues and schedules">Queues</button>
     <label class="after" title="Runs once, when nothing is downloading or waiting any more">When all finish
       <select id="afterAllDone"><option value="nothing">do nothing</option><option value="exit">close NovaDM</option><option value="sleep">sleep</option><option value="shutdown">shut down</option></select>
@@ -106,7 +108,7 @@ select{height:32px;border-radius:8px;border:1px solid var(--line);background:var
   </div>
 
   <div class="addbar">
-    <input type="text" id="addUrl" placeholder="Paste download links (files, .m3u8/.mpd streams, magnet links; several at once, or a pattern like img[001-100].jpg) and press Enter" spellcheck="false" />
+    <input type="text" id="addUrl" placeholder="Paste download links (files, .m3u8/.mpd streams, magnet links; several at once, a pattern like img[001-100].jpg, or a command from &quot;Copy as cURL&quot;) and press Enter" spellcheck="false" />
     <button class="pri" id="addBtn">Download</button>
   </div>
 

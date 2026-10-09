@@ -139,6 +139,33 @@ class Browser extends EventEmitter {
     wc.on('did-start-loading', () => { tab.loading = true; update(); });
     wc.on('did-stop-loading', () => { tab.loading = false; update(); });
     wc.on('did-finish-load', () => this.emit('page-loaded', tab));
+    // Browser shortcuts also while a page has the keyboard; Ctrl +/-/0 zoom the page (per site).
+    wc.on('before-input-event', (e, input) => {
+      if (input.type !== 'keyDown') return;
+      const ctrl = input.control || input.meta;
+      const k = String(input.key || '').toLowerCase();
+      let action = null;
+      if (ctrl && (k === '=' || k === '+')) action = 'zoom-in';
+      else if (ctrl && k === '-') action = 'zoom-out';
+      else if (ctrl && k === '0') action = 'zoom-reset';
+      else if (ctrl && k === 't') action = 'new-tab';
+      else if (ctrl && k === 'w') action = 'close-tab';
+      else if (ctrl && k === 'l') action = 'focus-address';
+      else if (ctrl && k === 'j') action = 'downloads';
+      else if ((ctrl && k === 'r') || k === 'f5') action = 'reload';
+      else if (ctrl && k === 'tab') action = input.shift ? 'prev-tab' : 'next-tab';
+      else if (input.alt && k === 'arrowleft') action = 'back';
+      else if (input.alt && k === 'arrowright') action = 'forward';
+      if (!action) return;
+      e.preventDefault();
+      if (action.startsWith('zoom')) {
+        const level = action === 'zoom-reset' ? 0 : Math.max(-5, Math.min(5, wc.getZoomLevel() + (action === 'zoom-in' ? 0.5 : -0.5)));
+        wc.setZoomLevel(level);
+        this.emit('zoom', tab, Math.round(Math.pow(1.2, level) * 100));
+        return;
+      }
+      this.emit('shortcut', tab, action);
+    });
     wc.on('will-navigate', (e) => {
       if (/^magnet:\?/i.test(e.url || '')) { e.preventDefault(); this.emit('magnet', tab, e.url); }
     });

@@ -47,6 +47,20 @@ function defaults() {
     preventSleep: true, // keep the PC awake while downloading
     scanDownloads: 'programs', // programs (programs + archives) | all | off
     markOfTheWeb: true,
+
+    // After a download
+    extractArchives: false, // unpack archives into a folder next to them
+    deleteAfterExtract: false,
+    afterProgram: '', // a program to start for each finished download
+    afterArgs: '"{file}"', // its arguments: {file} {folder} {name} {url} {page}
+    webhookUrl: '', // POST a JSON note when a download finishes or fails
+
+    // Rules
+    categoryRules: [], // [{ by: 'type' | 'site' | 'text', value, category, folder }]
+    siteSettings: [], // [{ site, connections, userAgent, speedLimitKBps, user, passEnc }]
+
+    // Appearance
+    accent: '#5b7cfa',
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
     ytdlpPath: '', // the user's own yt-dlp.exe
 
@@ -111,11 +125,18 @@ class Settings extends EventEmitter {
 
   all() {
     const { proxyPassEnc, ...rest } = this.data;
+    // Site sign-in passwords stay here (encrypted); the settings page only learns that one is set.
+    rest.siteSettings = (rest.siteSettings || []).map(({ passEnc, ...s }) => ({ ...s, hasPassword: !!passEnc }));
     return { ...rest, proxyHasPassword: !!proxyPassEnc, searchEngines: SEARCH_ENGINES };
   }
 
   set(patch) {
     const changed = {};
+    if (patch && Array.isArray(patch.siteSettings)) {
+      // A site list saved from the settings page keeps the stored passwords of its sites.
+      const old = new Map((this.data.siteSettings || []).map((s) => [String(s.site).toLowerCase(), s.passEnc]));
+      patch = { ...patch, siteSettings: patch.siteSettings.map(({ hasPassword, passEnc, ...s }) => ({ ...s, passEnc: passEnc !== undefined ? passEnc : old.get(String(s.site).toLowerCase()) || '' })) };
+    }
     for (const [k, v] of Object.entries(patch || {})) {
       if (!(k in defaults())) continue;
       if (JSON.stringify(this.data[k]) === JSON.stringify(v)) continue;

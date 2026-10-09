@@ -171,7 +171,7 @@ Progress (see CHANGELOG.md for details):
 | 4. Video capability | Done in 0.5.0 (B2 DASH + A/V merge without FFmpeg, also for HLS alternate audio; B5 live HLS recording; B3 FFmpeg on demand). Live DASH not yet |
 | 5. Torrents | Done in 0.6.0 (B1 via aria2: magnet/.torrent, file choice, seeding limits, DHT/PEX, tracker list). Real aria2 not yet run in testing |
 | 6. Integration | Done in 0.7.0 (A15 browser extension via the local API, B9 local API + CLI + novadm:// links, B6 site extensions + optional yt-dlp) |
-| 7. Extras | Not started |
+| 7. Extras | Done in 0.8.0 (A14 import/export + cURL, A12 per-site settings, A13 category rules, B8 archive extract with Windows' tar.exe, B10 program + webhook, B11 MCP endpoint, A18 theme/accent + page zoom). Not done: auto-update (needs signed builds and public downloads), a UI size setting, more languages |
 
 1. **Engine speed + stability** (S1–S5, T1–T3, T6) — biggest benefit for what you download most.
 2. **Wire the half-done basics** (A5, A6, A16) + per-download limit, proxy, free-space, duplicates (A2, A3, A11)

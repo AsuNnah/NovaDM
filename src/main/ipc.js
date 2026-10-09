@@ -184,11 +184,40 @@ function registerIpc(ctx) {
     'downloads.openPageTab': () => getManagers().browser.openInternal('downloads'),
     'downloads.openFile': (a) => { const r = getManagers().downloads.get(a.id); if (r) shell.openPath(r.savePath); },
     'downloads.showInFolder': (a) => { const r = getManagers().downloads.get(a.id); if (r) shell.showItemInFolder(r.state === 'done' ? r.savePath : r.savePath + '.part'); },
-    // One link, several (pasted list) or a batch pattern like img[001-100].jpg.
+    // One link, several (pasted list), a batch pattern like img[001-100].jpg, or a cURL command
+    // ("Copy as cURL" in a browser's developer tools: the same request, headers and cookies).
     'downloads.addUrl': async (a) => {
-      const links = extractLinks(a.url || '', 1000).flatMap((u) => expandPattern(u, 5000));
+      const text = String(a.url || '').trim();
+      if (/^curl(\.exe)?\s/i.test(text)) {
+        try {
+          const c = require('./curl').parseCurl(text);
+          const spec = require('./add-flow').specFromUrl(c.url, { pageUrl: c.headers.referer || '' });
+          spec.headers = { ...c.headers };
+          return getManagers().addFlow.request(spec, { origin: 'manual' });
+        } catch (e) { return { ok: false, error: e.message }; }
+      }
+      const links = extractLinks(text, 1000).flatMap((u) => expandPattern(u, 5000));
       if (!links.length) return { ok: false, error: 'Enter a http(s) link' };
       return getManagers().addFlow.requestLinks(links, { origin: 'manual' });
+    },
+    'downloads.extract': async (a) => getManagers().downloads.extract(a.id),
+    'downloads.export': async () => {
+      const { win, settings, downloads } = getManagers();
+      const { app } = require('electron');
+      const r = await dialog.showSaveDialog(win, { title: 'Export downloads and settings', defaultPath: `NovaDM backup ${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'NovaDM backup', extensions: ['json'] }] });
+      if (r.canceled || !r.filePath) return { ok: false };
+      const data = require('./backup').exportData({ settings, downloads, version: app.getVersion() });
+      require('fs').writeFileSync(r.filePath, JSON.stringify(data, null, 2));
+      return { ok: true, downloads: data.downloads.length };
+    },
+    'downloads.import': async () => {
+      const { win, settings, downloads } = getManagers();
+      const r = await dialog.showOpenDialog(win, { title: 'Import downloads and settings', properties: ['openFile'], filters: [{ name: 'NovaDM backup', extensions: ['json'] }] });
+      if (r.canceled || !r.filePaths[0]) return { ok: false };
+      try {
+        const data = JSON.parse(require('fs').readFileSync(r.filePaths[0], 'utf8'));
+        return { ok: true, ...require('./backup').importData(data, { settings, downloads }) };
+      } catch (e) { return { ok: false, error: e.message }; }
     },
     'downloads.setSpeedLimit': (a) => { getManagers().downloads.setSpeedLimit(a.id, a.kbps); return { ok: true }; },
     'downloads.refreshFromPage': (a) => getManagers().addFlow.refreshFromPage(a.id),

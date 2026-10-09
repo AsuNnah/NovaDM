@@ -25,6 +25,9 @@ const REFERER_TAG = 'x-novadm-referer';
 // Proxy login for NovaDM's own requests: () => { user, pass } | null (set by main from settings).
 let proxyCreds = () => null;
 function setProxyCredentials(fn) { proxyCreds = fn || (() => null); }
+// Sign-ins for sites (per-site settings): (host) => { user, pass } | null.
+let siteCreds = () => null;
+function setSiteCredentials(fn) { siteCreds = fn || (() => null); }
 
 /** Must be installed on every session NovaDM downloads with (see open()). */
 function installRefererHook(ses) {
@@ -73,7 +76,7 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
     const req = net.request({ url, method, session, useSessionCookies: !explicitCookie, redirect: 'manual', cache: 'no-store' });
     const ua = session ? session.getUserAgent() : null;
     const all = { ...headers };
-    if (ua) all['user-agent'] = ua;
+    if (ua && !Object.keys(all).some((k) => k.toLowerCase() === 'user-agent')) all['user-agent'] = ua;
     if (range) all.range = range;
     // Chromium rejects a Referer set directly on net requests (ERR_BLOCKED_BY_CLIENT); the
     // session's onBeforeSendHeaders hook (see installRefererHook) turns this into a real Referer.
@@ -115,9 +118,10 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
     });
     // Answer the proxy's sign-in once; if it asks again the password is wrong: give up (407) instead
     // of looping forever.
+    // Sites with a sign-in in the per-site settings get it the same way, once.
     let triedLogin = false;
     req.on('login', (authInfo, callback) => {
-      const c = authInfo.isProxy && !triedLogin ? proxyCreds() : null;
+      const c = triedLogin ? null : authInfo.isProxy ? proxyCreds() : siteCreds(authInfo.host);
       triedLogin = true;
       if (c) callback(c.user, c.pass); else callback();
     });
@@ -176,4 +180,4 @@ async function probe(url, opts = {}) {
   };
 }
 
-module.exports = { open, readBody, fetchBuffer, fetchText, probe, replayableHeaders, installRefererHook, HttpError, setProxyCredentials };
+module.exports = { open, readBody, fetchBuffer, fetchText, probe, replayableHeaders, installRefererHook, HttpError, setProxyCredentials, setSiteCredentials };

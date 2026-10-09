@@ -8,6 +8,59 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [0.8.0] — 2026-10-09
+
+Extras (roadmap phase 7, the last phase of the plan).
+
+### Added
+- **Paste a "Copy as cURL" command** into the Downloads box (from a browser's developer tools,
+  bash or Windows form): the download uses the same address, headers, cookies and referer. POST
+  requests are refused with an explanation, since they can't be fetched again.
+- **Export and import** (Downloads → Export / Import): the downloads list and settings in one JSON
+  file. Passwords, the API key, cookies and sign-in headers are never exported; paths to programs
+  on this computer (FFmpeg, aria2, yt-dlp) are left out; unfinished downloads come back paused;
+  downloads already in the list are skipped.
+- **Category rules** (Settings → Rules): by file type, site or text in the address, each with a
+  category and optionally its own folder. The first matching rule wins; the New download dialog
+  shows the folder it picks.
+- **Settings for a site** (Settings → Rules): connections, a speed limit, a browser name (user
+  agent) and a sign-in for one site and its subdomains. The sign-in answers the site's password
+  request (Basic/Digest) in downloads and while browsing; the password is encrypted by Windows and
+  never sent to NovaDM's own pages.
+- **Unpack archives** after a download (Settings → After a download, or "Extract here" in the
+  Downloads menu): zip, 7z, rar, tar(.gz/.bz2/.xz/.zst), cab and iso go into a folder next to
+  them, with Windows' own `tar.exe` (older Windows 10 builds read fewer formats). Files Microsoft
+  Defender reported are never unpacked. Optionally deletes the archive afterwards.
+- **After a download: start a program** with arguments like `"{file}"` `{folder}` `{name}`
+  `{url}` `{page}`. The program is started directly, never through a command shell, and `.bat` /
+  `.cmd` files are refused.
+- **Webhook**: a JSON note (POST) to an address of your choice when a download finishes or fails
+  (name, file, size, link, page, error).
+- **MCP endpoint for AI assistants** at `http://127.0.0.1:<port>/mcp`, part of the local connection
+  (off by default, same key): tools to add, list, check, pause, resume and remove downloads.
+- **Theme and accent colour** (Settings → Appearance): like Windows / dark / light for NovaDM and
+  the pages it shows, and seven accent colours for NovaDM's own screens.
+- **Keyboard shortcuts while a page has the keyboard**: Ctrl+T, Ctrl+W, Ctrl+L, Ctrl+J
+  (Downloads), Ctrl+R / F5, Ctrl+Tab / Ctrl+Shift+Tab, Alt+Left / Right, and **page zoom** with
+  Ctrl + plus / minus / 0 (for every page of that site).
+
+### Changed
+- Highlights in the Downloads page, media panel and toolbar follow the accent colour.
+
+### Not done
+- **Auto-update** (A18): it needs signed builds and a public place to download them from; the
+  repository is private and the builds are unsigned, so updates stay manual.
+- A size setting for NovaDM's own screens and more languages (rest of A18).
+
+### Tests
+- 115 unit tests (new: cURL parsing incl. the Windows `^"` form, export/import without secrets,
+  category rules and site matching, program arguments without a shell, webhook, unpacking with
+  `tar.exe`, MCP requests).
+- In-app self-test `tools/selftest-phase7.js`: theme and accent applied, Ctrl+= / Ctrl+0 / Ctrl+T
+  inside a page, a cURL command's cookie and referer reaching the server, a rule's folder, a site's
+  browser name / single connection / sign-in, a zip unpacked, the program and webhook run, export
+  and import, and the MCP tool list. All earlier self-tests pass unchanged.
+
 ## [0.7.0] — 2026-10-09
 
 Other browsers and apps (roadmap phase 6).

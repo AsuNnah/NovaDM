@@ -81,4 +81,32 @@ function wantsScan(setting, category) {
   return category === 'programs' || category === 'archives';
 }
 
-module.exports = { markOfTheWeb, readMarkOfTheWeb, findDefender, parseScanOutput, scanFile, wantsScan };
+// Not plain .gz/.bz2/.xz: tar.exe only reads those when there is a tar inside.
+const ARCHIVE_EXT = /\.(zip|7z|rar|tar|tgz|tbz2|txz|tar\.gz|tar\.bz2|tar\.xz|tar\.zst|cab|iso)$/i;
+
+function isArchive(file) { return ARCHIVE_EXT.test(file || ''); }
+
+/**
+ * Unpack an archive into a new folder next to it (named after it), with Windows' own tar.exe
+ * (libarchive: zip, tar.*, 7z, rar, cab, iso, as far as the Windows version supports them). It
+ * refuses entries with absolute paths or ".." on its own. Resolves { ok, folder, error }.
+ */
+function extractArchive(file, { tarPath } = {}) {
+  const dir = path.dirname(file);
+  const base = path.basename(file).replace(ARCHIVE_EXT, '') || 'extracted';
+  let dest = path.join(dir, base);
+  for (let i = 1; fs.existsSync(dest); i++) dest = path.join(dir, `${base} (${i})`);
+  fs.mkdirSync(dest, { recursive: true });
+  const tar = tarPath || path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  return new Promise((resolve) => {
+    execFile(tar, ['-xf', file, '-C', dest], { windowsHide: true, timeout: 30 * 60 * 1000 }, (err, _out, errOut) => {
+      if (err) {
+        try { if (!fs.readdirSync(dest).length) fs.rmdirSync(dest); } catch {}
+        return resolve({ ok: false, folder: '', error: String(errOut || err.message).trim().split(/\r?\n/).pop() || 'Could not unpack this archive' });
+      }
+      resolve({ ok: true, folder: dest });
+    });
+  });
+}
+
+module.exports = { markOfTheWeb, readMarkOfTheWeb, findDefender, parseScanOutput, scanFile, wantsScan, isArchive, extractArchive };

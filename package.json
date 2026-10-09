@@ -1,7 +1,7 @@
 {
   "name": "novadm",
   "productName": "NovaDM",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
   "author": "NovaDM",
   "main": "src/main/main.js",

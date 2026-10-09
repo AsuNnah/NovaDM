@@ -119,6 +119,7 @@ $('menu-btn').onclick = () => togglePanel('menu');
 api.on('close-panel', () => { openPanel = null; });
 // Panels can also be opened from inside another panel (e.g. the menu).
 api.on('open-panel', (d) => { openPanel = d.name; });
+api.on('focus-address', () => { urlEl.focus(); urlEl.select(); });
 
 // keyboard shortcuts (chrome view has focus often)
 window.addEventListener('keydown', (e) => {

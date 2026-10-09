@@ -23,6 +23,8 @@ AB Download Manager, XDM). No code from any of them is included.
 - **Secure DNS** (DNS over HTTPS: Cloudflare, Google, Quad9, AdGuard or a custom server), which gets
   around DNS-level blocking by an ISP
 - Site permissions (camera, microphone, location, notifications) asked per site
+- **Theme and accent colour**: like Windows, dark or light, and seven accent colours
+- Keyboard shortcuts (Ctrl+T/W/L/J/R, Ctrl+Tab, Alt+arrows) and page zoom with Ctrl + plus / minus / 0
 
 ### Ad blocker and pop-up guard
 - Ghostery ad-block engine with EasyList, EasyPrivacy and uBlock Origin lists plus the OISD Big
@@ -60,6 +62,9 @@ AB Download Manager, XDM). No code from any of them is included.
   download it.
 - **Several at once**: paste many links, or a pattern like `https://site/img[001-120].jpg` or
   `file[a-f].zip`, and pick which to download.
+- **"Copy as cURL"**: paste a command from a browser's developer tools and the download uses the
+  same headers and cookies.
+- **Category rules**: by file type, site or address text, each with its own folder if you like.
 - Videos from the media button and images from the grabber start right away.
 
 ### Download manager
@@ -85,12 +90,24 @@ AB Download Manager, XDM). No code from any of them is included.
 - **Proxy** for browsing and downloads: Windows settings, none, HTTP/HTTPS/SOCKS server, or a PAC
   script, with sign-in (the password is encrypted by Windows)
 - Downloads from private tabs use the private session and are not kept in the list
+- **Settings for a site**: connections, speed limit, browser name (user agent) and a sign-in
+  (password encrypted by Windows)
+- **Export / import** the downloads list and settings (passwords, keys and cookies are never
+  exported)
+
+### After a download
+- **Unpack archives** (zip, 7z, rar, tar…) into a folder next to them, optionally deleting the
+  archive; or "Extract here" from the Downloads menu
+- **Start a program** with the file as an argument (`"{file}"`, `{folder}`, `{name}`, `{url}`,
+  `{page}`), started directly without a command shell
+- **Webhook**: a JSON POST to your address when a download finishes or fails
 
 ### Other browsers and apps
 - **Browser extension for Chrome, Edge and Brave** (`browser-extension/`, load it unpacked):
   right-click "Download with NovaDM", send the browser's downloads to NovaDM (with its cookies),
   and see the videos found on a page
-- **Local connection for other apps** (off by default; 127.0.0.1 only, with a key)
+- **Local connection for other apps** (off by default; 127.0.0.1 only, with a key), including an
+  **MCP endpoint** (`/mcp`) so AI assistants can add and manage downloads
 - **Command line and links**: `NovaDM.exe --add <link> [--name <file>] [--start]`,
   `novadm://add?url=…`, magnet links and `.torrent` files
 - **Site extensions**: small sandboxed scripts that find a site's downloads
@@ -189,7 +206,9 @@ src/main/                 Electron main process
   background.js           tray, start with Windows, keep awake, "when all downloads finish"
   ffmpeg.js               FFmpeg on demand (verified install, joining, sound, repair)
   torrent/                aria2 helper (install, start, JSON-RPC, trackers), .torrent reader
-  api.js                  local API for other apps; command line and novadm:// links
+  api.js                  local API and MCP endpoint for other apps; command line and novadm:// links
+  curl.js, backup.js      "Copy as cURL" parser; export / import
+  rules.js, hooks.js      category rules and per-site settings; after-download program and webhook
   site-ext.js             site extensions (install, sandboxed runs, site-limited fetching)
   ytdlp.js                yt-dlp add-on (verified install, choices from yt-dlp -J)
 browser-extension/        the Chrome / Edge / Brave extension
@@ -208,7 +227,8 @@ on its own are ad-block list updates and Secure DNS lookups to the provider you 
 
 The clipboard watcher only checks copied text for download links while NovaDM runs; nothing is
 saved or sent, and it can be turned off. Downloads from private tabs are not written to the list.
-A proxy password is stored encrypted with Windows' data protection.
+Proxy and site passwords are stored encrypted with Windows' data protection. The webhook and the
+after-download program only run if you set them up.
 
 Profiles from the earlier name of this project ("Swoop") are moved to `%APPDATA%\NovaDM`
 automatically on first start.

@@ -82,10 +82,9 @@ class AddFlow {
     }
     const s = req.spec;
     const name = util.sanitizeFilename(s.name || util.filenameFromUrl(s.url || s.playlistUrl) || 'download');
-    const category = s.category || util.categoryOf(name, s.mime);
     this.sendUI('download-ask', {
       reqId: req.id, origin: req.origin, kind: s.kind, name, url: s.kind === 'hls' || s.kind === 'dash' ? s.playlistUrl : s.url,
-      size: s.size > 0 ? s.size : -1, sizeIsEstimate: s.kind === 'hls', folder: s.dir || this.downloads.categoryDir(category),
+      size: s.size > 0 ? s.size : -1, sizeIsEstimate: s.kind === 'hls', folder: s.dir || this.downloads.placeFor({ ...s, name }).folder,
       pageUrl: s.pageUrl || '', incognito: !!s.incognito,
       duplicate: req.dup ? { id: req.dup.id, name: req.dup.name, state: req.dup.state } : null,
       queues: this.queueChoices(),
@@ -109,7 +108,7 @@ class AddFlow {
       if (!name && !util.extOf(util.filenameFromUrl(s.url) || '')) name = util.ensureExt(util.filenameFromUrl(s.url) || 'download', p.mime);
       if (p.size > 0) s.size = p.size;
       if (p.mime) s.mime = p.mime;
-      this.sendUI('download-ask-update', { reqId: req.id, size: p.size, name: name ? util.sanitizeFilename(name) : '', folder: s.dir ? '' : this.downloads.categoryDir(util.categoryOf(name || s.name || util.filenameFromUrl(s.url), p.mime)) });
+      this.sendUI('download-ask-update', { reqId: req.id, size: p.size, name: name ? util.sanitizeFilename(name) : '', folder: s.dir ? '' : this.downloads.placeFor({ ...s, name: name || s.name }).folder });
     } catch (e) {
       if (this.current === req) this.sendUI('download-ask-update', { reqId: req.id, warning: 'The server did not answer: ' + (e.message || e) });
     }

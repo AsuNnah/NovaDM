@@ -51,6 +51,9 @@ const SCAN_TEXT = {
 let queueInfo = { queues: [], afterAllDone: 'nothing' };
 const queueName = (id) => { const q = queueInfo.queues.find((x) => x.id === id); return q ? q.name : 'Main'; };
 
+const EXTRACT_TEXT = (d) => (d.extract === 'extracting' ? 'Unpacking…' : d.extract === 'done' ? `Unpacked to “${esc(String(d.extractedTo || '').split(/[\\/]/).pop())}”` : d.extract === 'error' ? '<span class="err">Could not unpack</span>' : '');
+const ARCHIVE = /\.(zip|7z|rar|tar|tgz|tbz2|txz|tar\.gz|tar\.bz2|tar\.xz|tar\.zst|cab|iso)$/i;
+
 const VERIFY_TEXT = {
   ok: 'Checksum matches',
   mismatch: '<span class="err">Checksum does NOT match</span>',
@@ -84,7 +87,7 @@ function statusText(d) {
     case 'queued': return ['Queued', d.received > 0 ? `${pct}% · ${sizeTxt}` : '', parts].filter(Boolean).join(' · ');
     case 'paused': return ['Paused', `${pct}%`, sizeTxt, parts].filter(Boolean).join(' · ');
     case 'error': return `<span class="err">Failed: ${esc(d.error || 'unknown error')}</span>` + (parts ? ' · ' + parts : '');
-    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt), VERIFY_TEXT[d.verify] || '', SCAN_TEXT[d.scan] || ''].filter(Boolean).join(' · ');
+    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt), VERIFY_TEXT[d.verify] || '', SCAN_TEXT[d.scan] || '', EXTRACT_TEXT(d)].filter(Boolean).join(' · ');
     case 'scheduled': {
       const q = queueInfo.queues.find((x) => x.id === d.queue);
       const when = q && q.next ? 'starts ' + fmtDate(q.next) : 'waits for its schedule';
@@ -244,6 +247,7 @@ function openMenu(anchor, d) {
   if (d.pageUrl) { add('Copy page link', () => api.call('downloads.copyLink', { id: d.id, which: 'page' })); add('Open download page', () => api.call('downloads.openPage', { id: d.id })); }
   if (d.state !== 'done' && !d.native && !['convert', 'torrent'].includes(d.kind)) add('Refresh link…', () => showRefresh(d));
   if (d.seeding) add('Stop seeding', () => api.call('downloads.stopSeeding', { id: d.id }));
+  if (d.state === 'done' && ARCHIVE.test(d.name)) add('Extract here', () => api.call('downloads.extract', { id: d.id }));
   if (d.state === 'done' && ['video', 'music'].includes(d.category)) {
     hr();
     const conv = (label, action) => add(label, async () => {
@@ -349,6 +353,11 @@ function showRefresh(d) {
   };
 }
 
+function showInfo(title, text) {
+  const w = modal(`<h2>${esc(title)}</h2><p>${esc(text)}</p><div class="foot"><button class="pri" id="iOk">OK</button></div>`);
+  w.querySelector('#iOk').onclick = closeLayer;
+}
+
 function showNotice(text) {
   const w = modal(`<h2>Not possible yet</h2><p>${esc(text)}</p><div class="foot"><button class="pri" id="nOk">OK</button></div>`);
   w.querySelector('#nOk').onclick = closeLayer;
@@ -438,6 +447,12 @@ $('pauseAll').onclick = () => api.call('downloads.pauseAll');
 $('openFolder').onclick = () => api.call('downloads.openFolder');
 $('queuesBtn').onclick = () => loadQueues().then(showQueues);
 $('openTorrent').onclick = () => api.call('downloads.openTorrent');
+$('exportBtn').onclick = async () => { const r = await api.call('downloads.export'); if (r && r.ok) showInfo('Exported', `${r.downloads} downloads and your settings were saved. Passwords, keys and cookies are not in the file.`); };
+$('importBtn').onclick = async () => {
+  const r = await api.call('downloads.import');
+  if (r && r.ok) showInfo('Imported', `${r.added} downloads added (${r.skipped} already here), ${r.settings} settings changed.`);
+  else if (r && r.error) showNotice(r.error);
+};
 $('afterAllDone').onchange = () => api.call('downloads.setAfterAllDone', { action: $('afterAllDone').value });
 loadQueues().then(renderAll);
 setInterval(loadQueues, 15000);

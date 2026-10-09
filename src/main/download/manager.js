@@ -14,6 +14,7 @@ const { JsonStore } = require('../store');
 const util = require('../util');
 const post = require('./postprocess');
 const { normalizeQueues } = require('../scheduler');
+const { categoryFor, siteSettingsFor } = require('../rules');
 
 class DownloadManager extends EventEmitter {
   /**
@@ -78,6 +79,7 @@ class DownloadManager extends EventEmitter {
       from: r.from || '',
       magnet: r.magnet || '', torrentData: r.torrentData || '', gid: r.gid || '', selectFiles: r.selectFiles || '', infoHash: r.infoHash || '',
       btFiles: r.btFiles || null, uploaded: r.uploaded || 0, mergeSource: r.mergeSource || null,
+      extract: r.extract === 'extracting' ? '' : r.extract || '', extractedTo: r.extractedTo || '',
     }));
     this.store.save();
   }
@@ -115,8 +117,8 @@ class DownloadManager extends EventEmitter {
    */
   add(spec) {
     const id = util.uid();
-    const category = spec.category || util.categoryOf(spec.name || util.filenameFromUrl(spec.url || ''), spec.mime);
-    let dir = spec.dir || this.categoryDir(category);
+    const { category, folder } = this.placeFor(spec);
+    let dir = spec.dir || folder;
     if (spec.subdir) dir = path.join(dir, util.sanitizeFilename(spec.subdir, 'Page'));
     const name = util.sanitizeFilename(spec.name || util.filenameFromUrl(spec.url || spec.playlistUrl) || 'download');
     // Torrents are saved by aria2 under their own name in the folder (it continues what exists).
@@ -131,7 +133,7 @@ class DownloadManager extends EventEmitter {
       allowRename: spec.allowRename ?? !spec.name,
       meta: spec.meta || null, // { duration, width, height } for videos, shown in Properties
       activeMs: 0, resumable: null,
-      speedLimitKBps: Math.max(0, Number(spec.speedLimitKBps) || 0),
+      speedLimitKBps: Math.max(0, Number(spec.speedLimitKBps) || Number((this.siteFor(spec.url || spec.playlistUrl) || {}).speedLimitKBps) || 0),
       expectedHash: util.hashKind(spec.expectedHash) ? spec.expectedHash.trim().toLowerCase() : '',
       verify: '', incognito: !!spec.incognito, queue: this.queueIds().includes(spec.queue) ? spec.queue : 'main',
       separateAudio: !!spec.separateAudio,
@@ -146,6 +148,18 @@ class DownloadManager extends EventEmitter {
     if (rec.state === 'queued') this.enqueue(id);
     return rec;
   }
+
+  /** Category and folder of a new download: the user's category rules first, then the file type. */
+  placeFor(spec) {
+    const url = spec.url || spec.playlistUrl || spec.magnet || '';
+    const name = spec.name || util.filenameFromUrl(spec.url || spec.playlistUrl || '');
+    const rule = categoryFor(this.settings.get('categoryRules'), { url, name });
+    const category = rule.category || spec.category || util.categoryOf(name, spec.mime);
+    return { category, folder: rule.folder || this.categoryDir(category) };
+  }
+
+  /** The user's settings for the site of this address, or null. */
+  siteFor(url) { return siteSettingsFor(this.settings.get('siteSettings'), url || ''); }
 
   enqueue(id) {
     const rec = this.records.get(id);
@@ -265,15 +279,19 @@ class DownloadManager extends EventEmitter {
         gid: rec.gid, selectFiles: rec.selectFiles, askFiles: this.askTorrentFiles ? (files) => this.askTorrentFiles(rec, files) : null,
       });
     }
+    // Per-site settings: connections and user agent for this site.
+    const site = this.siteFor(rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0]) || {};
+    const connections = Number(site.connections) > 0 ? Math.min(32, Number(site.connections)) : this.settings.get('connections') || 8;
+    const headers = site.userAgent ? { ...rec.headers, 'user-agent': site.userAgent } : rec.headers;
     const common = {
-      id: rec.id, savePath: rec.savePath, headers: rec.headers, session: rec.incognito ? this.privateSession : this.session,
+      id: rec.id, savePath: rec.savePath, headers, session: rec.incognito ? this.privateSession : this.session,
       limiter: this.limiter, taskLimiter: this.taskLimiter(rec), transport: this.transport, retries: this.settings.get('retries'),
       retryDelayMs: (this.settings.get('retryDelaySec') || 3) * 1000,
       timeoutMs: (this.settings.get('timeoutSec') || 30) * 1000,
     };
     if (rec.kind === 'merge') {
       // Separate picture and sound files given directly (yt-dlp).
-      return new MergeDownload({ ...common, concurrency: Math.min(16, this.settings.get('connections') || 6), ffmpeg: this.ffmpeg, source: rec.mergeSource });
+      return new MergeDownload({ ...common, concurrency: Math.min(16, connections), ffmpeg: this.ffmpeg, source: rec.mergeSource });
     }
     if (rec.kind === 'dash' || (rec.kind === 'hls' && rec.separateAudio)) {
       // Separate picture and sound (DASH, or HLS with an audio rendition): one merged MP4.
@@ -281,20 +299,20 @@ class DownloadManager extends EventEmitter {
       const reresolve = !!rec.reresolve;
       rec.reresolve = false;
       return new MergeDownload({
-        ...common, concurrency: Math.min(16, this.settings.get('connections') || 6), reresolve, ffmpeg: this.ffmpeg,
+        ...common, concurrency: Math.min(16, connections), reresolve, ffmpeg: this.ffmpeg,
         source: { type: rec.kind === 'dash' ? 'dash' : 'hls', url: rec.playlistUrl, height: m.height || 0, videoId: m.videoId || '' },
       });
     }
     if (rec.kind === 'hls') {
       return new HlsDownload({
         ...common, playlistUrl: rec.playlistUrl, mirrors: rec.mirrors,
-        concurrency: Math.min(16, this.settings.get('connections') || 6),
+        concurrency: Math.min(16, connections),
         convertTs: rec.convertTs, sizeEstimate: rec.size,
       });
     }
     return new HttpDownload({
       ...common, sources: rec.sources.concat(rec.mirrors), size: rec.size,
-      connections: this.settings.get('connections') || 8,
+      connections,
       minSplitBytes: (this.settings.get('minSplitKB') || 512) * 1024,
       allowRename: !!rec.allowRename && rec.received === 0,
     });
@@ -561,12 +579,48 @@ class DownloadManager extends EventEmitter {
       const from = rec.kind === 'merge' ? (rec.mergeSource && rec.mergeSource.tracks[0] && rec.mergeSource.tracks[0].url) : rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0];
       post.markOfTheWeb(rec.savePath, { url: from || '', referrer: rec.pageUrl, incognito: rec.incognito });
     }
-    if (!post.wantsScan(this.settings.get('scanDownloads'), rec.category)) return;
-    rec.scan = 'scanning'; this.emitRecord(rec);
-    const r = await this.scanFile(rec.savePath);
-    rec.scan = r.result; rec.scanDetail = r.detail || '';
-    if (r.result === 'threat') this.emit('threat', rec);
+    if (post.wantsScan(this.settings.get('scanDownloads'), rec.category)) {
+      rec.scan = 'scanning'; this.emitRecord(rec);
+      const r = await this.scanFile(rec.savePath);
+      rec.scan = r.result; rec.scanDetail = r.detail || '';
+      if (r.result === 'threat') this.emit('threat', rec);
+      this.persist(); this.emitRecord(rec);
+    }
+    // Unpack archives (never one Defender reported).
+    if (this.settings.get('extractArchives') && rec.scan !== 'threat' && post.isArchive(rec.savePath)) await this.extract(rec.id);
+  }
+
+  /** Unpack a finished archive into a folder next to it. */
+  async extract(id) {
+    const rec = this.records.get(id);
+    if (!rec || rec.state !== 'done' || !post.isArchive(rec.savePath)) return { ok: false, error: 'Not a finished archive' };
+    rec.extract = 'extracting'; this.emitRecord(rec);
+    const r = await (this.extractFn || post.extractArchive)(rec.savePath);
+    rec.extract = r.ok ? 'done' : 'error';
+    rec.extractedTo = r.folder || '';
+    rec.extractError = r.error || '';
+    if (r.ok && this.settings.get('deleteAfterExtract')) { try { fs.rmSync(rec.savePath, { force: true }); rec.archiveDeleted = true; } catch {} }
     this.persist(); this.emitRecord(rec);
+    return r;
+  }
+
+  /** A download from an export file (backup.js). Finished ones stay finished; others come back paused. */
+  importRecord(d) {
+    const id = util.uid();
+    const done = d.state === 'done';
+    const rec = {
+      id, kind: d.kind, name: String(d.name || 'download'), savePath: String(d.savePath || ''), sources: Array.isArray(d.sources) ? d.sources : [],
+      playlistUrl: d.playlistUrl || '', mirrors: Array.isArray(d.mirrors) ? d.mirrors : [], headers: d.headers || {}, pageUrl: d.pageUrl || '',
+      category: d.category || 'other', state: done ? 'done' : 'paused', size: Number(d.size) || -1, received: done ? Number(d.size) || 0 : 0, speed: 0,
+      convertTs: true, addedAt: Number(d.addedAt) || Date.now(), completedAt: Number(d.completedAt) || 0, error: null, allowRename: false,
+      meta: d.meta || null, activeMs: 0, resumable: null, queue: this.queueIds().includes(d.queue) ? d.queue : 'main', separateAudio: !!d.separateAudio,
+      magnet: d.magnet || '', torrentData: d.torrentData || '', selectFiles: d.selectFiles || '', mergeSource: d.mergeSource || null,
+      expectedHash: d.expectedHash || '', verify: '', gid: '',
+    };
+    if (!rec.savePath) rec.savePath = path.join(this.categoryDir(rec.category), util.sanitizeFilename(rec.name));
+    this.records.set(id, rec);
+    this.persist(); this.emitList();
+    return rec;
   }
 
   // Compare the finished file with the checksum given when it was added.
@@ -738,7 +792,7 @@ class DownloadManager extends EventEmitter {
       errorCode: r.errorCode || null, verify: r.verify || '', native: !!r.native, incognito: !!r.incognito,
       queue: r.queue || 'main', scan: r.scan || '',
       live: !!r.live, recording: !!r.recording && r.state === 'downloading', recordedSeconds: r.recordedSeconds || 0,
-      from: r.from || '', joining: !!r.joining,
+      from: r.from || '', joining: !!r.joining, extract: r.extract || '', extractedTo: r.extractedTo || '',
       phase: r.phase || '', seeding: !!r.seeding, uploadSpeed: r.uploadSpeed || 0, ratio: r.ratio || 0, seeders: r.seeders || 0,
     };
   }

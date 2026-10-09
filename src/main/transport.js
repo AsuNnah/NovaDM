@@ -150,7 +150,7 @@ class Transport {
         if (v == null || v === '' || HOP_HEADERS.has(key) || key === 'x-novadm-referer') continue;
         h[key] = String(v);
       }
-      h['user-agent'] = ses.getUserAgent();
+      if (!h['user-agent']) h['user-agent'] = ses.getUserAgent();
       if (range) h.range = range;
       if (!h['accept-encoding']) h['accept-encoding'] = 'identity'; // ranges must be byte-exact
       delete h.cookie;

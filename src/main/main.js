@@ -1,6 +1,6 @@
 'use strict';
 const path = require('path');
-const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, session: electronSession } = require('electron');
+const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, session: electronSession, nativeTheme, safeStorage } = require('electron');
 const { Settings } = require('./settings');
 const { AdBlocker } = require('./adblock');
 const { PopupGuard } = require('./popup');
@@ -18,6 +18,8 @@ const { Aria2 } = require('./torrent/aria2');
 const { LocalApi, parseLaunchArgs } = require('./api');
 const { YtDlp } = require('./ytdlp');
 const { SiteExtensions } = require('./site-ext');
+const { siteSettingsFor } = require('./rules');
+const hooks = require('./hooks');
 const { HttpDownload } = require('./download/http');
 const util = require('./util');
 const { Browser } = require('./browser');
@@ -169,7 +171,21 @@ function wireEvents() {
   browser.on('page-changed', (tabId) => { blockedPopups.delete(tabId); sendPopupState(); });
   browser.on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win, addDownload: (spec, o) => addFlow.request(spec, o) }));
   browser.on('download', onPageDownload);
-  browser.on('page-loaded', (tab) => runSiteExtensions(tab));
+  browser.on('page-loaded', (tab) => { runSiteExtensions(tab); if (/^novadm:\/\//.test(tab.url || '')) styleUi(tab.wc); });
+  browser.on('shortcut', (tab, action) => {
+    if (action === 'new-tab') browser.createTab({ incognito: tab.incognito });
+    else if (action === 'close-tab') browser.closeTab(tab.id);
+    else if (action === 'focus-address') { chromeView.webContents.focus(); sendUI('focus-address', {}); }
+    else if (action === 'downloads') browser.openInternal('downloads');
+    else if (action === 'reload') browser.reload(tab.id);
+    else if (action === 'back') browser.back(tab.id);
+    else if (action === 'forward') browser.forward(tab.id);
+    else if (action === 'next-tab' || action === 'prev-tab') {
+      const i = browser.order.indexOf(tab.id);
+      const n = browser.order.length;
+      if (n > 1) browser.selectTab(browser.order[(i + (action === 'next-tab' ? 1 : n - 1)) % n]);
+    }
+  });
   browser.on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
@@ -193,6 +209,7 @@ function wireEvents() {
   downloads.on('changed', () => sendUI('downloads', { list: downloads.list(), summary: downloads.activeSummary() }));
   downloads.on('completed', (rec) => {
     sendUI('download-complete', { name: rec.name, id: rec.id });
+    afterDownloadHooks('finished', rec);
     if (rec.scan === 'threat') {
       // Always shown, whatever the notification setting.
       notify({ title: 'Microsoft Defender found a threat', body: `${rec.name}: ${rec.scanDetail || 'threat'}`, onClick: () => { showWindow(); browser.openInternal('downloads'); } });
@@ -208,6 +225,7 @@ function wireEvents() {
     });
   });
   downloads.on('failed', (rec) => {
+    afterDownloadHooks('failed', rec);
     if (rec.errorCode === 'NEEDS_FFMPEG') {
       notify({ title: 'This video needs FFmpeg', body: 'Install it in Settings → Video tools, then retry the download.', onClick: () => { showWindow(); browser.openInternal('settings'); } });
       return;
@@ -251,6 +269,43 @@ function onPageDownload(event, item, info) {
   try { require('fs').mkdirSync(dir, { recursive: true }); } catch {}
   item.setSavePath(util.uniquePath(require('path').join(dir, name), downloads.reservedPaths()));
   downloads.addNative(item, info);
+}
+
+// Sign-in for a site from the per-site settings (password decrypted only here, when needed).
+function siteCredentials(host) {
+  const s = siteSettingsFor(settings.get('siteSettings'), 'https://' + host);
+  if (!s || !s.user) return null;
+  let pass = '';
+  try { if (s.passEnc) pass = safeStorage.decryptString(Buffer.from(s.passEnc, 'base64')); } catch {}
+  return { user: s.user, pass };
+}
+
+// Theme (system / dark / light) for NovaDM and the pages it shows, and the accent colour of its own UI.
+const uiCssKeys = new Map();
+function accentCss() {
+  const c = /^#[0-9a-f]{6}$/i.test(settings.get('accent') || '') ? settings.get('accent') : '#5b7cfa';
+  const dark = '#' + [1, 3, 5].map((i) => Math.round(parseInt(c.slice(i, i + 2), 16) * 0.82).toString(16).padStart(2, '0')).join('');
+  return `:root{--accent:${c} !important;--accent2:${dark} !important;}`;
+}
+async function styleUi(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  const old = uiCssKeys.get(wc.id);
+  if (old) { try { await wc.removeInsertedCSS(old); } catch {} }
+  try { uiCssKeys.set(wc.id, await wc.insertCSS(accentCss())); } catch {}
+}
+function applyAppearance() {
+  nativeTheme.themeSource = ['dark', 'light'].includes(settings.get('theme')) ? settings.get('theme') : 'system';
+  for (const v of [chromeView, overlayView]) if (v) styleUi(v.webContents);
+  for (const t of browser.tabs.values()) if (/^novadm:\/\//.test(t.url || '')) styleUi(t.wc);
+}
+
+// After a download: the user's program and webhook (Settings → After a download).
+function afterDownloadHooks(event, rec) {
+  if (rec.kind === 'convert') return;
+  if (event === 'finished' && settings.get('afterProgram')) {
+    hooks.runProgram(settings.get('afterProgram'), settings.get('afterArgs'), rec).then((r) => { if (!r.ok) notify({ title: 'Could not start your program', body: r.error }); });
+  }
+  if (settings.get('webhookUrl')) hooks.sendWebhook(settings.get('webhookUrl'), event, rec).then((r) => { if (!r.ok) console.error('webhook', r.error || r.status); });
 }
 
 // Site extensions made for this page: their findings go to the media panel.
@@ -492,12 +547,23 @@ app.whenReady().then(async () => {
     if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => transport.close());
   });
   net.setProxyCredentials(() => proxyCredentials(settings));
+  net.setSiteCredentials((host) => siteCredentials(host));
   transport.proxyCredentials = () => proxyCredentials(settings);
   // Pages through a proxy that wants a sign-in. Answered once per address and minute, so a wrong
   // password ends in an error page instead of an endless loop.
   const proxyLogins = new Map();
   app.on('login', (event, _wc, details, authInfo, callback) => {
-    if (!authInfo.isProxy) return;
+    if (!authInfo.isProxy) {
+      // A site that asks for a sign-in and has one in the per-site settings (once per address and minute).
+      const creds = siteCredentials(authInfo.host);
+      const key = 'site:' + details.url;
+      const last = proxyLogins.get(key);
+      if (!creds || (last && Date.now() - last < 60000)) return;
+      proxyLogins.set(key, Date.now());
+      event.preventDefault();
+      callback(creds.user, creds.pass);
+      return;
+    }
     const key = details.url;
     const last = proxyLogins.get(key);
     if (last && Date.now() - last < 60000) return;
@@ -539,6 +605,10 @@ app.whenReady().then(async () => {
 
   createWindow();
   wireEvents();
+  // Appearance: theme now, accent once NovaDM's own views have loaded, and on every change.
+  applyAppearance();
+  for (const v of [chromeView, overlayView]) v.webContents.on('did-finish-load', () => styleUi(v.webContents));
+  settings.on('change', (c) => { if ('theme' in c || 'accent' in c) applyAppearance(); });
   // Started with a link or file (command line, novadm://, magnet:, .torrent).
   setTimeout(() => handleLaunch(process.argv), 800);
   // "Resume unfinished downloads when NovaDM starts".
@@ -591,6 +661,23 @@ app.whenReady().then(async () => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
     if (op === 'set') settings.set(arg || {});
+    if (op === 'sitePassword') {
+      // { site, password }: stored encrypted on that site's entry.
+      try {
+        const enc = arg && arg.password ? require('./proxy').encryptPassword(String(arg.password)) : '';
+        settings.set({ siteSettings: (settings.get('siteSettings') || []).map((s) => (String(s.site).toLowerCase() === String(arg.site).toLowerCase() ? { ...s, passEnc: enc } : s)) });
+      } catch (e) { return { ok: false, error: e.message }; }
+    }
+    if (op === 'chooseProgram') {
+      const { dialog } = require('electron');
+      const r = await dialog.showOpenDialog(win, { title: 'Choose a program', properties: ['openFile'], filters: [{ name: 'Programs', extensions: ['exe'] }] });
+      if (!r.canceled && r.filePaths[0]) settings.set({ afterProgram: r.filePaths[0] });
+    }
+    if (op === 'chooseFolder') {
+      const { dialog } = require('electron');
+      const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
+      return { folder: r.canceled ? '' : r.filePaths[0] || '' };
+    }
     if (op === 'proxyPassword') {
       try { settings.set({ proxyPassEnc: require('./proxy').encryptPassword(String(arg || '')) }); } catch (e) { return { ok: false, error: e.message }; }
     }
