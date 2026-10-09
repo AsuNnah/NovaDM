@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src data:;" />
+<title>Bookmarks</title>
+<style>
+:root{color-scheme:dark;--bg:#1b1d22;--card:#24272e;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#3b6ef5;--danger:#e2574c;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+*{box-sizing:border-box;}
+[hidden]{display:none !important;}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
+.wrap{max-width:860px;margin:0 auto;padding:32px 24px 60px;}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:18px;flex-wrap:wrap;}
+h1{font-size:24px;font-weight:600;margin:0;flex:1;}
+input{height:32px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;font-size:13px;padding:0 10px;outline:none;}
+input:focus{border-color:var(--accent);}
+input[type=search]{background:var(--card);width:240px;}
+button{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;font-size:13px;}
+button:hover{border-color:var(--fg3);}
+button.danger{color:var(--danger);}
+h2{font-size:13px;font-weight:600;color:var(--fg2);margin:22px 0 8px;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.row{display:flex;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid var(--line);}
+.row:first-child{border-top:none;}
+.ico{width:16px;height:16px;flex:none;background-size:contain;background-repeat:no-repeat;background-position:center;color:var(--fg3);display:flex;align-items:center;justify-content:center;}
+.ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;}
+.ttl:hover{text-decoration:underline;}
+.url{color:var(--fg3);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;}
+.acts{display:flex;gap:4px;opacity:0;}
+.row:hover .acts,.row.edit .acts{opacity:1;}
+.acts button{height:26px;padding:0 9px;font-size:12px;}
+.edit .ttl,.edit .url{display:none;}
+.form{display:none;flex:1;gap:6px;flex-wrap:wrap;}
+.edit .form{display:flex;}
+.form input{flex:1;min-width:140px;}
+.empty{padding:50px 16px;text-align:center;color:var(--fg3);}
+.note{color:var(--fg3);font-size:12.5px;margin:6px 2px 0;}
+.sw{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg2);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Bookmarks</h1>
+    <input type="search" id="q" placeholder="Search bookmarks" spellcheck="false" />
+    <button id="import">Import…</button>
+    <button id="export">Export…</button>
+  </div>
+  <label class="sw"><input type="checkbox" id="showBar"> Show the bookmarks bar (Ctrl+Shift+B)</label>
+  <div id="list"></div>
+  <p class="note">Import takes the bookmarks file that Chrome, Brave, Edge and Firefox export ("Export bookmarks" → HTML). The star in the address bar (Ctrl+D) adds the page you're on. Private tabs can use bookmarks too, but never add history.</p>
+</div>
+<script src="bookmarks.js"></script>
+</body>
+</html>

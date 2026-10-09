@@ -23,8 +23,16 @@ AB Download Manager, XDM). No code from any of them is included.
 - **Secure DNS** (DNS over HTTPS: Cloudflare, Google, Quad9, AdGuard or a custom server), which gets
   around DNS-level blocking by an ISP
 - Site permissions (camera, microphone, location, notifications) asked per site
-- **Theme and accent colour**: like Windows, dark or light, and seven accent colours
-- Keyboard shortcuts (Ctrl+T/W/L/J/R, Ctrl+Tab, Alt+arrows) and page zoom with Ctrl + plus / minus / 0
+- **History** (Ctrl+H) with search and "Clear browsing data"; private tabs are never recorded
+- **Bookmarks**: star in the address bar (Ctrl+D), bookmarks bar, folders, a Bookmarks page
+  (Ctrl+Shift+O) with import / export of the HTML file Chrome, Brave, Edge and Firefox use
+- **Address bar suggestions** from history and bookmarks; **find in page** (Ctrl+F)
+- **Restore tabs**: last time's tabs come back, loading only when clicked
+- **Third-party cookies blocked** (can be turned off); optionally clear history, cookies and cache
+  when NovaDM closes
+- **Theme and accent colour**: like Windows, dark or light, and seven accent colours; size of
+  NovaDM's own screens (90–150 %)
+- Keyboard shortcuts (Ctrl+T/W/L/J/R/F/D/H, Ctrl+Tab, Alt+arrows) and page zoom with Ctrl + plus / minus / 0
 
 ### Ad blocker and pop-up guard
 - Ghostery ad-block engine with EasyList, EasyPrivacy and uBlock Origin lists plus the OISD Big
@@ -192,6 +200,7 @@ docs/                     design notes and the roadmap
 src/main/                 Electron main process
   main.js                 window, views, layout, app start-up
   browser.js              tabs (one WebContentsView per tab)
+  browsing.js, library.js history, bookmarks, find bar, restore tabs, address-bar suggestions
   adblock.js, popup.js    ad blocker and pop-up guard
   dns.js                  Secure DNS
   extensions.js           Chrome extensions and Web Store
@@ -222,7 +231,7 @@ assets/                   app icon
 ## Privacy
 
 NovaDM has no telemetry and no accounts. Everything it stores (settings, the downloads list, tabs,
-extensions, cookies) stays in `%APPDATA%\NovaDM` on your computer. The only network requests it makes
+history, bookmarks, extensions, cookies) stays in `%APPDATA%\NovaDM` on your computer. The only network requests it makes
 on its own are ad-block list updates and Secure DNS lookups to the provider you choose.
 
 The clipboard watcher only checks copied text for download links while NovaDM runs; nothing is

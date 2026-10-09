@@ -9,6 +9,11 @@ const { siteOf, hostOf } = require('./util');
 
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
 const NEWTAB = 'novadm://newtab';
+// novadm:// pages and their tab titles.
+const INTERNAL_PAGES = new Map([
+  ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
+  ['bookmarks', 'Bookmarks'],
+]);
 
 class Browser extends EventEmitter {
   constructor({ settings, media, adblock, popup }) {
@@ -102,9 +107,38 @@ class Browser extends EventEmitter {
 
   setParentView(view) { this.parentView = view; }
 
-  createTab({ url = NEWTAB, incognito = false, background = false, openerPartition } = {}) {
+  /**
+   * `lazy` (background tabs only): the tab is listed but its page loads when it is first selected
+   * (restored tabs), like an unloaded tab.
+   */
+  createTab({ url = NEWTAB, incognito = false, background = false, openerPartition, lazy = false, title = '' } = {}) {
     const id = ++this._seq;
-    const ses = incognito ? this.incognitoSession : this.normalSession;
+    const tab = {
+      id, view: null, wc: null, wcId: null, incognito, url: '', title: title || 'New tab', favicon: '',
+      loading: false, canGoBack: false, canGoForward: false, secure: false, muted: false,
+      discarded: false, saved: null, hiddenAt: Date.now(),
+    };
+    this.tabs.set(id, tab);
+    if (openerPartition != null) { const i = this.order.indexOf(openerPartition); this.order.splice(i >= 0 ? i + 1 : this.order.length, 0, id); }
+    else this.order.push(id);
+    if (lazy && background) {
+      tab.url = normalizeUrl(url, this.settings);
+      tab.secure = tab.url.startsWith('https:');
+      tab.discarded = true;
+    } else {
+      this.makeView(tab);
+      this.loadInTab(tab, url);
+    }
+    // A lazy tab is never selected here: whoever restores tabs selects the right one afterwards.
+    if (!background || (this.activeId == null && !lazy)) this.selectTab(id);
+    else if (tab.view) tab.view.setVisible(false);
+    this.emitTabs();
+    return id;
+  }
+
+  /** The page view of a tab (new, or again after the tab was unloaded). */
+  makeView(tab) {
+    const ses = tab.incognito ? this.incognitoSession : this.normalSession;
     this.prepareSession(ses);
     const view = new WebContentsView({
       webPreferences: {
@@ -114,28 +148,33 @@ class Browser extends EventEmitter {
       },
     });
     view.setBackgroundColor('#ffffff');
-    const wc = view.webContents;
-    const tab = {
-      id, view, wc, wcId: wc.id, incognito, url: '', title: 'New tab', favicon: '',
-      loading: false, canGoBack: false, canGoForward: false, secure: false, muted: false,
-    };
-    this.tabs.set(id, tab);
-    if (openerPartition != null) { const i = this.order.indexOf(openerPartition); this.order.splice(i >= 0 ? i + 1 : this.order.length, 0, id); }
-    else this.order.push(id);
+    tab.view = view;
+    tab.wc = view.webContents;
+    tab.wcId = tab.wc.id;
+    tab.discarded = false;
     this.wireTab(tab);
     if (this.parentView) { this.parentView.addChildView(view); if (this.onRestack) this.onRestack(); }
+    if (tab.id !== this.activeId) view.setVisible(false);
     this.emit('tab-created', tab);
-    this.loadInTab(tab, url);
-    if (!background || this.activeId == null) this.selectTab(id);
-    else view.setVisible(false);
-    this.emitTabs();
-    return id;
+  }
+
+  /** Load a restored tab when it is first selected. */
+  revive(tab) {
+    const saved = tab.saved;
+    tab.saved = null;
+    this.makeView(tab);
+    if (saved && saved.entries && saved.entries.length) {
+      tab.wc.navigationHistory.restore({ entries: saved.entries, index: saved.index }).catch(() => this.loadInTab(tab, tab.url));
+    } else {
+      this.loadInTab(tab, tab.url || NEWTAB);
+    }
   }
 
   wireTab(tab) {
     const wc = tab.wc;
     const update = () => this.refreshTabState(tab);
-    wc.on('page-title-updated', (_e, title) => { tab.title = title; update(); });
+    wc.on('page-title-updated', (_e, title) => { tab.title = title; update(); if (!tab.incognito) this.emit('title', tab, title); });
+    wc.on('found-in-page', (_e, result) => this.emit('found', tab, result));
     wc.on('did-start-loading', () => { tab.loading = true; update(); });
     wc.on('did-stop-loading', () => { tab.loading = false; update(); });
     wc.on('did-finish-load', () => this.emit('page-loaded', tab));
@@ -156,6 +195,12 @@ class Browser extends EventEmitter {
       else if (ctrl && k === 'tab') action = input.shift ? 'prev-tab' : 'next-tab';
       else if (input.alt && k === 'arrowleft') action = 'back';
       else if (input.alt && k === 'arrowright') action = 'forward';
+      else if (ctrl && k === 'f') action = 'find';
+      else if (k === 'f3' || (ctrl && k === 'g')) action = input.shift ? 'find-prev' : 'find-next';
+      else if (ctrl && input.shift && k === 'b') action = 'bookmarks-bar';
+      else if (ctrl && input.shift && k === 'o') action = 'bookmarks';
+      else if (ctrl && k === 'd') action = 'bookmark';
+      else if (ctrl && k === 'h') action = 'history';
       if (!action) return;
       e.preventDefault();
       if (action.startsWith('zoom')) {
@@ -184,6 +229,7 @@ class Browser extends EventEmitter {
       if (internal !== 'novadm://error') tab.failed = null;
       tab.secure = url.startsWith('https:');
       update();
+      if (!tab.incognito) this.emit('visit', tab, url);
     });
     wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
       // -3 = aborted (user navigated away / download started): not an error.
@@ -192,7 +238,12 @@ class Browser extends EventEmitter {
       tab.loading = false;
       wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '' } }).catch(() => {});
     });
-    wc.on('did-navigate-in-page', (_e, url, isMain) => { if (isMain) { tab.url = internalUrl(url) || url; update(); } });
+    wc.on('did-navigate-in-page', (_e, url, isMain) => {
+      if (!isMain) return;
+      tab.url = internalUrl(url) || url;
+      update();
+      if (!tab.incognito) this.emit('visit', tab, url);
+    });
     wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons && icons[0] || ''; update(); });
     wc.on('media-started-playing', update);
     wc.on('render-process-gone', () => { tab.title = 'Page crashed'; tab.loading = false; update(); });
@@ -306,11 +357,15 @@ class Browser extends EventEmitter {
   }
 
   loadInTab(tab, url) {
+    if (!tab.wc) { tab.saved = null; this.makeView(tab); } // an unloaded tab told to go somewhere else
     const target = normalizeUrl(url, this.settings);
     if (target.startsWith('novadm://')) {
-      const page = target.slice('novadm://'.length).split(/[?#]/)[0] || 'newtab';
-      tab.url = target; tab.title = page === 'newtab' ? 'New tab' : page;
-      tab.wc.loadFile(path.join(__dirname, '..', 'ui', `${page}.html`)).catch(() => {});
+      const rest = target.slice('novadm://'.length);
+      const page = rest.split(/[?#]/)[0] || 'newtab';
+      if (!INTERNAL_PAGES.has(page)) { tab.url = target; tab.wc.loadFile(path.join(__dirname, '..', 'ui', 'newtab.html')).catch(() => {}); return; }
+      const query = Object.fromEntries(new URLSearchParams(rest.includes('?') ? rest.slice(rest.indexOf('?') + 1) : ''));
+      tab.url = 'novadm://' + page; tab.title = INTERNAL_PAGES.get(page);
+      tab.wc.loadFile(path.join(__dirname, '..', 'ui', `${page}.html`), { query }).catch(() => {});
     } else {
       tab.url = target;
       tab.wc.loadURL(target).catch(() => {});
@@ -330,7 +385,20 @@ class Browser extends EventEmitter {
   /** Tabs currently showing an internal page, for pushing live updates to them. */
   internalTabs(page) {
     const url = 'novadm://' + page;
-    return [...this.tabs.values()].filter((t) => t.url === url && !t.wc.isDestroyed());
+    return [...this.tabs.values()].filter((t) => t.url === url && t.wc && !t.wc.isDestroyed());
+  }
+
+  // ---- find in page (Ctrl+F) ----
+  /** `followUp`: the next/previous match of the same text (Electron's findNext means "new search"). */
+  find(text, { forward = true, followUp = false } = {}) {
+    const t = this.activeTab();
+    if (!t || !t.wc) return;
+    if (!text) { t.wc.stopFindInPage('clearSelection'); return; }
+    t.wc.findInPage(String(text).slice(0, 500), { forward, findNext: !followUp });
+  }
+
+  stopFind(action = 'clearSelection') {
+    for (const t of this.tabs.values()) if (t.wc && !t.wc.isDestroyed()) { try { t.wc.stopFindInPage(action); } catch {} }
   }
 
   navigate(tabId, input) {
@@ -341,9 +409,11 @@ class Browser extends EventEmitter {
 
   selectTab(id) {
     if (!this.tabs.has(id)) return;
-    if (this.activeId != null && this.tabs.has(this.activeId)) this.tabs.get(this.activeId).view.setVisible(false);
+    const prev = this.tabs.get(this.activeId);
+    if (prev && prev.id !== id) { prev.hiddenAt = Date.now(); if (prev.view) prev.view.setVisible(false); }
     this.activeId = id;
     const tab = this.tabs.get(id);
+    if (tab.discarded) this.revive(tab);
     tab.view.setBounds(this.bounds);
     tab.view.setVisible(true);
     try { if (this.parentView) this.parentView.addChildView(tab.view); } catch {} // raise to top
@@ -360,10 +430,11 @@ class Browser extends EventEmitter {
     const idx = this.order.indexOf(id);
     this.order.splice(idx, 1);
     this.tabs.delete(id);
-    if (this.adblock) this.adblock.removeTab(tab.wcId);
+    if (this.adblock && tab.wcId != null) this.adblock.removeTab(tab.wcId);
     this.media.removeTab(tab.id);
-    try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {}
-    try { tab.wc.close(); } catch {}
+    this.emit('tab-closed', tab);
+    if (tab.view) { try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {} }
+    if (tab.wc) { try { tab.wc.close(); } catch {} }
     if (this.shuttingDown) { this.emitTabs(); return; } // window closing: no replacement tab
     if (this.activeId === id) {
       const next = this.order[idx] || this.order[idx - 1] || null;
@@ -374,24 +445,26 @@ class Browser extends EventEmitter {
     this.emitTabs();
   }
 
-  back(id) { const t = this.tabs.get(id || this.activeId); if (t && t.wc.navigationHistory.canGoBack()) t.wc.navigationHistory.goBack(); }
-  forward(id) { const t = this.tabs.get(id || this.activeId); if (t && t.wc.navigationHistory.canGoForward()) t.wc.navigationHistory.goForward(); }
+  back(id) { const t = this.tabs.get(id || this.activeId); if (t && t.wc && t.wc.navigationHistory.canGoBack()) t.wc.navigationHistory.goBack(); }
+  forward(id) { const t = this.tabs.get(id || this.activeId); if (t && t.wc && t.wc.navigationHistory.canGoForward()) t.wc.navigationHistory.goForward(); }
   reload(id) {
     const t = this.tabs.get(id || this.activeId);
-    if (!t) return;
+    if (!t || !t.wc) return;
     // On the error page, retry the address that failed rather than reloading the error page.
     if (internalUrl(t.wc.getURL()) === 'novadm://error' && t.failed) this.loadInTab(t, t.failed.url);
     else t.wc.reload();
   }
-  stop(id) { const t = this.tabs.get(id || this.activeId); if (t) t.wc.stop(); }
+  stop(id) { const t = this.tabs.get(id || this.activeId); if (t && t.wc) t.wc.stop(); }
 
   activeTab() { return this.tabs.get(this.activeId); }
 
   refreshTabState(tab) {
-    try {
-      tab.canGoBack = tab.wc.navigationHistory.canGoBack();
-      tab.canGoForward = tab.wc.navigationHistory.canGoForward();
-    } catch {}
+    if (tab.wc && !tab.wc.isDestroyed()) {
+      try {
+        tab.canGoBack = tab.wc.navigationHistory.canGoBack();
+        tab.canGoForward = tab.wc.navigationHistory.canGoForward();
+      } catch {}
+    }
     this.emit('tab-updated', this.serializeTab(tab));
     if (tab.id === this.activeId) this.emitActive();
   }
@@ -401,6 +474,8 @@ class Browser extends EventEmitter {
       id: tab.id, title: tab.title || 'New tab', url: displayUrl(tab.url), favicon: tab.favicon,
       loading: tab.loading, incognito: tab.incognito, secure: tab.secure,
       canGoBack: tab.canGoBack, canGoForward: tab.canGoForward, active: tab.id === this.activeId,
+      discarded: !!tab.discarded,
+      bookmarked: this.isBookmarked ? this.isBookmarked(tab.url) : false,
     };
   }
 
@@ -408,7 +483,7 @@ class Browser extends EventEmitter {
   emitActive() { const t = this.activeTab(); if (t) this.emit('active', this.serializeTab(t)); }
 
   destroy() {
-    for (const tab of this.tabs.values()) { try { tab.wc.close(); } catch {} }
+    for (const tab of this.tabs.values()) { if (tab.wc) { try { tab.wc.close(); } catch {} } }
     this.tabs.clear(); this.order = [];
   }
 }
@@ -428,7 +503,8 @@ function cleanUserAgent(ua) {
 
 // Map the on-disk UI file URL back to its novadm:// address (so the omnibox stays clean).
 function internalUrl(u) {
-  const m = /[\\/]ui[\\/](\w+)\.html$/.exec(u || '');
+  if (!/^file:/i.test(u || '')) return '';
+  const m = /[\\/]ui[\\/](\w+)\.html(?:[?#]|$)/.exec(u || '');
   return m ? 'novadm://' + (m[1] === 'newtab' ? 'newtab' : m[1]) : '';
 }
 

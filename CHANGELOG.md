@@ -8,6 +8,49 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [1.0.0] — 2026-10-09
+
+Everyday browsing: the browser features the 1DM feature map still had open. Plan for 1.x:
+`docs/v1-plan.md`.
+
+### Added
+- **History** (Ctrl+H, `novadm://history`): pages by day, search, open, remove single pages or a
+  selection. Kept 90 days. Private tabs are never recorded.
+- **Clear browsing data**: history for the last hour / day / week / all time, and cookies and site
+  data or cached files (all time).
+- **Bookmarks**: star in the address bar (Ctrl+D), **bookmarks bar** under the toolbar (shown once
+  there are bookmarks; Ctrl+Shift+B), folders as menus, a » menu for those that don't fit,
+  right-click to open in a new or private tab, edit or delete. **Bookmarks page** (Ctrl+Shift+O):
+  rename, change address, move to a folder, delete, and **import / export** of the HTML bookmarks
+  file that Chrome, Brave, Edge and Firefox use. The site's icon is kept with the bookmark.
+- **Address bar suggestions** from history and bookmarks as you type (arrow keys, Enter, click).
+- **Find in page** (Ctrl+F): matches counted as you type, Enter / Shift+Enter or F3 / Ctrl+G for
+  next / previous, Esc closes.
+- **Restore tabs**: the tabs from last time come back (saved as you browse, so also after a crash
+  or power cut). Only the tab you were on loads at start; the others load when clicked. Private
+  tabs are never kept.
+- **Block third-party cookies** (on by default, like Brave): sites embedded in other sites can't
+  keep cookies there, through headers or scripts. Uses Chromium's own switch, so a change takes
+  effect after NovaDM restarts.
+- **When NovaDM closes, clear** history, cookies and site data, and/or cached files.
+- **Size of NovaDM's screens** (90–150 %): toolbar, menus, find bar and NovaDM's own pages.
+
+### Fixed
+- NovaDM's own pages opened with an address query (the error page) showed a `file:` path in the
+  address bar instead of nothing.
+
+### Tests
+- 119 unit tests (new: history merging, search, suggestions, clearing by time and the 90-day
+  limit; bookmarks toggle / edit / move, import of a Chrome-style file with folders, export and
+  re-import; saved tabs).
+- In-app self-test `tools/selftest-v1.js`, two runs on one profile: history with titles and none
+  from private tabs, suggestions, star → bar (toolbar 88 → 120 px), find "1 of 3" → "2 of 3",
+  History page, 125 % size, third-party cookies blocked (header and `document.cookie`, against a
+  local HTTPS server with a throwaway certificate given in `NOVADM_TLS_DIR`), then after a restart:
+  the same tabs, only the active one loaded, history cleared on exit, bookmarks kept. The pop-up
+  self-test passes on this release; the other earlier self-tests were run on the 1.1.0 code (which
+  contains everything here) and pass unchanged.
+
 ## [0.8.0] — 2026-10-09
 
 Extras (roadmap phase 7, the last phase of the plan).

@@ -27,7 +27,10 @@
 
     <div id="omnibox">
       <span class="lock" id="lock"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></span>
-      <input id="url" type="text" placeholder="Search or enter address" spellcheck="false" />
+      <input id="url" type="text" placeholder="Search or enter address" spellcheck="false" autocomplete="off" />
+      <div class="obtn hidden" id="star-btn" title="Bookmark this page (Ctrl+D)">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>
+      </div>
       <div class="pill popblk hidden" id="popup-pill" title="Pop-ups were blocked on this page. Click to review the last one.">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="13" height="13" rx="2"/><path d="M8 3h11a2 2 0 0 1 2 2v11"/><path d="M6 15l7-7"/></svg>
         <span id="popup-count">0</span>
@@ -44,6 +47,8 @@
     <div class="ic" id="dl-btn" title="Downloads"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M5 21h14"/></svg><span class="badge gray hidden" id="dl-badge">0</span></div>
     <div class="ic" id="menu-btn" title="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></div>
   </div>
+
+  <div id="bmbar" class="hidden"><div id="bm-items"></div><div class="bm more hidden" id="bm-more" title="More bookmarks">»</div></div>
 
   <script src="chrome.js"></script>
 </body>

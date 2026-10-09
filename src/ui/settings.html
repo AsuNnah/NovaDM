@@ -34,6 +34,7 @@ input[type=text]{width:280px;}
 .path{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg2);font-size:12.5px;}
 button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;cursor:pointer;}
 .sw{position:relative;width:40px;height:22px;flex:none;}
+.chk,.mini label.chk{display:flex;flex-direction:row;align-items:center;gap:6px;font-size:13px;color:var(--fg2);}
 .sw input{opacity:0;width:0;height:0;}
 .sw i{position:absolute;inset:0;border-radius:999px;background:var(--line);cursor:pointer;transition:.15s;}
 .sw i::after{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s;}
@@ -60,7 +61,23 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <select id="accent"><option value="#5b7cfa">Blue</option><option value="#8b5cf6">Violet</option><option value="#ec4899">Pink</option><option value="#ef4444">Red</option><option value="#f59e0b">Amber</option><option value="#10b981">Green</option><option value="#06b6d4">Teal</option></select>
     </div>
     <div class="row">
+      <div class="lbl"><b>Size of NovaDM's screens</b><span>Toolbar, menus and NovaDM's own pages.</span></div>
+      <select id="uiScale"><option value="90">90%</option><option value="100">100%</option><option value="110">110%</option><option value="125">125%</option><option value="150">150%</option></select>
+    </div>
+    <div class="row">
       <div class="lbl"><b>Page size</b><span>Ctrl + plus / minus zooms a page; Ctrl + 0 goes back to 100%. The zoom applies to every page of that site.</span></div>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Show the bookmarks bar</b><span>Under the address bar, once you have bookmarks (Ctrl+Shift+B).</span></div>
+      <label class="sw"><input type="checkbox" id="showBookmarksBar"><i></i></label>
+    </div>
+  </div>
+
+  <h2>Tabs</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Open the tabs from last time</b><span>Only the tab you were on loads right away; the others load when you click them. Private tabs are never kept.</span></div>
+      <label class="sw"><input type="checkbox" id="restoreTabs"><i></i></label>
     </div>
   </div>
 
@@ -81,6 +98,23 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     <div class="row">
       <div class="lbl"><b>Pop-ups and new windows</b><span>Ask: pop-ups and links that open another site in a new tab ask first. Block: pop-ups are blocked; links to other sites still ask. Ad-site pop-ups are always blocked.</span></div>
       <select id="popupMode"><option value="ask">Ask me (recommended)</option><option value="block">Block pop-ups</option><option value="allow">Allow all</option></select>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Block third-party cookies</b><span>Sites embedded in other sites (ads, trackers, "like" buttons) can't keep cookies there. A few embedded sign-ins and comment boxes may need you to open the site itself. Takes effect after NovaDM restarts.</span></div>
+      <label class="sw"><input type="checkbox" id="blockThirdPartyCookies"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>When NovaDM closes, clear</b><span>Cookies and site data sign you out of sites.</span>
+        <div class="mini" style="margin-top:8px;gap:16px">
+          <label class="chk"><input type="checkbox" id="clearHistoryOnExit"> History</label>
+          <label class="chk"><input type="checkbox" id="clearCookiesOnExit"> Cookies and site data</label>
+          <label class="chk"><input type="checkbox" id="clearCacheOnExit"> Cached files</label>
+        </div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Clear browsing data</b><span>History, cookies and cached files, now.</span></div>
+      <button id="clearNow">Clear…</button>
     </div>
   </div>
 

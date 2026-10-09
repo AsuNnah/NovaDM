@@ -48,6 +48,42 @@ api.on('download-ask-update', (d) => updateDownloadAsk(d));
 api.on('links-ask', (d) => showLinksAsk(d));
 api.on('afterdone-ask', (d) => showAfterDone(d));
 api.on('torrent-files', (d) => showTorrentFiles(d));
+api.on('omni-suggest', (d) => showSuggestions(d));
+api.on('omni-highlight', (d) => highlightSuggestion(d.index));
+api.on('omni-hide', () => { if (current === 'omni') { current = null; content.innerHTML = ''; api.call('panel.close'); } });
+
+// ---- address bar suggestions (typed in the toolbar; this list sits right under it) ----
+function showSuggestions(d) {
+  if (current && current !== 'omni') return; // another panel or a question is open
+  current = 'omni';
+  place('omni');
+  Object.assign(pop.style, { left: Math.max(4, d.left) + 'px', width: d.width + 'px', right: 'auto', top: '2px' });
+  content.innerHTML = '';
+  const list = el('div', 'body sugg');
+  d.items.forEach((it, i) => {
+    const row = el('div', 'srow');
+    row.dataset.i = i;
+    row.append(el('span', 'sic', it.kind === 'bookmark' ? STAR_SVG : CLOCK_SVG));
+    const t = el('div', 'stx');
+    t.append(el('span', 'stt', esc(it.title || it.url)), el('span', 'surl', esc(it.url)));
+    row.append(t);
+    row.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      api.call(e.button === 1 || e.ctrlKey ? 'tabs.new' : 'nav.go', e.button === 1 || e.ctrlKey ? { url: it.url } : { input: it.url });
+      current = null; content.innerHTML = '';
+      api.call('panel.close');
+      api.call('omni.done');
+    });
+    list.append(row);
+  });
+  content.append(list);
+}
+function highlightSuggestion(i) {
+  if (current !== 'omni') return;
+  for (const r of content.querySelectorAll('.srow')) r.classList.toggle('sel', Number(r.dataset.i) === i);
+}
+const STAR_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/></svg>';
+const CLOCK_SVG = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>';
 
 function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -228,6 +264,9 @@ function renderMenu() {
     ['New tab', 'tabs.new', {}],
     ['New private tab', 'tabs.new', { incognito: true }],
     ['Downloads', 'downloads.openPageTab', {}],
+    ['History', 'tabs.new', { url: 'novadm://history' }],
+    ['Bookmarks', 'tabs.new', { url: 'novadm://bookmarks' }],
+    ['Find in page', 'find.open', {}],
     ['Detected media', '_panel', 'media'],
     ['Grab page content', '_panel', 'grabber'],
     ['Get extensions (Chrome Web Store)', 'extensions.openStore', {}],

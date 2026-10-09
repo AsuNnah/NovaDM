@@ -61,6 +61,14 @@ function defaults() {
 
     // Appearance
     accent: '#5b7cfa',
+    uiScale: '100', // size of NovaDM's own screens, in percent
+    showBookmarksBar: true, // shown when there are bookmarks
+
+    // Privacy
+    blockThirdPartyCookies: true, // Chromium's own switch, applied when NovaDM starts
+    clearCookiesOnExit: false,
+    clearCacheOnExit: false,
+    clearHistoryOnExit: false,
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
     ytdlpPath: '', // the user's own yt-dlp.exe
 

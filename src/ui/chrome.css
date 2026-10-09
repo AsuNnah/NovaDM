@@ -64,3 +64,19 @@ browser-action-list::part(action):hover { background-color: var(--bg2); }
 .pill.popblk { background: rgba(230,162,60,.16); color: #e6a23c; cursor: default; }
 .pill.popblk.pulse { animation: pulse .9s ease-out 1; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(230,162,60,.6); } 100% { box-shadow: 0 0 0 10px rgba(230,162,60,0); } }
+
+/* address bar buttons: reader view, bookmark star */
+.obtn { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: var(--fg3); flex: none; }
+.obtn:hover { background: var(--bg3); color: var(--fg); }
+.obtn.on { color: var(--accent); }
+.obtn.on svg { fill: currentColor; }
+
+/* bookmarks bar */
+#bmbar { height: 32px; display: flex; align-items: center; gap: 2px; padding: 0 8px; background: var(--bg3); border-bottom: 1px solid var(--line); }
+#bm-items { flex: 1; min-width: 0; display: flex; align-items: center; gap: 2px; overflow: hidden; }
+.bm { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px; border-radius: 6px; max-width: 190px; flex: none; color: var(--fg2); font-size: 12px; white-space: nowrap; cursor: default; }
+.bm:hover { background: var(--bg2); color: var(--fg); }
+.bm .ico { width: 14px; height: 14px; flex: none; display: flex; align-items: center; justify-content: center; background-size: contain; background-repeat: no-repeat; background-position: center; color: var(--fg3); }
+.bm span { overflow: hidden; text-overflow: ellipsis; }
+.bm.more { font-size: 14px; padding: 0 9px; }
+.tab.discarded .fav, .tab.discarded .ttl { opacity: .55; }

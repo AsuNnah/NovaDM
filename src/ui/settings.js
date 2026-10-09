@@ -3,10 +3,10 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract'];
+const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract', 'showBookmarksBar', 'restoreTabs', 'blockThirdPartyCookies', 'clearHistoryOnExit', 'clearCookiesOnExit', 'clearCacheOnExit'];
 const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser', 'afterArgs', 'webhookUrl'];
 const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7], apiPort: [1024, 65535] };
-const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads', 'theme', 'accent'];
+const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads', 'theme', 'accent', 'uiScale'];
 
 function flashSaved() {
   const s = $('saved');
@@ -228,6 +228,8 @@ function rowsOf(id) {
 }
 function saveRules() { return save({ categoryRules: rowsOf('ruleList').filter((r) => r.value) }); }
 function saveSites() { return save({ siteSettings: rowsOf('siteList').filter((s) => s.site) }); }
+$('clearNow').onclick = () => bridge.navigate('novadm://history?clear=1');
+
 function initRules() {
   $('ruleAdd').onclick = async () => { await save({ categoryRules: [...(current.categoryRules || []), { by: 'type', value: '', category: 'other', folder: '' }] }); renderRules(); };
   $('siteAdd').onclick = async () => { await save({ siteSettings: [...(current.siteSettings || []), { site: '', connections: 0, speedLimitKBps: 0, userAgent: '', user: '' }] }); renderRules(); };

@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>History</title>
+<style>
+:root{color-scheme:dark;--bg:#1b1d22;--card:#24272e;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#3b6ef5;--danger:#e2574c;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+*{box-sizing:border-box;}
+[hidden]{display:none !important;}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
+.wrap{max-width:860px;margin:0 auto;padding:32px 24px 60px;}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:18px;flex-wrap:wrap;}
+h1{font-size:24px;font-weight:600;margin:0;flex:1;}
+input[type=search]{height:34px;width:300px;max-width:100%;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;padding:0 12px;outline:none;}
+input[type=search]:focus{border-color:var(--accent);}
+button{height:32px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;font-size:13px;}
+button:hover{border-color:var(--fg3);}
+button.danger{color:var(--danger);}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:16px;}
+.day{font-size:13px;font-weight:600;color:var(--fg2);padding:12px 16px 6px;}
+.row{display:flex;align-items:center;gap:12px;padding:7px 16px;}
+.row:hover{background:color-mix(in srgb,var(--accent) 7%,transparent);}
+.row input{flex:none;}
+.time{color:var(--fg3);font-size:12.5px;width:52px;flex:none;font-variant-numeric:tabular-nums;}
+.ttl{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;}
+.ttl:hover{text-decoration:underline;}
+.host{color:var(--fg3);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;}
+.x{width:26px;height:26px;padding:0;border:none;background:transparent;color:var(--fg3);border-radius:6px;display:flex;align-items:center;justify-content:center;opacity:0;}
+.row:hover .x{opacity:1;}
+.x:hover{background:var(--line);color:var(--fg);}
+.empty{padding:50px 16px;text-align:center;color:var(--fg3);}
+.bulk{display:flex;align-items:center;gap:10px;padding:8px 14px;margin-bottom:12px;border-radius:10px;background:color-mix(in srgb,var(--accent) 12%,transparent);font-size:13px;}
+.bulk .sp{flex:1;}
+.clear{padding:18px;display:grid;gap:12px;}
+.clear h3{margin:0;font-size:15px;font-weight:600;}
+.clear label{display:flex;align-items:center;gap:10px;}
+.clear small{color:var(--fg3);}
+.clear select{height:32px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;padding:0 8px;}
+.clear .act{display:flex;gap:8px;justify-content:flex-end;}
+.more{display:flex;justify-content:center;padding:6px 0 20px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>History</h1>
+    <input type="search" id="q" placeholder="Search history" spellcheck="false" autofocus />
+    <button id="clearBtn">Clear browsing data…</button>
+  </div>
+
+  <div class="card" id="clearBox" hidden>
+    <div class="clear">
+      <h3>Clear browsing data</h3>
+      <label>Time range
+        <select id="range"><option value="hour">Last hour</option><option value="day">Last 24 hours</option><option value="week">Last 7 days</option><option value="all" selected>All time</option></select>
+      </label>
+      <label><input type="checkbox" id="cHistory" checked> Browsing history</label>
+      <label><input type="checkbox" id="cCookies"> Cookies and site data <small>(all time; signs you out of most sites)</small></label>
+      <label><input type="checkbox" id="cCache"> Cached images and files <small>(all time)</small></label>
+      <div class="act"><button id="clearCancel">Cancel</button><button class="pri" id="clearGo">Clear data</button></div>
+    </div>
+  </div>
+
+  <div class="bulk" id="bulk" hidden><span id="selCount"></span><span class="sp"></span><button id="selNone">Cancel</button><button class="danger" id="selDelete">Delete</button></div>
+  <div id="list"></div>
+  <div class="more" id="moreBox" hidden><button id="more">Show more</button></div>
+</div>
+<script src="history.js"></script>
+</body>
+</html>

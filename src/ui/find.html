@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>Find</title>
+<style>
+:root{color-scheme:dark;--bg:#24272e;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#5b7cfa;--danger:#e2574c;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#fff;--line:#d8dbe2;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;overflow:hidden;background:transparent;font:13px/1.4 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--fg);}
+.bar{position:absolute;inset:4px;display:flex;align-items:center;gap:4px;padding:0 6px 0 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.28);}
+input{flex:1;min-width:0;height:28px;border:none;outline:none;background:transparent;color:var(--fg);font:inherit;}
+.count{color:var(--fg3);font-size:12px;white-space:nowrap;min-width:46px;text-align:right;}
+.count.none{color:var(--danger);}
+button{width:28px;height:28px;border:none;border-radius:7px;background:transparent;color:var(--fg2);display:flex;align-items:center;justify-content:center;}
+button:hover{background:color-mix(in srgb,var(--fg3) 22%,transparent);color:var(--fg);}
+.sep{width:1px;height:18px;background:var(--line);margin:0 2px;}
+</style>
+</head>
+<body>
+<div class="bar">
+  <input id="q" type="text" placeholder="Find in page" spellcheck="false" />
+  <span class="count" id="count"></span>
+  <span class="sep"></span>
+  <button id="prev" title="Previous (Shift+Enter)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 15l6-6 6 6"/></svg></button>
+  <button id="next" title="Next (Enter)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg></button>
+  <button id="close" title="Close (Esc)"><svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+</div>
+<script src="find.js"></script>
+</body>
+</html>

@@ -27,6 +27,7 @@ const net = require('./net');
 const { registerIpc } = require('./ipc');
 const { applySecureDns } = require('./dns');
 const { showContextMenu } = require('./contextmenu');
+const { setupBrowsing } = require('./browsing');
 // Must load before the app is ready (registers the crx:// scheme for extension icons).
 const { Extensions } = require('./extensions');
 
@@ -37,6 +38,13 @@ if (process.env.NOVADM_USERDATA) app.setPath('userData', process.env.NOVADM_USER
 else migrateOldProfile();
 
 // One NovaDM at a time (per profile): starting it again brings the running one forward.
+// Third-party cookies (Settings → Privacy) use Chromium's own switch, which must be set before
+// Chromium starts: read straight from the settings file. Blocked unless turned off.
+try {
+  const saved = JSON.parse(require('fs').readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
+  if (saved.blockThirdPartyCookies !== false) app.commandLine.appendSwitch('test-third-party-cookie-phaseout');
+} catch { app.commandLine.appendSwitch('test-third-party-cookie-phaseout'); }
+
 const isFirstInstance = app.requestSingleInstanceLock();
 if (!isFirstInstance) app.quit();
 // A second start (command line, novadm:// link, magnet link, .torrent file) hands its arguments over.
@@ -58,35 +66,37 @@ function migrateOldProfile() {
   }
 }
 
-const CHROME_HEIGHT = 88;
 const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
 
 let win, chromeView, overlayView;
-let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt;
+let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, browsing;
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
 
 function contentBounds() {
   const [w, h] = win.getContentSize();
-  return { x: 0, y: CHROME_HEIGHT, width: w, height: Math.max(0, h - CHROME_HEIGHT) };
+  const top = browsing.chromeHeight();
+  return { x: 0, y: top, width: w, height: Math.max(0, h - top) };
 }
 
 function layout() {
-  if (!win || win.isDestroyed()) return;
-  const [w, h] = win.getContentSize();
-  chromeView.setBounds({ x: 0, y: 0, width: w, height: CHROME_HEIGHT });
+  if (!win || win.isDestroyed() || !chromeView) return;
+  const [w] = win.getContentSize();
+  chromeView.setBounds({ x: 0, y: 0, width: w, height: browsing.chromeHeight() });
   const cb = contentBounds();
   overlayView.setBounds(cb);
   browser.setBounds(cb);
+  if (browsing.findView) browsing.findView.setBounds(browsing.findBounds(cb));
 }
 
 function restack() {
-  // Keep z-order: page tab (bottom) < overlay < chrome (top). Nothing to do once the window is gone
-  // (tabs are still being closed while NovaDM quits).
+  // Keep z-order: page tab (bottom) < find bar < overlay < chrome (top). Nothing to do once the
+  // window is gone (tabs are still being closed while NovaDM quits).
   if (!win || win.isDestroyed()) return;
   const root = win.contentView;
+  if (browsing && browsing.findView) { try { root.addChildView(browsing.findView); } catch {} }
   try { root.addChildView(overlayView); } catch {}
   try { root.addChildView(chromeView); } catch {}
 }
@@ -129,6 +139,7 @@ function createWindow() {
 
   win.contentView.addChildView(chromeView);
   win.contentView.addChildView(overlayView);
+  browsing.createFindView(win.contentView);
 
   browser.setParentView(win.contentView);
   browser.onRestack = restack;
@@ -147,8 +158,9 @@ function createWindow() {
   // Open links that must leave the app (none by default) in the OS browser.
   chromeView.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 
-  // NOVADM_OPEN (debug) opens a given address at startup instead of the new tab page.
-  browser.createTab({ url: process.env.NOVADM_OPEN || 'novadm://newtab' });
+  // The tabs from last time (Settings → Restore tabs), or a new tab. NOVADM_OPEN (debug) opens a
+  // given address instead.
+  browsing.openStartTabs(process.env.NOVADM_OPEN || '');
 }
 
 function wireEvents() {
@@ -173,7 +185,13 @@ function wireEvents() {
   browser.on('download', onPageDownload);
   browser.on('page-loaded', (tab) => { runSiteExtensions(tab); if (/^novadm:\/\//.test(tab.url || '')) styleUi(tab.wc); });
   browser.on('shortcut', (tab, action) => {
-    if (action === 'new-tab') browser.createTab({ incognito: tab.incognito });
+    if (action === 'find') browsing.openFind();
+    else if (action === 'find-next' || action === 'find-prev') { if (browsing.findOpen) sendFindStep(action === 'find-next'); else browsing.openFind(); }
+    else if (action === 'bookmark') browsing.toggleActiveBookmark();
+    else if (action === 'bookmarks-bar') ipcHandlers['bookmarks.setBar']({ show: settings.get('showBookmarksBar') === false });
+    else if (action === 'bookmarks') browser.openInternal('bookmarks');
+    else if (action === 'history') browser.openInternal('history');
+    else if (action === 'new-tab') browser.createTab({ incognito: tab.incognito });
     else if (action === 'close-tab') browser.closeTab(tab.id);
     else if (action === 'focus-address') { chromeView.webContents.focus(); sendUI('focus-address', {}); }
     else if (action === 'downloads') browser.openInternal('downloads');
@@ -393,6 +411,7 @@ function refreshFromMedia(tabId) {
 }
 
 let pendingPermission = null;
+let ipcHandlers = {};
 const blockedPopups = new Map(); // tabId -> [{ url, reason, pageUrl }]
 
 function sendPopupState() {
@@ -407,6 +426,11 @@ function reviewBlockedPopup() {
   sendPopupState();
   setPanel(true);
   sendUI('popup-ask', { tabId: browser.activeId, pageUrl: last.pageUrl, url: last.url, reviewed: true, reason: last.reason });
+}
+
+// F3 / Ctrl+G while the find bar is open: next or previous match of what it holds.
+function sendFindStep(forward) {
+  if (browsing.findView) browsing.findView.webContents.executeJavaScript(`document.getElementById('${forward ? 'next' : 'prev'}').click()`).catch(() => {});
 }
 
 function refreshChromeIndicators(tab) {
@@ -493,6 +517,10 @@ app.whenReady().then(async () => {
   });
   adblock = new AdBlocker(settings);
   browser = new Browser({ settings, media, adblock, popup });
+  browsing = setupBrowsing({
+    settings, browser, net, userDataDir: app.getPath('userData'), sendUI, setPanel,
+    getWindow: () => win, relayout: () => layout(), restack: () => restack(),
+  });
   transport = new Transport({ session: browser.normalSession, settings });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
@@ -605,6 +633,12 @@ app.whenReady().then(async () => {
 
   createWindow();
   wireEvents();
+  // Size of NovaDM's own screens (Settings → Appearance) and the bookmarks bar.
+  for (const v of [chromeView, overlayView]) v.webContents.on('did-finish-load', () => v.webContents.setZoomFactor(browsing.scale()));
+  settings.on('change', (c) => {
+    if ('uiScale' in c) browsing.applyScale([chromeView, overlayView, browsing.findView]);
+    if ('showBookmarksBar' in c) { layout(); sendUI('bookmarks', browsing.bookmarkState()); }
+  });
   // Appearance: theme now, accent once NovaDM's own views have loaded, and on every change.
   applyAppearance();
   for (const v of [chromeView, overlayView]) v.webContents.on('did-finish-load', () => styleUi(v.webContents));
@@ -631,7 +665,7 @@ app.whenReady().then(async () => {
     })
     .catch((e) => console.error('extensions init failed', e));
 
-  const ipcHandlers = registerIpc({
+  ipcHandlers = registerIpc({
     getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, toolDownloadFn: () => toolDownloadRef, getApiStatus: () => apiStatus }),
     setPanel, sendUI, sendMediaState,
     downloadItem,
@@ -639,6 +673,7 @@ app.whenReady().then(async () => {
     getPendingPermission: () => pendingPermission,
     clearPendingPermission: () => { pendingPermission = null; },
   });
+  Object.assign(ipcHandlers, browsing.handlers);
 
   // Ad-block lists load in the background; attach to sessions once ready.
   adblock.init().then(() => {
@@ -693,7 +728,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return ipcHandlers[method](args || {});
   });
   // Live updates for open Downloads pages.
@@ -727,7 +762,7 @@ app.whenReady().then(async () => {
   if (process.env.NOVADM_SELFTEST) {
     const t = require(path.resolve(process.env.NOVADM_SELFTEST));
     setTimeout(() => {
-      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, api, ytdlp, siteExt, handleLaunch, getWindow: () => win }))
+      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, api, ytdlp, siteExt, handleLaunch, browsing, getWindow: () => win }))
         .catch((e) => console.error('selftest failed', e));
     }, Number(process.env.NOVADM_SELFTEST_DELAY) || 3000);
   }
@@ -742,7 +777,9 @@ app.on('before-quit', (e) => {
   if (quitReady || !downloads) { downloads && downloads.persist(); return; }
   e.preventDefault();
   quitReady = true;
-  downloads.shutdown(4000).finally(() => { if (aria2) aria2.stop(); if (api) api.stop(); app.quit(); });
+  // Downloads pause cleanly while "clear when NovaDM closes" runs (Settings → Privacy).
+  Promise.allSettled([downloads.shutdown(4000), browsing ? browsing.onQuit() : null])
+    .finally(() => { if (aria2) aria2.stop(); if (api) api.stop(); app.quit(); });
 });
 
 module.exports = { get win() { return win; } };
