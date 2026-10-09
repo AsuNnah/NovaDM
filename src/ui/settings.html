@@ -108,6 +108,14 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <label class="sw"><input type="checkbox" id="blockThirdPartyCookies"><i></i></label>
     </div>
     <div class="row">
+      <div class="lbl"><b>Fingerprinting protection</b><span>Standard (like Brave): canvas, WebGL and audio read-outs get tiny noise, and CPU, memory, screen and device APIs look the same for everyone. Strict (like Tor Browser): those read-outs are blocked; drawing apps and some games may not work. Turn it off for one site from the shield.</span></div>
+      <select id="fingerprinting"><option value="standard">Standard</option><option value="strict">Strict</option><option value="off">Off</option></select>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Security level</b><span>Tor Browser's levels. Safer: no JIT compiler (scripts about 2× slower; WebAssembly off), JavaScript off on http:// sites, no web fonts, audio and video play when clicked, strict fingerprinting. Safest: JavaScript off everywhere; many sites break. The JIT part applies after NovaDM restarts and can't be turned off per site.</span></div>
+      <select id="securityLevel"><option value="standard">Standard</option><option value="safer">Safer</option><option value="safest">Safest</option></select>
+    </div>
+    <div class="row">
       <div class="lbl"><b>Use HTTPS when the site supports it</b><span>http:// links open over an encrypted connection; sites without HTTPS open as before.</span></div>
       <label class="sw"><input type="checkbox" id="httpsUpgrade"><i></i></label>
     </div>

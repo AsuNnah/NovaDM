@@ -157,6 +157,8 @@ function onUserClick(e) {
   if (!e.isTrusted || (e.type === 'auxclick' && e.button !== 1)) return;
   const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
   if (!a || !/^https?:/i.test(a.href)) return;
+  // Alt+click: download the link with NovaDM instead of opening it.
+  if (e.type === 'click' && e.altKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); send('novadm:download-link', { href: a.href }); return; }
   send('novadm:link-click', { href: a.href, mods: !!(e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) });
 }
 window.addEventListener('click', onUserClick, true);

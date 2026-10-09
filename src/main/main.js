@@ -43,6 +43,8 @@ else migrateOldProfile();
 try {
   const saved = JSON.parse(require('fs').readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
   if (saved.blockThirdPartyCookies !== false) app.commandLine.appendSwitch('test-third-party-cookie-phaseout');
+  // Security level Safer / Safest: no JIT compiler (like Tor Browser). Applies to every page.
+  if (['safer', 'safest'].includes(saved.securityLevel)) app.commandLine.appendSwitch('js-flags', '--jitless');
 } catch { app.commandLine.appendSwitch('test-third-party-cookie-phaseout'); }
 
 const isFirstInstance = app.requestSingleInstanceLock();
@@ -184,26 +186,8 @@ function wireEvents() {
   browser.on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win, addDownload: (spec, o) => addFlow.request(spec, o) }));
   browser.on('download', onPageDownload);
   browser.on('page-loaded', (tab) => { runSiteExtensions(tab); if (/^novadm:\/\//.test(tab.url || '')) styleUi(tab.wc); });
-  browser.on('shortcut', (tab, action) => {
-    if (action === 'find') browsing.openFind();
-    else if (action === 'find-next' || action === 'find-prev') { if (browsing.findOpen) sendFindStep(action === 'find-next'); else browsing.openFind(); }
-    else if (action === 'bookmark') browsing.toggleActiveBookmark();
-    else if (action === 'bookmarks-bar') ipcHandlers['bookmarks.setBar']({ show: settings.get('showBookmarksBar') === false });
-    else if (action === 'bookmarks') browser.openInternal('bookmarks');
-    else if (action === 'history') browser.openInternal('history');
-    else if (action === 'new-tab') browser.createTab({ incognito: tab.incognito });
-    else if (action === 'close-tab') browser.closeTab(tab.id);
-    else if (action === 'focus-address') { chromeView.webContents.focus(); sendUI('focus-address', {}); }
-    else if (action === 'downloads') browser.openInternal('downloads');
-    else if (action === 'reload') browser.reload(tab.id);
-    else if (action === 'back') browser.back(tab.id);
-    else if (action === 'forward') browser.forward(tab.id);
-    else if (action === 'next-tab' || action === 'prev-tab') {
-      const i = browser.order.indexOf(tab.id);
-      const n = browser.order.length;
-      if (n > 1) browser.selectTab(browser.order[(i + (action === 'next-tab' ? 1 : n - 1)) % n]);
-    }
-  });
+  browser.on('shortcut', (tab, action) => handleShortcut(tab, action));
+  browser.on('download-link', (tab, url) => addFlow.request(require('./add-flow').specFromUrl(url, { pageUrl: tab.url, incognito: tab.incognito }), { origin: 'page' }));
   browser.on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
@@ -428,6 +412,78 @@ function reviewBlockedPopup() {
   sendUI('popup-ask', { tabId: browser.activeId, pageUrl: last.pageUrl, url: last.url, reviewed: true, reason: last.reason });
 }
 
+// Keyboard shortcuts (shortcuts.js), from a page or from NovaDM's own views.
+function handleShortcut(tab, action) {
+  if (!tab) return;
+  const wc = tab.wc;
+  const pick = (i) => { if (browser.order[i] != null) browser.selectTab(browser.order[i]); };
+  switch (action) {
+    case 'find': return browsing.openFind();
+    case 'find-next': case 'find-prev': return browsing.findOpen ? sendFindStep(action === 'find-next') : browsing.openFind();
+    case 'bookmark': return browsing.toggleActiveBookmark();
+    case 'bookmark-all': return ipcHandlers['bookmarks.addAllTabs']();
+    case 'bookmarks-bar': return ipcHandlers['bookmarks.setBar']({ show: settings.get('showBookmarksBar') === false });
+    case 'bookmarks': return browser.openInternal('bookmarks');
+    case 'history': return browser.openInternal('history');
+    case 'downloads': return browser.openInternal('downloads');
+    case 'clear-data': return browser.createTab({ url: 'novadm://history?clear=1' });
+    case 'new-tab': return browser.createTab({ incognito: tab.incognito });
+    case 'new-private': return browser.createTab({ incognito: true });
+    case 'close-tab': return browser.closeTab(tab.id);
+    case 'close-window': return win && win.close();
+    case 'reopen-tab': return browser.reopenClosed();
+    case 'focus-address': chromeView.webContents.focus(); return sendUI('focus-address', {});
+    case 'reload': return browser.reload(tab.id);
+    case 'hard-reload': return wc && wc.reloadIgnoringCache();
+    case 'stop': return browser.stop(tab.id);
+    case 'back': return browser.back(tab.id);
+    case 'forward': return browser.forward(tab.id);
+    case 'home': return browser.navigate(tab.id, settings.get('homepage') || 'novadm://newtab');
+    case 'next-tab': case 'prev-tab': {
+      const n = browser.order.length;
+      return pick((browser.order.indexOf(tab.id) + (action === 'next-tab' ? 1 : n - 1)) % n);
+    }
+    case 'tab-last': return pick(browser.order.length - 1);
+    case 'fullscreen': return win && win.setFullScreen(!win.isFullScreen());
+    case 'print': return wc && wc.print();
+    case 'save-page': return wc && /^https?:/i.test(wc.getURL()) && wc.downloadURL(wc.getURL()); // to NovaDM's downloader
+    case 'open-file': return openFileInTab();
+    case 'view-source': return /^https?:/i.test(tab.url || '') && browser.createTab({ url: 'view-source:' + tab.url, openerPartition: tab.id });
+    case 'devtools': return wc && wc.toggleDevTools(); // shortcut: Ctrl+Shift+J/C open DevTools too, not straight to Console / inspect mode
+    case 'menu': setPanel(true); return sendUI('open-panel', { name: 'menu' });
+    case 'task-manager': return showTaskManager();
+    case 'shortcut-list': return showShortcutList();
+    default:
+      if (/^tab-[1-8]$/.test(action)) return pick(Number(action.slice(4)) - 1);
+      if (action.startsWith('zoom') && wc) return browser.zoom(tab, action);
+  }
+}
+
+async function openFileInTab() {
+  const { dialog } = require('electron');
+  const r = await dialog.showOpenDialog(win, { title: 'Open a file', properties: ['openFile'], filters: [{ name: 'Web pages and files', extensions: ['html', 'htm', 'pdf', 'txt', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3'] }] });
+  if (!r.canceled && r.filePaths[0]) browser.createTab({ url: require('url').pathToFileURL(r.filePaths[0]).href });
+}
+
+// Shift+Esc: memory of each tab, and unloading the background ones.
+async function showTaskManager() {
+  const { dialog } = require('electron');
+  const mem = new Map(app.getAppMetrics().map((m) => [m.pid, m.memory.workingSetSize]));
+  const lines = browser.order.map((id) => browser.tabs.get(id)).map((t) => {
+    const kb = t.wc && !t.wc.isDestroyed() ? mem.get(t.wc.getOSProcessId()) || 0 : 0;
+    return `${t.discarded ? 'Unloaded' : `${Math.round(kb / 1024)} MB`}  ·  ${(t.title || t.url || 'New tab').slice(0, 70)}`;
+  });
+  const total = Math.round([...mem.values()].reduce((a, b) => a + b, 0) / 1024);
+  const r = await dialog.showMessageBox(win, { type: 'info', title: 'Task manager', message: `NovaDM uses ${total} MB`, detail: lines.join('\n'), buttons: ['Unload background tabs', 'Close'], defaultId: 1, cancelId: 1 });
+  if (r.response === 0) for (const id of browser.order) if (id !== browser.activeId) browser.discard(id);
+}
+
+function showShortcutList() {
+  const { dialog } = require('electron');
+  const { LIST } = require('./shortcuts');
+  dialog.showMessageBox(win, { type: 'info', title: 'Keyboard shortcuts', message: 'Keyboard shortcuts', detail: LIST.map(([h, t]) => `${h}\n${t}`).join('\n\n'), buttons: ['OK'] });
+}
+
 // F3 / Ctrl+G while the find bar is open: next or previous match of what it holds.
 function sendFindStep(forward) {
   if (browsing.findView) browsing.findView.webContents.executeJavaScript(`document.getElementById('${forward ? 'next' : 'prev'}').click()`).catch(() => {});
@@ -522,6 +578,9 @@ app.whenReady().then(async () => {
     getWindow: () => win, relayout: () => layout(), restack: () => restack(),
   });
   adblock.shields = browsing.shields;
+  const hardening = require('./hardening');
+  hardening.install(settings);
+  adblock.protection = (url) => hardening.protectionFor(settings, url);
   transport = new Transport({ session: browser.normalSession, settings });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
@@ -636,6 +695,14 @@ app.whenReady().then(async () => {
   wireEvents();
   // Size of NovaDM's own screens (Settings → Appearance) and the bookmarks bar.
   for (const v of [chromeView, overlayView]) v.webContents.on('did-finish-load', () => v.webContents.setZoomFactor(browsing.scale()));
+  for (const v of [chromeView, overlayView, browsing.findView]) {
+    v.webContents.on('before-input-event', (e, input) => {
+      const action = require('./shortcuts').shortcutFor(input);
+      if (!action || action === 'stop' || action.startsWith('zoom') && v !== chromeView) return;
+      e.preventDefault();
+      handleShortcut(browser.activeTab(), action);
+    });
+  }
   settings.on('change', (c) => {
     if ('uiScale' in c) browsing.applyScale([chromeView, overlayView, browsing.findView]);
     if ('showBookmarksBar' in c) { layout(); sendUI('bookmarks', browsing.bookmarkState()); }

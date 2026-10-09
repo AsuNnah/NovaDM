@@ -8,6 +8,70 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [1.2.0] — 2026-10-09
+
+Brave's keyboard shortcuts and Tor-style protections for normal tabs. Private browsing in Tor
+Browser (`docs/v1.2-plan.md` §1) is on hold.
+
+### Added
+- **Keyboard shortcuts** (Brave / Chrome set; Ctrl+/ shows the list):
+  - Ctrl+Shift+T reopens the last closed tab, back where it was.
+  - Ctrl+N opens a new tab and Ctrl+Shift+N a private tab. Ctrl+Shift+W closes the window.
+  - Ctrl+1…8 / Ctrl+9, Ctrl+PgUp / PgDn switch tabs.
+  - Alt+D, F6, Ctrl+K and Ctrl+E go to the address bar. There, Ctrl+Enter adds www. and .com and
+    Alt+Enter opens in a new tab.
+  - Shift+F5 / Ctrl+Shift+R reload without cache. Esc stops loading. Alt+Home goes home. F11 is
+    full screen.
+  - Ctrl+P prints, Ctrl+S saves the page through NovaDM's downloader, Ctrl+O opens a file.
+  - Ctrl+Shift+D bookmarks all tabs. Ctrl+Shift+Delete clears browsing data.
+  - F12 / Ctrl+Shift+I / J / C open developer tools. Ctrl+U shows the page source.
+  - Shift+Esc opens a task manager: memory per tab, and unloading background tabs.
+  - Alt+F / F10 open the menu. Ctrl+wheel zooms. **Alt+click** downloads a link with NovaDM.
+  - All of them also work while the toolbar has the keyboard (one shared list, `shortcuts.js`).
+- **Fingerprinting protection** (Settings → Privacy, on by default):
+  - Standard, like Brave: canvas, WebGL and audio read-outs get tiny noise that differs per site and
+    per NovaDM start. CPU count, memory and screen size read the same for everyone. The battery,
+    USB, HID, serial, Bluetooth and network-information APIs are gone.
+  - Strict, like Tor Browser: canvas read-outs come back blank, WebGL is off and audio read-outs are
+    silent.
+- **WebRTC** no longer reveals local network addresses (calls still work).
+- **Security level** (Tor Browser's levels):
+  - Safer: no JIT compiler (applies after a restart), JavaScript off on http:// sites, no web fonts,
+    audio and video play only when clicked, strict fingerprinting.
+  - Safest: JavaScript off everywhere.
+- **Shields panel: "Tor-style protection"** on/off per site, for a site that breaks. The page
+  reloads. The JIT part of Safer can't be turned off per site.
+
+### Changed
+- The toolbar's own key handling was replaced by the shared shortcut list. Ctrl+Shift+R now
+  reloads without the cache (it did a normal reload).
+
+### Cost (measured in the 1.2 plan, offline test pages)
+- Standard fingerprinting: +13 ms on a page that fingerprints (25 → 42 ms for the fingerprinting
+  script). The page itself is unchanged within noise.
+- Strict: 17 ms faster on such a page. Same values for everyone: no measurable cost.
+- Safer:
+  - JIT off: about 2× script time (app work 71 → 162 ms, news page 238 → 549 ms). WebAssembly is off.
+  - Click-to-play: a video page 255 → 95 ms load and 156 → 30 ms CPU.
+- Safest: JavaScript off, 238 → 196 ms load (most sites break).
+
+### Tests
+- 127 unit tests (new: the shortcut list incl. keys that must stay with the page, protection
+  levels and per-site off, and a syntax check of every UI and preload script: a broken UI script
+  only showed up as a blank panel in the running app).
+- In-app self-test `tools/selftest-v12.js`, two runs:
+  - **Fingerprinting:** noise the same within a site, different across sites and from the real
+    values; same-for-everyone values; Strict blocks WebGL and canvas; the per-site switch gives the
+    real values back.
+  - **Levels:** Safer (no scripts on http, no fonts, no autoplay); Safest (no scripts).
+  - **Shortcuts:** Ctrl+Shift+T, Ctrl+1, Ctrl+U, F12, Ctrl+Shift+D, Ctrl+T from the toolbar;
+    Alt+click download.
+  - **After a restart with Safer:** the JIT compiler is off.
+
+### Not verified here
+- Printing and full screen were not exercised by a test (they open the system print dialog and
+  change the window).
+
 ## [1.1.0] — 2026-10-09
 
 Speed, in the way Brave gets it (less work per page; same Chromium engine underneath), reader view,

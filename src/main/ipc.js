@@ -306,6 +306,7 @@ function registerIpc(ctx) {
     // ---- shields (adblock) ----
     'shields.state': () => shieldsState(),
     'shields.toggleSite': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { const on = getManagers().adblock.isWhitelisted(t.url); getManagers().adblock.setSiteEnabled(t.url, on); b.reload(t.id); } setTimeout(pushShields, 200); },
+    'shields.toggleHardening': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { require('./hardening').toggleSite(getManagers().settings, t.url); b.reload(t.id); } setTimeout(pushShields, 200); },
     'shields.setGlobal': (a) => { getManagers().settings.set({ adblock: !!a.enabled }); pushShields(); },
 
     // ---- pop-up guard responses ----
@@ -353,6 +354,7 @@ function registerIpc(ctx) {
       siteEnabled: t ? !adblock.isWhitelisted(t.url) : true,
       site: t ? siteOf(t.url) : '',
       count: t ? adblock.count(t.wcId) : 0,
+      protection: t && /^https?:/i.test(t.url || '') ? { siteOn: !(settings.get('hardeningOff') || []).includes(siteOf(t.url)), level: settings.get('securityLevel'), fingerprinting: settings.get('fingerprinting') } : null,
       ready: adblock.ready,
     };
   }

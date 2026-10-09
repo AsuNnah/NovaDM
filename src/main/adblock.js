@@ -124,6 +124,11 @@ class AdBlocker extends EventEmitter {
         const to = this.shields.rewrite(details.url, { isMain });
         if (to && to !== details.url) return callback({ redirectURL: to });
       }
+      // Security level Safer / Safest (hardening.js): no web fonts.
+      if (details.resourceType === 'font' && this.protection) {
+        const p = this.protection(this.pageUrlFor(details));
+        if (p && p.blockFonts) return callback({ cancel: true });
+      }
       if (!this.ready || !this.engine) return callback({});
       const pageUrl = this.pageUrlFor(details);
       if (this.siteWhitelisted(pageUrl)) return callback({});
@@ -137,8 +142,21 @@ class AdBlocker extends EventEmitter {
     });
 
     session.webRequest.onHeadersReceived({ urls: ['<all_urls>'] }, (details, callback) => {
-      if (!this.ready || !this.engine || this.siteWhitelisted(this.pageUrlFor(details))) return callback({});
-      this.engine.onHeadersReceived(details, callback);
+      // Security level Safest (and Safer on http:// pages): no scripts, through the page's CSP.
+      let headers = null;
+      if (this.protection && (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')) {
+        const p = this.protection(details.resourceType === 'mainFrame' ? details.url : this.pageUrlFor(details));
+        if (p && p.noScript) {
+          // An extra policy on top of the site's own: browsers enforce every CSP header given.
+          headers = { ...details.responseHeaders };
+          const key = Object.keys(headers).find((k) => k.toLowerCase() === 'content-security-policy') || 'Content-Security-Policy';
+          headers[key] = [...[].concat(headers[key] || []), "script-src 'none'"];
+          details.responseHeaders = headers;
+        }
+      }
+      const done = (r = {}) => callback(r.responseHeaders || !headers ? r : { responseHeaders: headers });
+      if (!this.ready || !this.engine || this.siteWhitelisted(this.pageUrlFor(details))) return done();
+      this.engine.onHeadersReceived(details, done);
     });
   }
 

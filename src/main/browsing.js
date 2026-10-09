@@ -255,6 +255,11 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       const list = a.folder ? bookmarks.items.filter((b) => b.folder === a.folder) : bookmarks.items.filter((b) => (a.ids || []).includes(b.id));
       if (list.length) popup(bookmarkItems(list), a.x, a.y);
     },
+    'bookmarks.addAllTabs': () => {
+      const folder = 'Tabs ' + new Date().toISOString().slice(0, 10);
+      for (const id of browser.order) { const t = browser.tabs.get(id); if (t && !t.incognito && /^https?:/i.test(t.url || '')) bookmarks.add({ url: t.url, title: t.title, folder }); }
+      return { ok: true, folder };
+    },
     'bookmarks.setBar': (a) => { settings.set({ showBookmarksBar: !!a.show }); relayout(); pushBookmarks(); return { ok: true }; },
     'bookmarks.import': async () => {
       const r = await dialog.showOpenDialog(getWindow(), { title: 'Import bookmarks', properties: ['openFile'], filters: [{ name: 'Bookmarks (HTML)', extensions: ['html', 'htm'] }] });

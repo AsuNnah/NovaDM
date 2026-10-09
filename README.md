@@ -36,7 +36,11 @@ AB Download Manager, XDM). No code from any of them is included.
 - **Reader view** for articles
 - **Theme and accent colour**: like Windows, dark or light, and seven accent colours; size of
   NovaDM's own screens (90–150 %)
-- Keyboard shortcuts (Ctrl+T/W/L/J/R/F/D/H, Ctrl+Tab, Alt+arrows) and page zoom with Ctrl + plus / minus / 0
+- Brave's keyboard shortcuts (Ctrl+/ lists them): reopen closed tab, Ctrl+1…9, developer tools, page
+  source, task manager, Alt+click to download a link, and more
+- **Tor-style protections**: fingerprinting protection (Brave-style noise or Tor-style blocking),
+  WebRTC without local addresses, and Tor Browser's Standard / Safer / Safest security levels; off
+  per site from the shield if a site breaks
 
 ### Ad blocker and pop-up guard
 - Ghostery ad-block engine with EasyList, EasyPrivacy and uBlock Origin lists plus the OISD Big
@@ -211,6 +215,8 @@ src/main/                 Electron main process
   browsing.js, library.js history, bookmarks, find bar, restore tabs, address-bar suggestions
   adblock.js, popup.js    ad blocker and pop-up guard
   shields.js              redirect skipping, tracking codes, de-AMP, HTTPS upgrade
+  hardening.js, shield-preload.js  fingerprinting protection and security levels
+  shortcuts.js            keyboard shortcuts
   dns.js                  Secure DNS
   extensions.js           Chrome extensions and Web Store
   grabber.js              content (image) grabber

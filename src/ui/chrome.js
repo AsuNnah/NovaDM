@@ -193,9 +193,11 @@ urlEl.addEventListener('keydown', (e) => {
     return;
   }
   if (e.key === 'Enter') {
-    const input = suggIndex >= 0 && sugg[suggIndex] ? sugg[suggIndex].url : urlEl.value;
+    let input = suggIndex >= 0 && sugg[suggIndex] ? sugg[suggIndex].url : urlEl.value;
+    // Ctrl+Enter: "example" -> www.example.com; Alt+Enter: open in a new tab.
+    if (e.ctrlKey && /^[\w-]+$/.test(input.trim())) input = `www.${input.trim()}.com`;
     hideSuggestions();
-    call('nav.go', { input });
+    if (e.altKey) call('tabs.new', { url: input }); else call('nav.go', { input });
     urlEl.blur();
   }
   if (e.key === 'Escape') { if (sugg.length) { hideSuggestions(); urlEl.value = typed; } else urlEl.blur(); }
@@ -217,21 +219,6 @@ api.on('close-panel', () => { openPanel = null; });
 // Panels can also be opened from inside another panel (e.g. the menu).
 api.on('open-panel', (d) => { openPanel = d.name; });
 api.on('focus-address', () => { urlEl.focus(); urlEl.select(); });
-
-// keyboard shortcuts (chrome view has focus often)
-window.addEventListener('keydown', (e) => {
-  const ctrl = e.ctrlKey || e.metaKey;
-  if (ctrl && e.key === 't') { call('tabs.new', {}); e.preventDefault(); }
-  else if (ctrl && e.key === 'w') { if (activeId != null) call('tabs.close', { id: activeId }); e.preventDefault(); }
-  else if (ctrl && e.key === 'l') { urlEl.focus(); e.preventDefault(); }
-  else if (ctrl && e.key === 'r') { call('nav.reload', {}); e.preventDefault(); }
-  else if (ctrl && e.key === 'j') { call('downloads.openPageTab'); e.preventDefault(); }
-  else if (ctrl && e.key.toLowerCase() === 'f') { call('find.open'); e.preventDefault(); }
-  else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'b') { call('bookmarks.setBar', { show: !marks.showBar }); e.preventDefault(); }
-  else if (ctrl && e.shiftKey && e.key.toLowerCase() === 'o') { call('tabs.new', { url: 'novadm://bookmarks' }); e.preventDefault(); }
-  else if (ctrl && e.key === 'd') { call('bookmarks.toggleActive'); e.preventDefault(); }
-  else if (ctrl && e.key === 'h') { call('tabs.new', { url: 'novadm://history' }); e.preventDefault(); }
-});
 
 function cssUrl(u) { return String(u).replace(/["\\]/g, ''); }
 function globeSvg() { return '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>'; }

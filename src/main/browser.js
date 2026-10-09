@@ -6,8 +6,10 @@ const { EventEmitter } = require('events');
 const { WebContentsView, session: electronSession, ipcMain } = require('electron');
 const net = require('./net');
 const { siteOf, hostOf } = require('./util');
+const { shortcutFor } = require('./shortcuts');
 
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
+const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
 const NEWTAB = 'novadm://newtab';
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
@@ -30,6 +32,7 @@ class Browser extends EventEmitter {
     this.normalSession = electronSession.fromPartition('persist:browser');
     this.incognitoSession = electronSession.fromPartition('novadm-incognito');
     this._sessionsReady = new Set();
+    this.closed = []; // recently closed tabs (Ctrl+Shift+T)
     this._nonGet = new Map(); // url -> time: recent POST/PUT responses (their downloads can't be re-requested)
     this.parentView = null; // set by main: the BaseWindow contentView to add tab views to
     // Messages from the detect preload in any tab (page meta, detected media, EME, nav).
@@ -48,6 +51,7 @@ class Browser extends EventEmitter {
     // Chrome Web Store refuse browsers that announce "Electron".
     ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
     net.installRefererHook(ses);
+    ses.registerPreloadScript({ type: 'frame', filePath: SHIELD_PRELOAD }); // Tor-style protections (hardening.js)
     if (this.adblock) this.adblock.attach(ses);
     this.installSniffer(ses);
     // Downloads started by pages go to NovaDM (see main.js) instead of Chromium's downloader.
@@ -148,6 +152,7 @@ class Browser extends EventEmitter {
       },
     });
     view.setBackgroundColor('#ffffff');
+    view.webContents.setWebRTCIPHandlingPolicy('default_public_interface_only'); // calls work; local network addresses stay hidden
     tab.view = view;
     tab.wc = view.webContents;
     tab.wcId = tab.wc.id;
@@ -215,38 +220,16 @@ class Browser extends EventEmitter {
     wc.on('did-stop-loading', () => { tab.loading = false; update(); });
     wc.on('did-finish-load', () => this.emit('page-loaded', tab));
     // Browser shortcuts also while a page has the keyboard; Ctrl +/-/0 zoom the page (per site).
+    // Browser shortcuts also while a page has the keyboard (shortcuts.js); Ctrl +/-/0 and
+    // Ctrl+wheel zoom the page (per site).
     wc.on('before-input-event', (e, input) => {
-      if (input.type !== 'keyDown') return;
-      const ctrl = input.control || input.meta;
-      const k = String(input.key || '').toLowerCase();
-      let action = null;
-      if (ctrl && (k === '=' || k === '+')) action = 'zoom-in';
-      else if (ctrl && k === '-') action = 'zoom-out';
-      else if (ctrl && k === '0') action = 'zoom-reset';
-      else if (ctrl && k === 't') action = 'new-tab';
-      else if (ctrl && k === 'w') action = 'close-tab';
-      else if (ctrl && k === 'l') action = 'focus-address';
-      else if (ctrl && k === 'j') action = 'downloads';
-      else if ((ctrl && k === 'r') || k === 'f5') action = 'reload';
-      else if (ctrl && k === 'tab') action = input.shift ? 'prev-tab' : 'next-tab';
-      else if (input.alt && k === 'arrowleft') action = 'back';
-      else if (input.alt && k === 'arrowright') action = 'forward';
-      else if (ctrl && k === 'f') action = 'find';
-      else if (k === 'f3' || (ctrl && k === 'g')) action = input.shift ? 'find-prev' : 'find-next';
-      else if (ctrl && input.shift && k === 'b') action = 'bookmarks-bar';
-      else if (ctrl && input.shift && k === 'o') action = 'bookmarks';
-      else if (ctrl && k === 'd') action = 'bookmark';
-      else if (ctrl && k === 'h') action = 'history';
-      if (!action) return;
+      const action = shortcutFor(input);
+      if (!action || (action === 'stop' && !tab.loading)) return; // Esc stays the page's unless it's loading
       e.preventDefault();
-      if (action.startsWith('zoom')) {
-        const level = action === 'zoom-reset' ? 0 : Math.max(-5, Math.min(5, wc.getZoomLevel() + (action === 'zoom-in' ? 0.5 : -0.5)));
-        wc.setZoomLevel(level);
-        this.emit('zoom', tab, Math.round(Math.pow(1.2, level) * 100));
-        return;
-      }
+      if (action.startsWith('zoom')) return this.zoom(tab, action);
       this.emit('shortcut', tab, action);
     });
+    wc.on('zoom-changed', (_e, dir) => this.zoom(tab, dir === 'in' ? 'zoom-in' : 'zoom-out'));
     wc.on('will-navigate', (e) => {
       if (/^magnet:\?/i.test(e.url || '')) { e.preventDefault(); this.emit('magnet', tab, e.url); }
     });
@@ -311,6 +294,23 @@ class Browser extends EventEmitter {
 
   }
 
+  zoom(tab, action) {
+    const wc = tab.wc;
+    const level = action === 'zoom-reset' ? 0 : Math.max(-5, Math.min(5, wc.getZoomLevel() + (action === 'zoom-in' ? 0.5 : -0.5)));
+    wc.setZoomLevel(level);
+    this.emit('zoom', tab, Math.round(Math.pow(1.2, level) * 100));
+  }
+
+  /** Ctrl+Shift+T: the last closed (non-private) tab, back where it was. */
+  reopenClosed() {
+    const last = this.closed.pop();
+    if (!last) return null;
+    const id = this.createTab({ url: last.url, lazy: true, background: true, title: last.title });
+    this.tabs.get(id).saved = last.saved;
+    this.selectTab(id);
+    return id;
+  }
+
   onPreloadMessage(tab, channel, payload) {
     switch (channel) {
       case 'novadm:page-meta':
@@ -343,6 +343,9 @@ class Browser extends EventEmitter {
         tab.wc.loadURL(payload.canonical).catch(() => {});
         break;
       }
+      case 'novadm:download-link':
+        if (payload && /^https?:/i.test(payload.href || '')) this.emit('download-link', tab, payload.href);
+        break;
       case 'novadm:link-click': {
         const list = (tab.clicks || []).filter((c) => Date.now() - c.t < 3000);
         list.push({ href: payload.href, mods: !!payload.mods, t: Date.now() });
@@ -494,6 +497,12 @@ class Browser extends EventEmitter {
     if (this.adblock && tab.wcId != null) this.adblock.removeTab(tab.wcId);
     this.media.removeTab(tab.id);
     this.emit('tab-closed', tab);
+    if (!tab.incognito && /^(https?|novadm):/i.test(tab.url || '')) {
+      let saved = tab.saved;
+      try { if (tab.wc) saved = { entries: tab.wc.navigationHistory.getAllEntries(), index: tab.wc.navigationHistory.getActiveIndex() }; } catch {}
+      this.closed.push({ url: tab.url, title: tab.title, saved });
+      if (this.closed.length > 25) this.closed.shift();
+    }
     if (tab.view) { try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {} }
     if (tab.wc) { try { tab.wc.close(); } catch {} }
     if (this.shuttingDown) { this.emitTabs(); return; } // window closing: no replacement tab
@@ -574,7 +583,7 @@ function displayUrl(u) { return (u || '').startsWith('novadm://') ? '' : (u || '
 function normalizeUrl(input, settings) {
   let s = String(input || '').trim();
   if (!s) return NEWTAB;
-  if (s.startsWith('novadm://') || s.startsWith('about:')) return s;
+  if (s.startsWith('novadm://') || s.startsWith('about:') || /^view-source:https?:/i.test(s)) return s;
   if (/^https?:\/\//i.test(s) || /^file:\/\//i.test(s)) return s;
   // A single token with a dot and no spaces is treated as a domain; otherwise search.
   const looksDomain = /^[^\s]+\.[^\s]{2,}(\/|$|:)/.test(s) || s.startsWith('localhost');

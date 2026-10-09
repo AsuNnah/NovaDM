@@ -8,7 +8,7 @@ Progress (see CHANGELOG.md):
 |---|---|
 | 1.0.0 | Done: history, bookmarks + bar + import/export, find in page, restore tabs, address-bar suggestions, third-party cookies blocked, clear on exit, UI size. The benchmark tool moved to 1.1 |
 | 1.1.0 | Done: Shields rules (redirects, tracking codes, de-AMP, HTTPS upgrade), unloading tabs, reader view, benchmark (decision: keep Ghostery; element hiding is not a cost), live DASH recording (added on request) |
-| 1.2.0+ | Not started |
+| 1.2.0 | Done: shortcuts + Tor-style hardening (see docs/v1.2-plan.md); Tor Browser private windows on hold |
 
 ## 1. Where the two earlier plans stand (after 0.8.0)
 

@@ -76,6 +76,9 @@ function defaults() {
     debounceLinks: true, // skip known tracking redirects (google.com/url?q=…)
     stripTrackingParams: true, // remove fbclid, gclid… from addresses
     deAmp: true, // open the publisher's page instead of its Google AMP copy
+    fingerprinting: 'standard', // off | standard (noise, like Brave) | strict (blocked, like Tor)
+    securityLevel: 'standard', // standard | safer | safest (Tor Browser's levels; JIT part after a restart)
+    hardeningOff: [], // sites where the Tor-style protections are off (shields panel)
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
     ytdlpPath: '', // the user's own yt-dlp.exe
 
