@@ -7,6 +7,7 @@ const { EventEmitter } = require('events');
 const { app } = require('electron');
 const { HttpDownload } = require('./http');
 const { HlsDownload } = require('./hls-dl');
+const { MergeDownload } = require('./merge-dl');
 const { RateLimiter } = require('./limiter');
 const { JsonStore } = require('../store');
 const util = require('../util');
@@ -29,6 +30,7 @@ class DownloadManager extends EventEmitter {
     this.natives = new Map(); // id -> Electron DownloadItem (downloads the browser itself handles)
     this.scanFile = opts.scanFile || post.scanFile;
     this.scheduler = null; // set by main: decides whether a queue waits for its time window
+    this.ffmpeg = null; // set by main (ffmpeg.js): joins WebM/plain MP4 tracks, conversions
     this._finishedSinceIdle = false;
     this.limiter = new RateLimiter((settings.get('speedLimitKBps') || 0) * 1024);
     this.store = new JsonStore(path.join(app.getPath('userData'), 'downloads.json'), { items: [] });
@@ -44,6 +46,8 @@ class DownloadManager extends EventEmitter {
 
   load() {
     for (const rec of this.store.data.items || []) {
+      // A conversion that was running when NovaDM closed didn't finish.
+      if (rec.kind === 'convert' && rec.state !== 'done') { rec.state = 'error'; rec.error = 'Interrupted when NovaDM closed'; }
       // Downloads that were running or waiting when the app closed come back paused (and are
       // remembered, so "resume unfinished downloads on start" can pick them up).
       if (['downloading', 'connecting', 'queued'].includes(rec.state)) { rec.state = 'paused'; rec.wasRunning = true; }
@@ -66,6 +70,8 @@ class DownloadManager extends EventEmitter {
       wasRunning: !!r.wasRunning, errorCode: r.errorCode || null,
       speedLimitKBps: r.speedLimitKBps || 0, expectedHash: r.expectedHash || '', verify: r.verify || '',
       native: !!r.native, queue: r.queue || 'main', scan: r.scan === 'scanning' ? '' : r.scan || '', scanDetail: r.scanDetail || '',
+      separateAudio: !!r.separateAudio, reresolve: !!r.reresolve, live: !!r.live, recordedSeconds: r.recordedSeconds || 0,
+      from: r.from || '',
     }));
     this.store.save();
   }
@@ -121,6 +127,7 @@ class DownloadManager extends EventEmitter {
       speedLimitKBps: Math.max(0, Number(spec.speedLimitKBps) || 0),
       expectedHash: util.hashKind(spec.expectedHash) ? spec.expectedHash.trim().toLowerCase() : '',
       verify: '', incognito: !!spec.incognito, queue: this.queueIds().includes(spec.queue) ? spec.queue : 'main',
+      separateAudio: !!spec.separateAudio,
     };
     // A queue with a schedule keeps new downloads until its time window opens.
     if (spec.start !== false && this.scheduler && this.scheduler.waitsForSchedule(rec.queue)) rec.state = 'scheduled';
@@ -133,7 +140,7 @@ class DownloadManager extends EventEmitter {
 
   enqueue(id) {
     const rec = this.records.get(id);
-    if (!rec || rec.state === 'done') return;
+    if (!rec || rec.state === 'done' || rec.kind === 'convert') return;
     if (rec.native) {
       const item = this.natives.get(id);
       if (item && item.canResume()) { item.resume(); rec.state = 'downloading'; this.emitRecord(rec); return; }
@@ -248,6 +255,16 @@ class DownloadManager extends EventEmitter {
       retryDelayMs: (this.settings.get('retryDelaySec') || 3) * 1000,
       timeoutMs: (this.settings.get('timeoutSec') || 30) * 1000,
     };
+    if (rec.kind === 'dash' || (rec.kind === 'hls' && rec.separateAudio)) {
+      // Separate picture and sound (DASH, or HLS with an audio rendition): one merged MP4.
+      const m = rec.meta || {};
+      const reresolve = !!rec.reresolve;
+      rec.reresolve = false;
+      return new MergeDownload({
+        ...common, concurrency: Math.min(16, this.settings.get('connections') || 6), reresolve, ffmpeg: this.ffmpeg,
+        source: { type: rec.kind === 'dash' ? 'dash' : 'hls', url: rec.playlistUrl, height: m.height || 0, videoId: m.videoId || '' },
+      });
+    }
     if (rec.kind === 'hls') {
       return new HlsDownload({
         ...common, playlistUrl: rec.playlistUrl, mirrors: rec.mirrors,
@@ -284,6 +301,8 @@ class DownloadManager extends EventEmitter {
       if (p.resumable !== undefined) rec.resumable = p.resumable;
       if (p.segments) { rec.segments = p.segments; rec.doneSegments = p.doneSegments; }
       rec.connections = p.connections || 0; rec.directConnections = p.directConnections || 0;
+      rec.joining = !!p.joining;
+      if (p.live) { rec.live = true; rec.recording = !!p.recording; rec.recordedSeconds = p.recordedSeconds || 0; rec.liveGaps = p.liveGaps || 0; }
       rec.errorCode = p.errorCode || null;
       this.emitRecord(rec);
     });
@@ -302,6 +321,14 @@ class DownloadManager extends EventEmitter {
     });
     engine.on('error', (err) => {
       if (!current()) return;
+      if (err && err.code === 'NEEDS_MERGE' && !rec.separateAudio) {
+        // An HLS master whose sound is a separate playlist: switch to the merging engine.
+        this.engines.delete(rec.id);
+        rec.separateAudio = true;
+        this.persist();
+        this.run(rec);
+        return;
+      }
       this.addActiveTime(rec);
       rec.state = 'error'; rec.error = String(err.message || err); rec.errorCode = err.code || null; rec.speed = 0;
       rec.connections = 0;
@@ -317,7 +344,7 @@ class DownloadManager extends EventEmitter {
   /** Pause, keeping progress. toState 'scheduled' = paused by the scheduler until the next window. */
   pause(id, toState = 'paused') {
     const rec = this.records.get(id);
-    if (!rec || rec.state === 'done') return;
+    if (!rec || rec.state === 'done' || rec.kind === 'convert') return;
     if (rec.native) {
       const item = this.natives.get(id);
       if (item && item.canResume !== undefined) { try { item.pause(); } catch {} }
@@ -347,6 +374,52 @@ class DownloadManager extends EventEmitter {
   }
 
   resume(id) { this.enqueue(id); }
+
+  /**
+   * Make a new file from a finished download with FFmpeg: action 'audio' (sound as it is, .m4a),
+   * 'mp3' (sound as MP3) or 'repair' (rewrite the video). Shows as its own entry with progress.
+   */
+  convert(id, action) {
+    const src = this.records.get(id);
+    if (!src || src.state !== 'done') throw new Error('Only finished downloads can be converted');
+    if (!this.ffmpeg || !this.ffmpeg.available()) { const e = new Error('FFmpeg is not installed (Settings → Video tools)'); e.code = 'NEEDS_FFMPEG'; throw e; }
+    const base = src.savePath.replace(/\.[^.\\/]+$/, '');
+    const target = { audio: base + ' (sound).m4a', mp3: base + '.mp3', repair: base + ' (repaired)' + path.extname(src.savePath) }[action];
+    if (!target) throw new Error('Unknown conversion');
+    const savePath = util.uniquePath(target, this.reservedPaths());
+    const rec = {
+      id: util.uid(), kind: 'convert', name: path.basename(savePath), savePath, sources: [], playlistUrl: '', mirrors: [], headers: {},
+      pageUrl: src.pageUrl, category: action === 'repair' ? src.category : 'music', state: 'downloading', size: -1, received: 0, speed: 0,
+      convertTs: false, addedAt: Date.now(), completedAt: 0, error: null, allowRename: false, meta: null, activeMs: 0, resumable: false,
+      queue: 'main', percent: 0, runStartedAt: Date.now(), from: src.name,
+    };
+    this.records.set(rec.id, rec);
+    this.persist(); this.emitList();
+    const duration = (src.meta && src.meta.duration) || 0;
+    const onProgress = (sec) => { if (duration) { rec.percent = Math.min(99, (sec / duration) * 100); this.emitRecord(rec); } };
+    const job = action === 'repair' ? this.ffmpeg.repair(src.savePath, savePath, { onProgress })
+      : this.ffmpeg.extractAudio(src.savePath, savePath, { mp3: action === 'mp3', onProgress });
+    job.then(() => {
+      this.addActiveTime(rec);
+      rec.state = 'done'; rec.percent = 100; rec.completedAt = Date.now();
+      try { rec.size = fs.statSync(savePath).size; rec.received = rec.size; } catch {}
+      this.persist(); this.emitRecord(rec);
+      this.emit('completed', rec);
+    }, (err) => {
+      this.addActiveTime(rec);
+      rec.state = 'error'; rec.error = String(err.message || err);
+      try { fs.rmSync(savePath, { force: true }); } catch {}
+      this.persist(); this.emitRecord(rec);
+      this.emit('failed', rec);
+    });
+    return rec;
+  }
+
+  /** Live stream: stop recording and finish the file (it stays playable). */
+  stopRecording(id) {
+    const engine = this.engines.get(id);
+    if (engine && engine.stopRecording) engine.stopRecording();
+  }
 
   /** Pause every running download and wait (up to timeoutMs) until their progress is saved. */
   async shutdown(timeoutMs = 4000) {
@@ -379,7 +452,7 @@ class DownloadManager extends EventEmitter {
     if (engine) { try { await engine.cancel(); } catch {} }
     if (rec._pausing) await rec._pausing;
     if (deleteFile) {
-      for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8']) {
+      for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8', rec.savePath + '.part.tracks']) {
         try { fs.rmSync(f, { force: true }); } catch {}
       }
     }
@@ -402,7 +475,8 @@ class DownloadManager extends EventEmitter {
     return this.add({
       kind: r.kind, name: r.name, url: r.sources[0], sources: r.sources, playlistUrl: r.playlistUrl,
       mirrors: r.mirrors, headers: r.headers, pageUrl: r.pageUrl, category: r.category,
-      convertTs: r.convertTs, meta: r.meta, allowRename: false, size: r.kind === 'hls' ? r.size : -1,
+      convertTs: r.convertTs, meta: r.meta, allowRename: false, size: r.kind === 'hls' || r.kind === 'dash' ? r.size : -1,
+      separateAudio: r.separateAudio,
     });
   }
 
@@ -416,7 +490,7 @@ class DownloadManager extends EventEmitter {
   // Mark of the Web, then (for programs and archives by default) a Microsoft Defender scan.
   async postProcess(rec) {
     if (this.settings.get('markOfTheWeb') !== false && !rec.native) {
-      post.markOfTheWeb(rec.savePath, { url: rec.kind === 'hls' ? rec.playlistUrl : rec.sources[0], referrer: rec.pageUrl, incognito: rec.incognito });
+      post.markOfTheWeb(rec.savePath, { url: rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0], referrer: rec.pageUrl, incognito: rec.incognito });
     }
     if (!post.wantsScan(this.settings.get('scanDownloads'), rec.category)) return;
     rec.scan = 'scanning'; this.emitRecord(rec);
@@ -443,11 +517,11 @@ class DownloadManager extends EventEmitter {
   /** Same link already in the list? Returns that record (unfinished ones first) or null. */
   findDuplicate(spec) {
     const norm = (u) => String(u || '').replace(/#.*$/, '');
-    const want = norm(spec.kind === 'hls' ? spec.playlistUrl : (spec.url || (spec.sources || [])[0]));
+    const want = norm(spec.kind === 'hls' || spec.kind === 'dash' ? spec.playlistUrl : (spec.url || (spec.sources || [])[0]));
     if (!want) return null;
     let found = null;
     for (const r of this.records.values()) {
-      const have = norm(r.kind === 'hls' ? r.playlistUrl : r.sources[0]);
+      const have = norm(r.kind === 'hls' || r.kind === 'dash' ? r.playlistUrl : r.sources[0]);
       if (have !== want) continue;
       if (r.state !== 'done') return r;
       if (!found && fs.existsSync(r.savePath)) found = r;
@@ -472,10 +546,12 @@ class DownloadManager extends EventEmitter {
     if (!/^https?:\/\//i.test(newUrl || '')) throw new Error('Not a web address');
     const wasActive = this.engines.has(id);
     if (wasActive) { this.pause(id); if (rec._pausing) await rec._pausing; }
-    if (rec.kind === 'hls') {
+    if (rec.kind === 'hls' || rec.kind === 'dash') {
       rec.playlistUrl = newUrl;
       if (info.headers) rec.headers = info.headers;
       try { fs.rmSync(rec.savePath + '.part.m3u8', { force: true }); } catch {}
+      // Merged downloads read the new manifest and keep their progress if it lists the same segments.
+      if (rec.kind === 'dash' || rec.separateAudio) rec.reresolve = true;
     } else {
       let size = info.size;
       if (!(size > 0)) {
@@ -570,7 +646,7 @@ class DownloadManager extends EventEmitter {
     const activeMs = this.activeMs(r);
     return {
       ...this.summary(r),
-      folder: path.dirname(r.savePath), sourceUrl: r.kind === 'hls' ? r.playlistUrl : (r.sources[0] || ''),
+      folder: path.dirname(r.savePath), sourceUrl: r.kind === 'hls' || r.kind === 'dash' ? r.playlistUrl : (r.sources[0] || ''),
       mirrors: r.mirrors || [], activeMs, modifiedAt, fileExists,
       avgSpeed: activeMs > 1000 ? Math.round(r.received / (activeMs / 1000)) : 0,
       meta: r.meta || null, convertTs: r.convertTs,
@@ -581,7 +657,7 @@ class DownloadManager extends EventEmitter {
   }
 
   summary(r) {
-    const hls = r.kind === 'hls';
+    const hls = r.kind === 'hls' || r.kind === 'dash';
     return {
       id: r.id, kind: r.kind, name: r.name, savePath: r.savePath, category: r.category,
       state: r.state, size: r.size, received: r.received, speed: r.speed || 0,
@@ -591,6 +667,8 @@ class DownloadManager extends EventEmitter {
       segments: r.segments, doneSegments: r.doneSegments, activeMs: this.activeMs(r),
       errorCode: r.errorCode || null, verify: r.verify || '', native: !!r.native, incognito: !!r.incognito,
       queue: r.queue || 'main', scan: r.scan || '',
+      live: !!r.live, recording: !!r.recording && r.state === 'downloading', recordedSeconds: r.recordedSeconds || 0,
+      from: r.from || '', joining: !!r.joining,
     };
   }
 

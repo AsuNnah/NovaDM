@@ -3,6 +3,7 @@
 // can be unit-tested without Electron.
 const { EventEmitter } = require('events');
 const hls = require('./hls');
+const dash = require('./dash');
 const { classify, dedupeKey, mirrorKey } = require('./classify');
 const { sanitizeFilename, siteOf, hostOf, uid } = require('../util');
 
@@ -147,6 +148,15 @@ class MediaRegistry extends EventEmitter {
       return null;
     }
 
+    if (c.kind === 'dash') {
+      const existing = t.byKey.get(dk) && t.items.get(t.byKey.get(dk));
+      if (existing) { this.touch(tabId, existing, now); return existing; }
+      if (t.pending.has(dk)) return null;
+      t.pending.add(dk);
+      this.analyzeDash(tabId, details.url, headers, now).finally(() => t.pending.delete(dk));
+      return null;
+    }
+
     const existing = this.findExisting(t, dk, mk, details.url);
     if (existing) {
       if (existing.size < 0 && c.size > 0) existing.size = c.size;
@@ -277,11 +287,53 @@ class MediaRegistry extends EventEmitter {
     if (variant === item.variants[0] && variant.sizeEstimate > 0) item.sizeEstimate = variant.sizeEstimate;
   }
 
+  // ---- DASH analysis -------------------------------------------------------------------------
+
+  async analyzeDash(tabId, url, headers, now) {
+    const t = this.tab(tabId);
+    let res;
+    try { res = await this.fetchText(url, { headers, tabId }); } catch { return; }
+    if (!this.tabs.has(tabId)) return;
+    let mpd;
+    try { mpd = dash.parse(res.text, res.finalUrl || url); } catch { return; }
+    const period = mpd.periods.find((p) => p.sets.length) || mpd.periods[0];
+    if (!period) return;
+    const reps = period.sets.flatMap((s) => s.representations);
+    const videos = reps.filter((r) => r.kind === 'video').sort((a, b) => (b.height - a.height) || (b.bandwidth - a.bandwidth));
+    const audios = reps.filter((r) => r.kind === 'audio').sort((a, b) => b.bandwidth - a.bandwidth);
+    const main = videos.length ? videos : audios;
+    if (!main.length) return;
+    const item = this.newItem(t, { kind: 'dash', url, headers, urlName: '' }, now);
+    const audioBw = audios[0] ? audios[0].bandwidth : 0;
+    item.variants = main.map((r) => ({
+      label: r.height ? `${r.height}p` : `${Math.round(r.bandwidth / 1000)} kbps`,
+      url: `${url}#rep=${encodeURIComponent(r.id)}`, repId: r.id, bandwidth: r.bandwidth,
+      resolution: r.height ? { width: r.width, height: r.height } : null, codecs: r.codecs,
+      audioSeparate: videos.length > 0 && audios.length > 0, duration: mpd.duration,
+      sizeEstimate: mpd.duration ? Math.round(((r.bandwidth + (videos.length ? audioBw : 0)) * mpd.duration) / 8) : -1,
+    }));
+    item.duration = mpd.duration;
+    item.live = mpd.live;
+    item.container = 'fmp4';
+    item.audioSeparate = videos.length > 0 && audios.length > 0;
+    if (reps.some((r) => r.drm)) item.encryption = 'drm';
+    if (item.variants[0].sizeEstimate > 0) item.sizeEstimate = item.variants[0].sizeEstimate;
+    t.byKey.set(dedupeKey(url), item.id);
+    // Segment folders, so the item shows as playing while its segments load.
+    for (const r of [videos[0], audios[0]].filter(Boolean)) {
+      try {
+        const s = dash.segmentsFor(r);
+        for (const seg of [s.segments[0], s.segments[s.segments.length - 1]]) if (seg) t.segDirs.set(dirPrefix(seg.url), item.id);
+      } catch {}
+    }
+    this.notify(tabId);
+  }
+
   // ---- output --------------------------------------------------------------------------------
 
   displayName(t, item, variant) {
     const usePage = this.getSetting('pageTitleNames') !== false && t.pageTitle;
-    let ext = item.kind === 'hls' ? 'mp4' : (item.ext || (item.kind === 'audio' ? 'mp3' : item.kind === 'subtitle' ? 'vtt' : 'mp4'));
+    let ext = item.kind === 'hls' || item.kind === 'dash' ? 'mp4' : (item.ext || (item.kind === 'audio' ? 'mp3' : item.kind === 'subtitle' ? 'vtt' : 'mp4'));
     if (item.kind === 'hls' && item.container !== 'fmp4' && this.getSetting('convertTsToMp4') === false) ext = 'ts';
     let base;
     if (usePage && item.kind !== 'subtitle') base = t.pageTitle;

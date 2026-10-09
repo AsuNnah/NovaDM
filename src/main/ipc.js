@@ -56,6 +56,25 @@ function registerIpc(ctx) {
     'downloads.list': () => ({ list: getManagers().downloads.list(), summary: getManagers().downloads.activeSummary() }),
     'downloads.pause': (a) => getManagers().downloads.pause(a.id),
     'downloads.resume': (a) => getManagers().downloads.resume(a.id),
+    'downloads.stopRecording': (a) => getManagers().downloads.stopRecording(a.id),
+    'downloads.convert': (a) => {
+      try { const r = getManagers().downloads.convert(a.id, a.action); return { ok: true, id: r.id }; } catch (e) { return { ok: false, error: e.message, code: e.code }; }
+    },
+
+    // ---- FFmpeg (Settings → Video tools) ----
+    'ffmpeg.status': () => getManagers().ffmpeg.status(),
+    'ffmpeg.install': async () => {
+      const { ffmpeg, browser } = getManagers();
+      const push = (p) => { for (const t of browser.internalTabs('settings')) t.wc.send('novadm:internal-event', 'ffmpeg', p); };
+      try { const st = await ffmpeg.install(push); return { ok: true, status: st }; } catch (e) { push({ phase: 'error', error: e.message }); return { ok: false, error: e.message }; }
+    },
+    'ffmpeg.uninstall': () => { getManagers().ffmpeg.uninstall(); getManagers().settings.set({ ffmpegPath: '' }); return getManagers().ffmpeg.status(); },
+    'ffmpeg.choose': async () => {
+      const { win, settings, ffmpeg } = getManagers();
+      const r = await dialog.showOpenDialog(win, { title: 'Choose ffmpeg.exe', properties: ['openFile'], filters: [{ name: 'FFmpeg', extensions: ['exe'] }] });
+      if (!r.canceled && r.filePaths[0]) settings.set({ ffmpegPath: r.filePaths[0] });
+      return ffmpeg.status();
+    },
     'downloads.cancel': (a) => getManagers().downloads.cancel(a.id, a.deleteFile !== false),
     'downloads.remove': (a) => getManagers().downloads.remove(a.id),
     'downloads.clearCompleted': () => getManagers().downloads.clearCompleted(),
@@ -67,7 +86,7 @@ function registerIpc(ctx) {
     'downloads.openPage': (a) => { const r = getManagers().downloads.get(a.id); if (r && /^https?:/i.test(r.pageUrl || '')) getManagers().browser.createTab({ url: r.pageUrl }); },
     'downloads.copyLink': (a) => {
       const r = getManagers().downloads.get(a.id);
-      if (r) copyText(a.which === 'page' ? (r.pageUrl || '') : (r.kind === 'hls' ? r.playlistUrl : (r.sources[0] || '')));
+      if (r) copyText(a.which === 'page' ? (r.pageUrl || '') : (r.kind === 'hls' || r.kind === 'dash' ? r.playlistUrl : (r.sources[0] || '')));
     },
     'downloads.openFolder': () => shell.openPath(getManagers().settings.get('downloadDir')),
     'downloads.openPageTab': () => getManagers().browser.openInternal('downloads'),

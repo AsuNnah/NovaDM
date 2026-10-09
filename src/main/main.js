@@ -13,6 +13,8 @@ const { notify } = require('./notify');
 const { applyProxy, proxyCredentials } = require('./proxy');
 const { Scheduler } = require('./scheduler');
 const { Background } = require('./background');
+const { FFmpeg } = require('./ffmpeg');
+const { HttpDownload } = require('./download/http');
 const util = require('./util');
 const { Browser } = require('./browser');
 const net = require('./net');
@@ -54,7 +56,7 @@ const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
 
 let win, chromeView, overlayView;
-let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background;
+let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg;
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
@@ -199,6 +201,10 @@ function wireEvents() {
     });
   });
   downloads.on('failed', (rec) => {
+    if (rec.errorCode === 'NEEDS_FFMPEG') {
+      notify({ title: 'This video needs FFmpeg', body: 'Install it in Settings → Video tools, then retry the download.', onClick: () => { showWindow(); browser.openInternal('settings'); } });
+      return;
+    }
     if (!settings.get('notifyOnComplete')) return;
     notify({
       title: 'Download failed', body: `${rec.name}: ${rec.error || 'error'}`,
@@ -284,7 +290,22 @@ function downloadItem(tabId, itemId, variantUrl) {
   const chosen = (item.variants || []).find((v) => v.url === variantUrl) || item.variants[0];
   const name = (view && (chosen ? view.variants.find((v) => v.url === chosen.url) : view)?.name) || view?.name;
   const add = (spec) => addFlow.request({ ...spec, tabId, incognito: !!(tab && tab.incognito) }, { origin: 'media' });
-  if (item.kind === 'hls') {
+  if (item.kind === 'dash') {
+    const res = chosen && chosen.resolution;
+    add({
+      kind: 'dash', name, playlistUrl: item.url, headers: item.headers, pageUrl: item.pageUrl,
+      size: (chosen && chosen.sizeEstimate) || item.sizeEstimate, category: 'video',
+      meta: { duration: item.duration || 0, width: res ? res.width : 0, height: res ? res.height : 0, videoId: chosen ? chosen.repId : '' },
+    });
+  } else if (item.kind === 'hls' && chosen && chosen.audioSeparate) {
+    // Picture and sound are separate playlists: the master is needed to find both.
+    const res = chosen.resolution;
+    add({
+      kind: 'hls', separateAudio: true, name, playlistUrl: item.url, headers: item.headers, pageUrl: item.pageUrl,
+      size: chosen.sizeEstimate || item.sizeEstimate, category: 'video', convertTs: true,
+      meta: { duration: chosen.duration || item.duration || 0, width: res ? res.width : 0, height: res ? res.height : 0 },
+    });
+  } else if (item.kind === 'hls') {
     const res = chosen && chosen.resolution;
     add({
       kind: 'hls', name, playlistUrl: chosen ? chosen.url : item.url, mirrors: item.mirrors,
@@ -331,6 +352,19 @@ app.whenReady().then(async () => {
   transport = new Transport({ session: browser.normalSession, settings });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
+  // FFmpeg on demand: downloaded with NovaDM's own engine (speed limit and proxy apply).
+  ffmpeg = new FFmpeg({
+    settings, userDataDir: app.getPath('userData'),
+    fetchText: async (url) => (await net.fetchText(url, { session: browser.normalSession, timeoutMs: 20000 })).text,
+    download: (url, savePath, onProgress) => new Promise((resolve, reject) => {
+      const dl = new HttpDownload({ id: 'ffmpeg', savePath, sources: [url], session: browser.normalSession, transport, limiter: downloads.limiter, connections: 8, retries: 5 });
+      dl.on('progress', (p) => onProgress({ received: p.received, size: p.size }));
+      dl.on('done', resolve);
+      dl.on('error', reject);
+      dl.start();
+    }),
+  });
+  downloads.ffmpeg = ffmpeg;
 
   // Proxy for pages and downloads (system settings unless the user chose otherwise).
   const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession];
@@ -407,7 +441,7 @@ app.whenReady().then(async () => {
     .catch((e) => console.error('extensions init failed', e));
 
   const ipcHandlers = registerIpc({
-    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background }),
+    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg }),
     setPanel, sendUI, sendMediaState,
     downloadItem,
     reviewBlockedPopup,
@@ -451,7 +485,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!/^(downloads|extensions|ffmpeg)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return ipcHandlers[method](args || {});
   });
   // Live updates for open Downloads pages.

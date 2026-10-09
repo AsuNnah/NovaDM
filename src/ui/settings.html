@@ -22,6 +22,9 @@ h2{font-size:13px;font-weight:600;color:var(--fg2);text-transform:none;margin:28
 select,input[type=number],input[type=text],input[type=password]{height:32px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;padding:0 10px;outline:none;}
 select:focus,input:focus{border-color:var(--accent);}
 input[type=number]{width:96px;}
+.ffacts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.ffbar{height:4px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:8px;max-width:320px;}
+.ffbar>i{display:block;height:100%;width:0;background:var(--accent);}
 input[type=text]{width:280px;}
 .path{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg2);font-size:12.5px;}
 button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;cursor:pointer;}
@@ -126,6 +129,14 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     <div class="row">
       <div class="lbl"><b>Mark downloaded files as coming from the internet</b><span>Like browsers do, so Windows SmartScreen checks programs before they run and Office opens documents in Protected View.</span></div>
       <label class="sw"><input type="checkbox" id="markOfTheWeb"><i></i></label>
+    </div>
+  </div>
+
+  <h2>Video tools</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>FFmpeg</b><span>Optional. Needed only to join picture and sound that come as WebM or plain MP4 files, to save a video's sound, and to repair videos. NovaDM downloads the official build (about 80 MB, from github.com/BtbN/FFmpeg-Builds) and checks it against its published checksum.</span><div class="status" id="ffStatus">Checking…</div><div class="ffbar" id="ffBar" hidden><i></i></div></div>
+      <div class="ffacts"><button id="ffInstall">Install</button><button id="ffChoose">Use my own…</button><button id="ffRemove" hidden>Remove</button></div>
     </div>
   </div>
 

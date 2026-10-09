@@ -105,7 +105,7 @@ function mediaRow(it) {
     meta.append(sel);
   }
   if (it.encryption !== 'drm') {
-    const dl = el('div', 'iconbtn'); dl.title = 'Download'; dl.innerHTML = dlSvg();
+    const dl = el('div', 'iconbtn'); dl.title = it.live ? 'Record' : 'Download'; dl.innerHTML = dlSvg();
     dl.onclick = () => { api.call('media.download', { id: it.id, variantUrl: chosenVariant }); flash(dl); };
     row.append(dl);
   }
@@ -142,7 +142,7 @@ function dlRow(d) {
   meta.append(el('div', 'nm', esc(d.name)));
   const tags = el('div', 'tags');
   const pct = Math.round(d.percent || 0);
-  const stateText = { downloading: fmtSpeed(d.speed) || 'Downloading', connecting: 'Connecting…', paused: 'Paused', queued: 'Queued', done: 'Completed', error: 'Error' }[d.state] || d.state;
+  const stateText = d.recording ? 'Recording ' + fmtDur(d.recordedSeconds || 0) : { downloading: fmtSpeed(d.speed) || 'Downloading', connecting: 'Connecting…', paused: 'Paused', queued: 'Queued', done: 'Completed', error: 'Error', scheduled: 'Scheduled' }[d.state] || d.state;
   tags.append(el('span', 'tag', stateText));
   if (d.size > 0) tags.append(el('span', 'tag', fmtSize(d.received) + ' / ' + fmtSize(d.size)));
   else if (d.doneSegments) tags.append(el('span', 'tag', d.doneSegments + '/' + d.segments + ' parts'));
@@ -154,7 +154,8 @@ function dlRow(d) {
   row.append(thumb, meta);
   const actions = el('div'); actions.style.display = 'flex'; actions.style.gap = '2px';
   const icon = (title, svg, fn) => { const b = el('div', 'iconbtn'); b.title = title; b.innerHTML = svg; b.onclick = fn; return b; };
-  if (d.state === 'downloading' || d.state === 'connecting') actions.append(icon('Pause', pauseSvg(), () => api.call('downloads.pause', { id: d.id })));
+  if (d.recording) actions.append(icon('Stop recording', stopSvg(), () => api.call('downloads.stopRecording', { id: d.id })));
+  else if (d.state === 'downloading' || d.state === 'connecting') actions.append(icon('Pause', pauseSvg(), () => api.call('downloads.pause', { id: d.id })));
   else if (['paused', 'error', 'queued', 'scheduled'].includes(d.state)) actions.append(icon('Resume', playSmSvg(), () => api.call('downloads.resume', { id: d.id })));
   if (d.state === 'done') { actions.append(icon('Open', folderSvg(), () => api.call('downloads.showInFolder', { id: d.id }))); }
   actions.append(icon('Remove', xSvg(), () => api.call(d.state === 'done' ? 'downloads.remove' : 'downloads.cancel', { id: d.id })));
@@ -578,6 +579,7 @@ function showLinksAsk(d) {
 // ---- icons ----
 function playSvg() { return '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'; }
 function playSmSvg() { return '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>'; }
+function stopSvg() { return '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>'; }
 function pauseSvg() { return '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>'; }
 function ccSvg() { return '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 11h2M8 14h2M14 11h2M14 14h2"/></svg>'; }
 function dlSvg() { return '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v10m0 0l-3.5-3.5M12 14l3.5-3.5"/><path d="M5 19h14"/></svg>'; }

@@ -126,6 +126,47 @@ async function init() {
     current = await bridge.getSettings(); render(); flashSaved();
   });
   $('chooseDir').addEventListener('click', async () => { current = await bridge.chooseDownloadDir(); render(); });
+  initFfmpeg();
+}
+
+// ---- FFmpeg (Video tools) ----
+function renderFfmpeg(st) {
+  const el = $('ffStatus');
+  el.className = 'status';
+  if (st.installing) { el.textContent = 'Installing…'; return; }
+  if (st.installed) {
+    el.textContent = `FFmpeg ${st.version} is ready` + (st.custom ? ` (${st.path})` : '');
+    el.classList.add('ok');
+  } else el.textContent = 'Not installed.';
+  $('ffInstall').hidden = !!st.installed && !st.custom;
+  $('ffInstall').textContent = st.installed ? 'Install NovaDM\'s copy' : 'Install';
+  $('ffRemove').hidden = !st.installed;
+}
+
+async function initFfmpeg() {
+  const refresh = async () => { try { renderFfmpeg(await bridge.call('ffmpeg.status')); } catch {} };
+  const phaseText = { checking: 'Finding the newest build…', downloading: 'Downloading…', verifying: 'Checking the download…', unpacking: 'Unpacking…' };
+  bridge.on('ffmpeg', (p) => {
+    const el = $('ffStatus');
+    const bar = $('ffBar');
+    if (p.phase === 'error') { el.textContent = p.error; el.className = 'status warn'; bar.hidden = true; return; }
+    if (p.phase === 'done') { bar.hidden = true; refresh(); return; }
+    el.textContent = phaseText[p.phase] || p.phase;
+    if (p.phase === 'downloading' && p.size > 0) {
+      bar.hidden = false;
+      bar.firstElementChild.style.width = Math.round((p.received / p.size) * 100) + '%';
+      el.textContent = `Downloading… ${Math.round(p.received / 1048576)} of ${Math.round(p.size / 1048576)} MB`;
+    }
+  });
+  $('ffInstall').onclick = async () => {
+    $('ffInstall').disabled = true;
+    const r = await bridge.call('ffmpeg.install');
+    $('ffInstall').disabled = false;
+    if (r && r.ok) renderFfmpeg(r.status);
+  };
+  $('ffChoose').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.choose'));
+  $('ffRemove').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.uninstall'));
+  refresh();
 }
 
 init();

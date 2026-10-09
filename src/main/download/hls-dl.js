@@ -4,6 +4,8 @@
 //  - Parallel segment fetches start small and grow while total speed still rises (up to the
 //    connection setting); 429/503 shrink them. On HTTP/1.1 servers more than 6 go through the
 //    direct transport (Chromium allows only 6 per server).
+//  - Live streams are recorded: the playlist is re-read and new segments are added until the user
+//    stops the recording (or the stream ends); the file is finished and playable either way.
 //  - Checkpoints: every 10 s / 32 MB the output is synced to disk, then progress is saved to
 //    <file>.part.meta (never claims data that isn't on disk). AES keys are saved with it and the
 //    media playlist is kept in <file>.part.m3u8, so a resume still works after the stream's
@@ -23,6 +25,7 @@ const CHECKPOINT_BYTES = 32 * 1024 * 1024;
 const START_WORKERS = 3;
 const TUNE_MS = 2000; // time to measure each growth step
 const BROWSER_H1_CAP = 6;
+const LIVE_START_SEGMENTS = 3; // a recording starts this close to the live edge
 
 class HlsDownload extends EventEmitter {
   /**
@@ -76,6 +79,10 @@ class HlsDownload extends EventEmitter {
     this.writtenBytes = 0;
     this.sizeEstimate = opts.sizeEstimate || -1;
     this.live = false;
+    this.liveEnded = false; // recording stopped by the user, or the stream ended
+    this.liveSeq = -1; // media sequence number of the last segment added
+    this.liveGaps = 0; // segments that left the playlist before they could be fetched
+    this.recordedSeconds = 0;
     this.resumed = false;
     this._stopping = false;
     this._keyCache = new Map();
@@ -122,6 +129,7 @@ class HlsDownload extends EventEmitter {
       this.savePlaylistCopy();
       this._lastCheckpoint = Date.now();
       this.emitUpdate(true);
+      if (this.live) this.startLivePolling();
       await this.download();
       if (this._stopping) return;
       this.finish();
@@ -145,12 +153,18 @@ class HlsDownload extends EventEmitter {
       if (p.type === 'master') {
         if (!p.variants.length) throw new Error('Empty master playlist');
         const best = p.variants[0];
+        if (best.audioSeparate) {
+          const e = new Error('The sound is a separate stream');
+          e.code = 'NEEDS_MERGE';
+          throw e;
+        }
         const r2 = await this.fetchText(best.url);
         p = hls.parse(r2.text, r2.finalUrl || best.url);
         media = { text: r2.text, url: r2.finalUrl || best.url };
       }
       this.mediaPlaylist = media;
     } catch (err) {
+      if (err.code === 'NEEDS_MERGE') throw err;
       // The playlist link may have expired since the download started: continue from the saved copy.
       const saved = this.loadPlaylistCopy();
       if (!saved) throw err;
@@ -161,8 +175,60 @@ class HlsDownload extends EventEmitter {
     if (p.encryption === 'drm') throw new Error('Stream is DRM-protected and cannot be downloaded');
     this.live = p.live;
     this.segments = p.segments;
-    this.totalSegments = p.segments.length;
+    if (this.live) {
+      // Record from (almost) now, like a player joining the stream.
+      this.segments = p.segments.slice(-LIVE_START_SEGMENTS);
+      this.liveSeq = this.segments.length ? this.segments[this.segments.length - 1].seq : -1;
+      this.targetDuration = p.targetDuration || 6;
+      this.concurrency = Math.min(this.concurrency, 3);
+      this.target = Math.min(this.target, this.concurrency);
+      this.steady = true;
+    }
+    this.totalSegments = this.segments.length;
     if (!this.totalSegments) throw new Error('Playlist has no segments');
+  }
+
+  // ---- live recording ------------------------------------------------------------------------
+
+  isRecording() { return this.live && !this.liveEnded; }
+
+  startLivePolling() {
+    const poll = async () => {
+      if (!this.isRecording() || this._stopping) return;
+      try {
+        const r = await this.fetchText(this.mediaPlaylist.url);
+        const p = hls.parse(r.text, r.finalUrl || this.mediaPlaylist.url);
+        if (p.type === 'media') this.addLiveSegments(p);
+      } catch {
+        // A missed refresh is fine; the next one catches up while the segments are still listed.
+      }
+      if (this.isRecording() && !this._stopping) this._livePoll = setTimeout(poll, Math.max(1000, (this.targetDuration || 6) * 500));
+    };
+    this._livePoll = setTimeout(poll, Math.max(1000, (this.targetDuration || 6) * 500));
+  }
+
+  addLiveSegments(p) {
+    const fresh = p.segments.filter((x) => x.seq > this.liveSeq);
+    if (fresh.length && this.liveSeq >= 0 && fresh[0].seq > this.liveSeq + 1) this.liveGaps += fresh[0].seq - this.liveSeq - 1;
+    for (const x of fresh) this.segments.push(x);
+    if (fresh.length) {
+      this.liveSeq = fresh[fresh.length - 1].seq;
+      this.totalSegments = this.segments.length;
+      this.fillWorkers();
+    }
+    if (p.endList) this.stopRecording(); // the broadcast ended
+  }
+
+  /** Stop recording: what has been fetched is written and the file is finished. */
+  stopRecording() {
+    if (!this.live || this.liveEnded) return;
+    this.liveEnded = true;
+    clearTimeout(this._livePoll);
+    // Nothing more will be added: everything listed so far is the whole recording.
+    this.totalSegments = this.segments.length;
+    if (this._wakeLive) this._wakeLive();
+    this.pumpWriter();
+    if (this._workers === 0 && this._resolveWorkers) { this._resolveWorkers(); this._resolveWorkers = null; }
   }
 
   loadPlaylistCopy() {
@@ -271,11 +337,11 @@ class HlsDownload extends EventEmitter {
   }
 
   fillWorkers() {
-    while (!this._stopping && this._workers < this.target && this._nextFetch < this.totalSegments && Date.now() >= this.holdUntil) {
+    while (!this._stopping && this._workers < this.target && (this._nextFetch < this.totalSegments || (this.isRecording() && this._workers === 0)) && Date.now() >= this.holdUntil) {
       this._workers++;
       this.worker().finally(() => {
         this._workers--;
-        if (this._workers === 0 && this._resolveWorkers && (this._stopping || this._nextFetch >= this.totalSegments)) {
+        if (this._workers === 0 && this._resolveWorkers && (this._stopping || (this._nextFetch >= this.totalSegments && !this.isRecording()))) {
           this._resolveWorkers(); this._resolveWorkers = null;
         }
       });
@@ -317,7 +383,11 @@ class HlsDownload extends EventEmitter {
       // Respect the look-ahead window so memory stays bounded.
       if (this._nextFetch - this._nextWrite >= this.window) { await this.sleep(20); continue; }
       const idx = this._nextFetch;
-      if (idx >= this.totalSegments) return;
+      if (idx >= this.totalSegments) {
+        if (!this.isRecording()) return;
+        await new Promise((r) => { this._wakeLive = r; setTimeout(r, 500); });
+        continue;
+      }
       this._nextFetch++;
       try {
         const buf = await this.fetchSegment(idx);
@@ -451,6 +521,7 @@ class HlsDownload extends EventEmitter {
         await this.writeSegment(idx, buf);
         this._nextWrite++;
         this.doneSegments++;
+        this.recordedSeconds += this.segments[idx].duration || 0;
         if (Date.now() - this._lastCheckpoint >= this.checkpointMs || this.writtenBytes - this._checkpointWritten >= this.checkpointBytes) {
           await this.checkpoint();
         }
@@ -462,7 +533,7 @@ class HlsDownload extends EventEmitter {
     } finally {
       this._writing = false;
     }
-    if (this._nextWrite >= this.totalSegments || this._stopping) {
+    if ((this._nextWrite >= this.totalSegments && !this.isRecording()) || this._stopping) {
       if (this._resolveWriter) { this._resolveWriter(); this._resolveWriter = null; }
     }
   }
@@ -541,6 +612,7 @@ class HlsDownload extends EventEmitter {
 
   stop() {
     this._stopping = true;
+    clearTimeout(this._livePoll);
     if (this._resolveWriter) { this._resolveWriter(); this._resolveWriter = null; }
     if (this._resolveWorkers && this._workers === 0) { this._resolveWorkers(); this._resolveWorkers = null; }
   }
@@ -548,6 +620,13 @@ class HlsDownload extends EventEmitter {
   /** Pause keeping progress. Resolves once the last write has finished and progress is saved. */
   async pause() {
     if (this.state !== 'downloading') return;
+    if (this.live) {
+      // A live recording can't continue later: finish it, so the file is complete and playable.
+      const done = new Promise((r) => { this.once('done', r); this.once('error', r); });
+      this.stopRecording();
+      await Promise.race([done, this.sleep(8000)]);
+      return;
+    }
     this.stop();
     this.state = 'paused';
     await this._writerIdle;
@@ -611,7 +690,8 @@ class HlsDownload extends EventEmitter {
     if (this.doneSegments > 4 && this.writtenBytes > 0) size = Math.round(this.writtenBytes / frac);
     return {
       id: this.id, state: this.state, size, sizeIsEstimate: this.doneSegments < this.totalSegments,
-      received: this.writtenBytes, percent: frac * 100, resumable: !this.live,
+      received: this.writtenBytes, percent: this.live ? 0 : frac * 100, resumable: !this.live,
+      live: this.live, recording: this.isRecording(), recordedSeconds: Math.round(this.recordedSeconds), liveGaps: this.liveGaps,
       segments: this.totalSegments, doneSegments: this.doneSegments, connections: this.state === 'downloading' ? this._workers : 0,
       speed: this.state === 'downloading' ? this.speed() : 0,
       error: this.error ? String(this.error.message || this.error) : null,

@@ -62,6 +62,10 @@ function statusText(d) {
   const pct = Math.floor(d.percent || 0);
   const parts = d.segments ? `Part ${d.doneSegments || 0} of ${d.segments}` : '';
   const sizeTxt = d.size > 0 ? `${fmtSize(d.received)} of ${d.sizeIsEstimate ? '~' : ''}${fmtSize(d.size)}` : fmtSize(d.received);
+  if (d.kind === 'convert' && d.state === 'downloading') return `Converting “${esc(d.from)}”${d.percent > 0 ? ' · ' + Math.floor(d.percent) + '%' : '…'}`;
+  if (d.joining && d.state === 'downloading') return 'Joining picture and sound with FFmpeg…';
+  if (d.recording) return `<span class="rec">● Recording</span> · ${fmtClock(d.recordedSeconds || 0)} · ${fmtSize(d.received)}${d.speed > 0 ? ' · ' + fmtSize(d.speed) + '/s' : ''}`;
+  if (d.live && d.state === 'done') return [`Recorded ${fmtClock(d.recordedSeconds || 0)}`, fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt)].join(' · ');
   switch (d.state) {
     case 'downloading': {
       const left = d.speed > 0 && d.size > 0 ? fmtDur(((d.size - d.received) / d.speed) * 1000) + ' left' : '';
@@ -91,6 +95,7 @@ const SVG = {
   documents: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h6"/>',
   other: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>',
   pause: '<path d="M7 5h4v14H7zM13 5h4v14h-4z" fill="currentColor" stroke="none"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/>',
   play: '<path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/>',
   retry: '<path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/>',
   folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
@@ -154,11 +159,11 @@ function updateRow(el, d) {
   bar.className = 'bar ' + (d.state === 'paused' || d.state === 'queued' ? 'paused' : d.state === 'error' ? 'error' : '');
   bar.firstElementChild.style.width = Math.min(100, d.percent || 0) + '%';
   const act = el.querySelector('.act');
-  const kind = ['downloading', 'connecting'].includes(d.state) ? 'pause' : d.state === 'done' ? 'folder' : d.state === 'error' ? 'retry' : 'play';
+  const kind = d.recording ? 'stop' : ['downloading', 'connecting'].includes(d.state) ? 'pause' : d.state === 'done' ? 'folder' : d.state === 'error' ? 'retry' : 'play';
   if (act.dataset.kind !== kind) {
     act.dataset.kind = kind;
     act.innerHTML = svg(kind);
-    act.title = { pause: 'Pause', folder: 'Show in folder', retry: 'Retry', play: 'Resume' }[kind];
+    act.title = { pause: 'Pause', folder: 'Show in folder', retry: 'Retry', play: 'Resume', stop: 'Stop recording' }[kind];
   }
   const cb = el.querySelector('input');
   cb.checked = selected.has(d.id);
@@ -168,6 +173,7 @@ function updateRow(el, d) {
 function primaryAction(d) {
   if (!d) return;
   if (d.state === 'error' && d.errorCode === 'LINK_EXPIRED') return showRefresh(d);
+  if (d.recording) return api.call('downloads.stopRecording', { id: d.id });
   if (['downloading', 'connecting'].includes(d.state)) api.call('downloads.pause', { id: d.id });
   else if (d.state === 'done') api.call('downloads.showInFolder', { id: d.id });
   else api.call('downloads.resume', { id: d.id });
@@ -227,7 +233,17 @@ function openMenu(anchor, d) {
   hr();
   add('Copy download link', () => api.call('downloads.copyLink', { id: d.id }));
   if (d.pageUrl) { add('Copy page link', () => api.call('downloads.copyLink', { id: d.id, which: 'page' })); add('Open download page', () => api.call('downloads.openPage', { id: d.id })); }
-  if (d.state !== 'done' && !d.native) add('Refresh link…', () => showRefresh(d));
+  if (d.state !== 'done' && !d.native && d.kind !== 'convert') add('Refresh link…', () => showRefresh(d));
+  if (d.state === 'done' && ['video', 'music'].includes(d.category)) {
+    hr();
+    const conv = (label, action) => add(label, async () => {
+      const r = await api.call('downloads.convert', { id: d.id, action });
+      if (r && !r.ok) showNotice(r.code === 'NEEDS_FFMPEG' ? 'FFmpeg is needed for this. Install it in Settings → Video tools.' : r.error);
+    });
+    if (d.category === 'video') conv('Save sound only (.m4a)', 'audio');
+    conv('Convert sound to MP3', 'mp3');
+    if (d.category === 'video') conv('Repair video', 'repair');
+  }
   if (d.state !== 'done' && queueInfo.queues.length > 1) {
     for (const q of queueInfo.queues) if (q.id !== (d.queue || 'main')) add(`Move to queue “${q.name}”`, () => api.call('downloads.setQueue', { id: d.id, queue: q.id }));
   }
@@ -321,6 +337,11 @@ function showRefresh(d) {
     btn.disabled = false; btn.textContent = 'Use this link';
     const e = w.querySelector('#rErr'); e.textContent = (r && r.error) || 'That link did not work'; e.hidden = false;
   };
+}
+
+function showNotice(text) {
+  const w = modal(`<h2>Not possible yet</h2><p>${esc(text)}</p><div class="foot"><button class="pri" id="nOk">OK</button></div>`);
+  w.querySelector('#nOk').onclick = closeLayer;
 }
 
 function confirmDelete(list) {

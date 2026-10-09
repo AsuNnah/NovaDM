@@ -34,11 +34,17 @@ AB Download Manager, XDM). No code from any of them is included.
   of sites that may always open pop-ups.
 
 ### Media detection and the content grabber
-- Detects video and audio while a page plays: HLS (`.m3u8`), MP4/WebM files and subtitles, using
-  network sniffing plus a page script that scans `<video>` elements
+- Detects video and audio while a page plays: HLS (`.m3u8`), **DASH (`.mpd`)**, MP4/WebM files and
+  subtitles, using network sniffing plus a page script that scans `<video>` elements
 - A download button appears over playing videos and a media icon lights up in the toolbar
 - HLS streams are saved as a single **MP4** (TS segments are converted on the fly, segment by
   segment, so memory use stays flat)
+- **Separate picture and sound joined into one MP4 without FFmpeg**: DASH video + audio, and HLS
+  streams whose audio is a separate rendition
+- **Live stream recording** (HLS): records until you press Stop or the broadcast ends
+- **FFmpeg on demand** (optional, Settings → Video tools): verified one-click install of the
+  official build, used for WebM/plain-MP4 tracks and for "Save sound only", "Convert sound to MP3"
+  and "Repair video"
 - **Content grabber**: lists every image on a page (including lazy-loaded and CSS background
   images) with sizes, filters and bulk download
 - DRM-protected streams (Widevine) are detected and labelled; NovaDM does not decrypt DRM
@@ -155,7 +161,7 @@ src/main/                 Electron main process
   dns.js                  Secure DNS
   extensions.js           Chrome extensions and Web Store
   grabber.js              content (image) grabber
-  media/                  media detection, HLS parsing, TS→MP4
+  media/                  media detection, HLS and DASH parsing, TS→MP4, MP4 track merger
   download/               download manager, HTTP and HLS engines, speed limiter
   transport.js            NovaDM's own HTTP client for extra connections (undici)
   add-flow.js             how downloads get added: dialog, duplicates, link lists, Refresh link
@@ -163,6 +169,7 @@ src/main/                 Electron main process
   proxy.js, notify.js     proxy settings and sign-in; Windows notifications
   scheduler.js            download queues and their time windows
   background.js           tray, start with Windows, keep awake, "when all downloads finish"
+  ffmpeg.js               FFmpeg on demand (verified install, joining, sound, repair)
 src/ui/                   toolbar, panels, downloads, settings, new tab pages
 test/                     unit tests (node --test)
 tools/                    self-tests, diagnostics, icon generator

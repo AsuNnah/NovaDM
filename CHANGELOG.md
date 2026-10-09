@@ -8,6 +8,46 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [0.5.0] — 2026-10-09
+
+Video capability (roadmap phase 4).
+
+### Added
+- **DASH streams (.mpd)** are detected, their qualities listed, and downloaded: SegmentTemplate
+  ($Number$, $Time$, SegmentTimeline), SegmentList, SegmentBase (with the file's index) and
+  single-file representations; several periods are joined. DRM-protected and live DASH are
+  refused with a clear message.
+- **Picture and sound joined without FFmpeg.** DASH video + audio, and HLS streams whose sound is a
+  separate rendition (#EXT-X-MEDIA), become one normal MP4 with a video and an audio track. NovaDM's
+  own MP4 merger renumbers the tracks, interleaves the fragments in time order, keeps audio and
+  video on one timeline, and keeps the timeline going forward across periods/discontinuities. TS
+  tracks are converted per track; AES-128 HLS segments are decrypted. Pause/resume continues byte
+  for byte where it stopped, even after the manifest link expired; Refresh link reads the new
+  manifest and keeps the progress when it lists the same segments.
+- **Live stream recording** (HLS): recording starts near the live edge, the playlist is re-read
+  and new segments are added until you press Stop (or the broadcast ends). The list shows
+  "● Recording · 12:34 · size"; quitting or pausing finishes the file so it stays playable.
+- **FFmpeg on demand** (Settings → Video tools): one click downloads the newest stable official
+  Windows build (LGPL, about 80 MB, from github.com/BtbN/FFmpeg-Builds), checks it against its
+  published SHA-256 and unpacks it; or point NovaDM to your own ffmpeg.exe. It is used only for:
+  - joining picture and sound that come as WebM or plain MP4 files (saved as .mkv for WebM);
+    without FFmpeg such a download stops right away and says what to install
+  - "Save sound only (.m4a)", "Convert sound to MP3" and "Repair video" for finished downloads,
+    each shown as its own entry with progress
+
+### Tests
+- 85 unit tests (new: MP4 merger incl. absolute offsets and DRM refusal, DASH parser for every
+  segment layout, merged DASH and HLS downloads incl. a byte-identical resume, live recording and
+  its end, FFmpeg build choice / verified install / WebM joining).
+- In-app self-test `tools/selftest-phase4.js`: pages that load a DASH manifest and an HLS master
+  with separate audio are detected, downloaded and then **played in Chromium with picture and
+  sound**; a live stream is recorded and stopped; FFmpeg-less behaviour. All earlier self-tests
+  pass unchanged.
+
+### Not verified here
+- The real FFmpeg download (about 80 MB) was not run while testing; the installer was tested with
+  a local build archive and the official checksum list's format.
+
 ## [0.4.0] — 2026-10-09
 
 Background downloading, scheduling and safety (roadmap phase 3).
@@ -184,7 +224,8 @@ First packaged version: `Swoop-Setup-0.1.0.exe` and `Swoop-Portable-0.1.0.exe`.
 - Speed limit, maximum active downloads, category folders, names from page titles
 - Windows installer (NSIS) and portable build
 
-[Unreleased]: ../../compare/v0.4.0...HEAD
+[Unreleased]: ../../compare/v0.5.0...HEAD
+[0.5.0]: ../../compare/v0.4.0...v0.5.0
 [0.4.0]: ../../compare/v0.3.0...v0.4.0
 [0.3.0]: ../../compare/v0.2.0...v0.3.0
 [0.2.0]: ../../compare/v0.1.0...v0.2.0

@@ -47,6 +47,7 @@ function defaults() {
     preventSleep: true, // keep the PC awake while downloading
     scanDownloads: 'programs', // programs (programs + archives) | all | off
     markOfTheWeb: true,
+    ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
 
     // Proxy (browsing and downloads): system | none | manual | pac
     proxyMode: 'system',

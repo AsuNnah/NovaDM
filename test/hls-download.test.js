@@ -312,3 +312,65 @@ test('speed-limited HLS keeps every byte of every segment', async (t) => {
   await new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); dl.start(); });
   assert.ok(fs.readFileSync(save).equals(Buffer.concat(parts)), 'output is every segment, complete and in order');
 });
+
+// A live stream: a new 1-second segment appears every 300 ms; the playlist lists the last 4.
+function liveServer(t, { endAfter = Infinity } = {}) {
+  const t0 = Date.now();
+  const routes = {};
+  const seg = (n) => Buffer.alloc(2000, n % 256);
+  const playlist = () => {
+    const n = Math.floor((Date.now() - t0) / 300) + 4;
+    const last = Math.min(n, endAfter);
+    const first = Math.max(0, last - 4);
+    let p = `#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXT-X-MEDIA-SEQUENCE:${first}\n`;
+    for (let i = first; i < last; i++) p += `#EXTINF:1,\nlive${i}.bin\n`;
+    if (n >= endAfter) p += '#EXT-X-ENDLIST\n';
+    return p;
+  };
+  const server = http.createServer((req, res) => {
+    const m = /^\/live(\d+)\.bin$/.exec(req.url);
+    if (!m) { res.writeHead(404); return res.end(); }
+    const body = seg(Number(m[1]));
+    res.writeHead(200, { 'Content-Length': body.length }); res.end(body);
+  });
+  t.after(() => server.close());
+  return { server, playlist, seg };
+}
+
+test('a live stream is recorded until it is stopped, without gaps or repeats', async (t) => {
+  const { server, playlist } = liveServer(t);
+  const base = await listen(server);
+  const save = tmp();
+  const dl = new HlsDownload({
+    id: 'live1', savePath: save, playlistUrl: base + '/live.m3u8', openConn: nodeOpen, convertTs: false, concurrency: 4,
+    fetchText: async () => ({ text: playlist(), finalUrl: base + '/live.m3u8' }),
+  });
+  const done = new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); });
+  dl.start();
+  await new Promise((r) => setTimeout(r, 3500));
+  assert.equal(dl.isRecording(), true);
+  assert.equal(dl.progress().recording, true);
+  dl.stopRecording();
+  await done;
+  const out = fs.readFileSync(save);
+  assert.equal(out.length % 2000, 0);
+  const ids = [];
+  for (let i = 0; i < out.length; i += 2000) ids.push(out[i]);
+  assert.ok(ids.length >= 6, 'recorded several new segments: ' + ids.length);
+  for (let i = 1; i < ids.length; i++) assert.equal(ids[i], (ids[i - 1] + 1) % 256, 'segments in order, no gaps or repeats: ' + ids);
+  assert.equal(dl.liveGaps, 0);
+  assert.ok(dl.progress().recordedSeconds >= 6);
+});
+
+test('a recording ends by itself when the broadcast ends', async (t) => {
+  const { server, playlist } = liveServer(t, { endAfter: 10 });
+  const base = await listen(server);
+  const save = tmp();
+  const dl = new HlsDownload({
+    id: 'live2', savePath: save, playlistUrl: base + '/live.m3u8', openConn: nodeOpen, convertTs: false,
+    fetchText: async () => ({ text: playlist(), finalUrl: base + '/live.m3u8' }),
+  });
+  await new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); dl.start(); });
+  const out = fs.readFileSync(save);
+  assert.equal(out[out.length - 1], 9, 'the last segment of the broadcast is included');
+});

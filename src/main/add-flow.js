@@ -79,7 +79,7 @@ class AddFlow {
     const name = util.sanitizeFilename(s.name || util.filenameFromUrl(s.url || s.playlistUrl) || 'download');
     const category = s.category || util.categoryOf(name, s.mime);
     this.sendUI('download-ask', {
-      reqId: req.id, origin: req.origin, kind: s.kind, name, url: s.kind === 'hls' ? s.playlistUrl : s.url,
+      reqId: req.id, origin: req.origin, kind: s.kind, name, url: s.kind === 'hls' || s.kind === 'dash' ? s.playlistUrl : s.url,
       size: s.size > 0 ? s.size : -1, sizeIsEstimate: s.kind === 'hls', folder: s.dir || this.downloads.categoryDir(category),
       pageUrl: s.pageUrl || '', incognito: !!s.incognito,
       duplicate: req.dup ? { id: req.dup.id, name: req.dup.name, state: req.dup.state } : null,
@@ -175,7 +175,7 @@ class AddFlow {
     for (const [t, d] of this.armed) if (d === id) this.armed.delete(t);
     const rec = this.downloads.get(id);
     try {
-      await this.downloads.refreshLink(id, spec.kind === 'hls' ? spec.playlistUrl : spec.url, { size: spec.size, headers: spec.headers });
+      await this.downloads.refreshLink(id, spec.kind === 'hls' || spec.kind === 'dash' ? spec.playlistUrl : spec.url, { size: spec.size, headers: spec.headers });
       this.notify({ title: 'Link refreshed', body: `Continuing ${rec.name}` });
       return { ok: true, id, refreshed: true };
     } catch (e) {
@@ -185,14 +185,16 @@ class AddFlow {
   }
 }
 
-/** A download spec for a plain link (HLS when it is an .m3u8 playlist). */
+/** A download spec for a plain link (a stream when it is an .m3u8 playlist or .mpd manifest). */
 function specFromUrl(url, opts = {}) {
   const hls = /\.m3u8(\?|#|$)/i.test(url);
+  const isDash = /\.mpd(\?|#|$)/i.test(url);
+  const stream = hls || isDash;
   return {
-    kind: hls ? 'hls' : 'http', url: hls ? undefined : url, sources: hls ? undefined : [url],
-    playlistUrl: hls ? url : '', name: '', pageUrl: opts.pageUrl || '',
+    kind: hls ? 'hls' : isDash ? 'dash' : 'http', url: stream ? undefined : url, sources: stream ? undefined : [url],
+    playlistUrl: stream ? url : '', name: '', pageUrl: opts.pageUrl || '',
     headers: opts.pageUrl ? { referer: opts.pageUrl } : {}, incognito: !!opts.incognito,
-    category: hls ? 'video' : undefined,
+    category: stream ? 'video' : undefined,
   };
 }
 
