@@ -77,7 +77,7 @@ class DownloadManager extends EventEmitter {
       separateAudio: !!r.separateAudio, reresolve: !!r.reresolve, live: !!r.live, recordedSeconds: r.recordedSeconds || 0,
       from: r.from || '',
       magnet: r.magnet || '', torrentData: r.torrentData || '', gid: r.gid || '', selectFiles: r.selectFiles || '', infoHash: r.infoHash || '',
-      btFiles: r.btFiles || null, uploaded: r.uploaded || 0,
+      btFiles: r.btFiles || null, uploaded: r.uploaded || 0, mergeSource: r.mergeSource || null,
     }));
     this.store.save();
   }
@@ -136,7 +136,7 @@ class DownloadManager extends EventEmitter {
       verify: '', incognito: !!spec.incognito, queue: this.queueIds().includes(spec.queue) ? spec.queue : 'main',
       separateAudio: !!spec.separateAudio,
       magnet: spec.magnet || '', torrentData: spec.torrentData || '', selectFiles: spec.selectFiles || '', infoHash: spec.infoHash || '',
-      btFiles: spec.files || null, gid: '',
+      btFiles: spec.files || null, gid: '', mergeSource: spec.mergeSource || null,
     };
     // A queue with a schedule keeps new downloads until its time window opens.
     if (spec.start !== false && this.scheduler && this.scheduler.waitsForSchedule(rec.queue)) rec.state = 'scheduled';
@@ -271,6 +271,10 @@ class DownloadManager extends EventEmitter {
       retryDelayMs: (this.settings.get('retryDelaySec') || 3) * 1000,
       timeoutMs: (this.settings.get('timeoutSec') || 30) * 1000,
     };
+    if (rec.kind === 'merge') {
+      // Separate picture and sound files given directly (yt-dlp).
+      return new MergeDownload({ ...common, concurrency: Math.min(16, this.settings.get('connections') || 6), ffmpeg: this.ffmpeg, source: rec.mergeSource });
+    }
     if (rec.kind === 'dash' || (rec.kind === 'hls' && rec.separateAudio)) {
       // Separate picture and sound (DASH, or HLS with an audio rendition): one merged MP4.
       const m = rec.meta || {};
@@ -515,7 +519,7 @@ class DownloadManager extends EventEmitter {
         // A torrent may be a folder; aria2 keeps its progress in "<name>.aria2".
         for (const f of [rec.savePath, rec.savePath + '.aria2']) { try { fs.rmSync(f, { recursive: true, force: true }); } catch {} }
       }
-      for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8', rec.savePath + '.part.tracks']) {
+      for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8', rec.savePath + '.part.tracks', rec.savePath + '.video.part', rec.savePath + '.audio.part']) {
         try { fs.rmSync(f, { force: true }); } catch {}
       }
     }
@@ -540,6 +544,7 @@ class DownloadManager extends EventEmitter {
       mirrors: r.mirrors, headers: r.headers, pageUrl: r.pageUrl, category: r.category,
       convertTs: r.convertTs, meta: r.meta, allowRename: false, size: r.kind === 'hls' || r.kind === 'dash' ? r.size : -1,
       separateAudio: r.separateAudio, magnet: r.magnet, torrentData: r.torrentData, selectFiles: r.selectFiles, infoHash: r.infoHash,
+      mergeSource: r.mergeSource,
     });
   }
 
@@ -553,7 +558,8 @@ class DownloadManager extends EventEmitter {
   // Mark of the Web, then (for programs and archives by default) a Microsoft Defender scan.
   async postProcess(rec) {
     if (this.settings.get('markOfTheWeb') !== false && !rec.native) {
-      post.markOfTheWeb(rec.savePath, { url: rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0], referrer: rec.pageUrl, incognito: rec.incognito });
+      const from = rec.kind === 'merge' ? (rec.mergeSource && rec.mergeSource.tracks[0] && rec.mergeSource.tracks[0].url) : rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0];
+      post.markOfTheWeb(rec.savePath, { url: from || '', referrer: rec.pageUrl, incognito: rec.incognito });
     }
     if (!post.wantsScan(this.settings.get('scanDownloads'), rec.category)) return;
     rec.scan = 'scanning'; this.emitRecord(rec);
@@ -721,7 +727,7 @@ class DownloadManager extends EventEmitter {
   }
 
   summary(r) {
-    const hls = r.kind === 'hls' || r.kind === 'dash';
+    const hls = r.kind === 'hls' || r.kind === 'dash' || r.kind === 'merge';
     return {
       id: r.id, kind: r.kind, name: r.name, savePath: r.savePath, category: r.category,
       state: r.state, size: r.size, received: r.received, speed: r.speed || 0,

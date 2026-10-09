@@ -31,6 +31,7 @@ document.getElementById('backdrop').addEventListener('mousedown', close);
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 
 api.on('open-panel', (d) => {
+  if (d.name === 'media' && current !== 'media') ytdlpView = null;
   current = d.name;
   place(d.name);
   if (d.name === 'grabber') startGrab();
@@ -68,6 +69,10 @@ function renderMedia() {
   const hdr = el('div', 'hdr');
   hdr.append(el('div', 't', 'Detected media'));
   hdr.append(el('div', 'sp'));
+  if (mediaData.ytdlp) {
+    const yt = el('a', null, 'Find with yt-dlp'); yt.style.marginRight = '12px'; yt.onclick = () => findWithYtdlp();
+    hdr.append(yt);
+  }
   if (mediaData.items && mediaData.items.length) {
     const all = el('a', null, 'Download all'); all.onclick = () => api.call('media.downloadAll');
     const clr = el('a', null, 'Clear'); clr.style.marginLeft = '12px'; clr.onclick = () => api.call('media.clear');
@@ -75,9 +80,35 @@ function renderMedia() {
   }
   content.append(hdr);
   if (mediaData.eme) content.append(el('div', 'note', 'This site asked for DRM — showing the unprotected version it provided, if any.'));
+  if (ytdlpView) content.append(ytdlpView);
   const items = mediaData.items || [];
-  if (!items.length) { content.append(el('div', 'empty', 'No media detected yet.<br>Play a video, and it will appear here.')); return; }
+  if (!items.length) { if (!ytdlpView) content.append(el('div', 'empty', 'No media detected yet.<br>Play a video, and it will appear here.')); return; }
   for (const it of items) content.append(mediaRow(it));
+}
+
+// yt-dlp: what it finds on this page, as a short list of choices.
+let ytdlpView = null;
+async function findWithYtdlp() {
+  ytdlpView = el('div', 'body');
+  ytdlpView.append(el('div', 'empty', '<div class="spinner"></div>Asking yt-dlp about this page…'));
+  render();
+  const r = await api.call('media.ytdlpFind');
+  ytdlpView = el('div', 'body');
+  if (!r || !r.ok) {
+    ytdlpView.append(el('div', 'note', esc((r && r.error) || 'yt-dlp found nothing here')));
+  } else {
+    ytdlpView.append(el('div', 'note', `yt-dlp: <b>${esc(r.title)}</b>${r.duration ? ' · ' + fmtDur(r.duration) : ''}`));
+    r.choices.forEach((label, index) => {
+      const row = el('div', 'row');
+      row.append(el('div', 'meta', `<div class="nm">${esc(label)}</div>`));
+      const dl = el('div', 'iconbtn'); dl.title = 'Download'; dl.innerHTML = dlSvg();
+      dl.onclick = () => { api.call('media.ytdlpDownload', { index }); flash(dl); };
+      row.append(dl);
+      ytdlpView.append(row);
+    });
+    if (!r.choices.length) ytdlpView.append(el('div', 'empty', 'Nothing NovaDM can download was found.'));
+  }
+  if (current === 'media') render();
 }
 
 function mediaRow(it) {

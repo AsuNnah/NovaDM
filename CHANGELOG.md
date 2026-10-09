@@ -8,6 +8,55 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [0.7.0] — 2026-10-09
+
+Other browsers and apps (roadmap phase 6).
+
+### Added
+- **Browser extension for Chrome, Edge and Brave** (folder `browser-extension`; Settings → Other
+  browsers and apps → "Show the extension folder", then "Load unpacked" in the browser):
+  - right-click "Download link with NovaDM" / "Download with NovaDM" on videos, sounds and images
+  - optionally sends the browser's own downloads to NovaDM (file types, minimum size, sites to
+    leave alone); the browser's cookies and the page go along, so sign-in downloads work. If
+    NovaDM isn't running, the browser downloads the file itself as usual.
+  - the toolbar button lists videos and streams (HLS, DASH, MP4…) seen on the page, with a count
+- **Local connection for other apps** (off by default): a small API on 127.0.0.1 with a key
+  (copy / renew in Settings). Requests from web pages and other host names are refused. Adds,
+  lists, pauses, resumes and removes downloads; added links show the New download dialog unless
+  the caller asks to start.
+- **Command line and links**: `NovaDM.exe --add <link> [--name <file>] [--start]`, `novadm://add?url=…`
+  links (always with the dialog), magnet links and `.torrent` files passed to NovaDM; a second start
+  hands them to the running NovaDM. The installer registers `novadm://` and `.torrent`; Settings can
+  make NovaDM the program for magnet links.
+- **Site extensions**: small scripts that find a site's downloads (results in the media panel).
+  Installed from a folder or a GitHub repository after showing which sites they can read; each run
+  happens in a fresh sandbox without Node, cookies or network, and can only fetch from its own
+  sites through NovaDM. Guide: `docs/site-extensions.md`, example in `site-extensions/example`.
+- **yt-dlp add-on** (optional, Settings → Video tools): "Find with yt-dlp" in the media panel asks
+  yt-dlp what a page offers and shows a short list (complete files, streams, best picture + sound,
+  sound only); NovaDM's engines do the downloading, separate picture and sound are merged (without
+  FFmpeg for MP4 + M4A). Installed from the official release and checked against its published
+  SHA-256 list. The page's cookies go to yt-dlp in a temporary file that is deleted right after.
+  Each site's own terms apply.
+
+### Fixed
+- A DASH stream given as one big file per track was read into memory in one piece. Such files are
+  now split by their own index (no FFmpeg needed), or into 4 MB parts that FFmpeg joins; a server
+  that ignores part requests is refused instead of being read whole.
+
+### Tests
+- 108 unit tests (new: local API incl. web-page and DNS-rebinding refusal, command line and
+  novadm:// links, cookies limited to their site, the browser extension's code against the real
+  API with a stand-in browser, yt-dlp choices / checksums / cookie file, site extension patterns,
+  manifests, sandbox fetch rules, direct separate tracks).
+- In-app self-test `tools/selftest-phase6.js`: API, links and command line, a site extension in the
+  real sandbox (its own fetch() blocked, other sites refused), yt-dlp choices with the merged file
+  played in Chromium with picture and sound. All earlier self-tests pass unchanged.
+
+### Not verified here
+- The extension was not loaded into a real Chrome/Edge/Brave (its code was run against the real
+  API with a stand-in for the browser's extension API). yt-dlp itself was not run (stand-in).
+
 ## [0.6.0] — 2026-10-09
 
 Torrents and magnet links (roadmap phase 5).
@@ -260,7 +309,8 @@ First packaged version: `Swoop-Setup-0.1.0.exe` and `Swoop-Portable-0.1.0.exe`.
 - Speed limit, maximum active downloads, category folders, names from page titles
 - Windows installer (NSIS) and portable build
 
-[Unreleased]: ../../compare/v0.6.0...HEAD
+[Unreleased]: ../../compare/v0.7.0...HEAD
+[0.7.0]: ../../compare/v0.6.0...v0.7.0
 [0.6.0]: ../../compare/v0.5.0...v0.6.0
 [0.5.0]: ../../compare/v0.4.0...v0.5.0
 [0.4.0]: ../../compare/v0.3.0...v0.4.0

@@ -86,6 +86,18 @@ AB Download Manager, XDM). No code from any of them is included.
   script, with sign-in (the password is encrypted by Windows)
 - Downloads from private tabs use the private session and are not kept in the list
 
+### Other browsers and apps
+- **Browser extension for Chrome, Edge and Brave** (`browser-extension/`, load it unpacked):
+  right-click "Download with NovaDM", send the browser's downloads to NovaDM (with its cookies),
+  and see the videos found on a page
+- **Local connection for other apps** (off by default; 127.0.0.1 only, with a key)
+- **Command line and links**: `NovaDM.exe --add <link> [--name <file>] [--start]`,
+  `novadm://add?url=…`, magnet links and `.torrent` files
+- **Site extensions**: small sandboxed scripts that find a site's downloads
+  ([guide](docs/site-extensions.md))
+- **yt-dlp add-on** (optional): "Find with yt-dlp" for over a thousand sites; NovaDM does the
+  downloading and joins separate picture and sound
+
 ### Torrents
 - **BitTorrent and magnet links** (through aria2, installed on demand or your own aria2c.exe):
   magnet links from pages, the clipboard or the Downloads box, `.torrent` links and files
@@ -177,6 +189,11 @@ src/main/                 Electron main process
   background.js           tray, start with Windows, keep awake, "when all downloads finish"
   ffmpeg.js               FFmpeg on demand (verified install, joining, sound, repair)
   torrent/                aria2 helper (install, start, JSON-RPC, trackers), .torrent reader
+  api.js                  local API for other apps; command line and novadm:// links
+  site-ext.js             site extensions (install, sandboxed runs, site-limited fetching)
+  ytdlp.js                yt-dlp add-on (verified install, choices from yt-dlp -J)
+browser-extension/        the Chrome / Edge / Brave extension
+site-extensions/example/  an example site extension
 src/ui/                   toolbar, panels, downloads, settings, new tab pages
 test/                     unit tests (node --test)
 tools/                    self-tests, diagnostics, icon generator

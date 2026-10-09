@@ -48,6 +48,7 @@ function defaults() {
     scanDownloads: 'programs', // programs (programs + archives) | all | off
     markOfTheWeb: true,
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
+    ytdlpPath: '', // the user's own yt-dlp.exe
 
     // Torrents (aria2)
     aria2Path: '', // the user's own aria2c.exe
@@ -58,6 +59,13 @@ function defaults() {
     torrentPort: 0, // listening port (0 = aria2's default range)
     torrentTrackerList: true, // add an up-to-date list of public trackers
     openTorrentFiles: true, // .torrent links open in NovaDM
+
+    // Integration
+    apiEnabled: false, // local API for the browser extension and scripts (127.0.0.1 only, with a key)
+    apiPort: 9614,
+    apiKey: '',
+    magnetHandler: false, // open magnet: links from other apps in NovaDM
+    siteExtensionsOff: [], // installed site extensions that are switched off
 
     // Proxy (browsing and downloads): system | none | manual | pac
     proxyMode: 'system',

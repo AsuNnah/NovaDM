@@ -138,6 +138,7 @@ class Browser extends EventEmitter {
     wc.on('page-title-updated', (_e, title) => { tab.title = title; update(); });
     wc.on('did-start-loading', () => { tab.loading = true; update(); });
     wc.on('did-stop-loading', () => { tab.loading = false; update(); });
+    wc.on('did-finish-load', () => this.emit('page-loaded', tab));
     wc.on('will-navigate', (e) => {
       if (/^magnet:\?/i.test(e.url || '')) { e.preventDefault(); this.emit('magnet', tab, e.url); }
     });

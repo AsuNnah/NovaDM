@@ -140,6 +140,9 @@ class Transport {
     const { request } = getUndici();
     const dispatcher = await this.dispatcherFor(url, ses);
     let current = url;
+    // Cookies handed over with the download go only to the host they came for (see net.open).
+    const explicitCookie = headers.cookie || headers.Cookie || '';
+    const host = (u) => { try { return new URL(u).host.toLowerCase(); } catch { return ''; } };
     for (let hop = 0; hop < 15; hop++) {
       const h = {};
       for (const [k, v] of Object.entries(headers)) {
@@ -150,7 +153,8 @@ class Transport {
       h['user-agent'] = ses.getUserAgent();
       if (range) h.range = range;
       if (!h['accept-encoding']) h['accept-encoding'] = 'identity'; // ranges must be byte-exact
-      const cookie = await this.cookieHeader(current, ses);
+      delete h.cookie;
+      const cookie = explicitCookie && host(current) === host(url) ? explicitCookie : await this.cookieHeader(current, ses);
       if (cookie) h.cookie = cookie;
       // Our own deadline as well as undici's: a proxy that drops a CONNECT tunnel can leave undici's
       // request pending even after its signal is aborted.

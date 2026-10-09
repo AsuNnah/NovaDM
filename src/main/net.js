@@ -49,6 +49,8 @@ class HttpError extends Error {
   }
 }
 
+function hostOfUrl(u) { try { return new URL(u).host.toLowerCase(); } catch { return ''; } }
+
 function normHeaders(raw) {
   const out = {};
   for (const [k, v] of Object.entries(raw || {})) out[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
@@ -65,7 +67,10 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
     let finalUrl = url;
     let redirects = 0;
     let settled = false;
-    const req = net.request({ url, method, session, useSessionCookies: true, redirect: 'manual', cache: 'no-store' });
+    // Cookies handed over with the download (browser extension, API) replace the session's, and only
+    // go to the site they belong to: a redirect to another host continues without them.
+    const explicitCookie = headers.cookie || headers.Cookie || '';
+    const req = net.request({ url, method, session, useSessionCookies: !explicitCookie, redirect: 'manual', cache: 'no-store' });
     const ua = session ? session.getUserAgent() : null;
     const all = { ...headers };
     if (ua) all['user-agent'] = ua;
@@ -87,6 +92,15 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
     }
     req.on('redirect', (status, m, redirectUrl) => {
       if (++redirects > 15) return fail(new Error('Too many redirects'));
+      if (explicitCookie && hostOfUrl(redirectUrl) !== hostOfUrl(url)) {
+        settled = true;
+        clearTimeout(timer);
+        try { req.abort(); } catch {}
+        const rest = { ...headers };
+        delete rest.cookie; delete rest.Cookie;
+        open(redirectUrl, { session, headers: rest, range, timeoutMs, method }).then(resolve, reject);
+        return;
+      }
       finalUrl = redirectUrl;
       req.followRedirect();
     });

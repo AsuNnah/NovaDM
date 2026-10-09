@@ -9,7 +9,7 @@ const { sanitizeFilename, siteOf, hostOf, uid } = require('../util');
 
 const MAX_ITEMS = 200;
 const PLAYING_WINDOW_MS = 20000;
-const KIND_ORDER = { hls: 0, video: 0, audio: 1, dash: 2, subtitle: 3 };
+const KIND_ORDER = { hls: 0, video: 0, audio: 1, dash: 2, file: 3, subtitle: 4 };
 
 function dirPrefix(u) {
   try {
@@ -287,6 +287,25 @@ class MediaRegistry extends EventEmitter {
     if (variant === item.variants[0] && variant.sizeEstimate > 0) item.sizeEstimate = variant.sizeEstimate;
   }
 
+  // ---- items from site extensions -----------------------------------------------------------
+
+  /** item: { url, kind: hls|dash|video|audio|file, name, label, size, duration, headers }; source: extension name */
+  addExternal(tabId, it, source) {
+    const t = this.tab(tabId);
+    const dk = dedupeKey(it.url);
+    if (t.byKey.has(dk)) return null;
+    const kind = it.kind === 'file' ? 'file' : it.kind;
+    const item = this.newItem(t, { kind, url: it.url, headers: it.headers || {}, size: it.size, urlName: it.name || '' }, Date.now());
+    item.fixedName = it.name || '';
+    item.source = source;
+    item.duration = it.duration || 0;
+    if (kind === 'hls') item.variants = [{ label: it.label || 'Default', url: it.url, bandwidth: 0, resolution: null, codecs: '', audioSeparate: false }];
+    if (kind === 'dash') item.variants = [{ label: it.label || 'Best', url: it.url + '#rep=', repId: '', resolution: null, audioSeparate: true }];
+    t.byKey.set(dk, item.id);
+    this.notify(tabId);
+    return item;
+  }
+
   // ---- DASH analysis -------------------------------------------------------------------------
 
   async analyzeDash(tabId, url, headers, now) {
@@ -332,6 +351,7 @@ class MediaRegistry extends EventEmitter {
   // ---- output --------------------------------------------------------------------------------
 
   displayName(t, item, variant) {
+    if (item.fixedName) return sanitizeFilename(item.fixedName, 'download');
     const usePage = this.getSetting('pageTitleNames') !== false && t.pageTitle;
     let ext = item.kind === 'hls' || item.kind === 'dash' ? 'mp4' : (item.ext || (item.kind === 'audio' ? 'mp3' : item.kind === 'subtitle' ? 'vtt' : 'mp4'));
     if (item.kind === 'hls' && item.container !== 'fmp4' && this.getSetting('convertTsToMp4') === false) ext = 'ts';

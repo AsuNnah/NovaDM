@@ -145,3 +145,67 @@ test('a DASH manifest with DRM is refused', async () => {
   const err = await new Promise((r) => { dl.on('error', r); dl.on('done', () => r(null)); dl.start(); });
   assert.equal(err && err.code, 'DRM');
 });
+
+// A whole fragmented MP4 file with an index (sidx), like YouTube-style DASH formats.
+function indexedFile(type, n) {
+  let init = null; const frags = [];
+  for (let k = 0; k < n; k++) {
+    const tx = new muxjs.mp4.Transmuxer({ remux: false, baseMediaDecodeTime: k * 900000 });
+    tx.on('data', (s) => { if (s.type !== type) return; if (!init) init = Buffer.from(s.initSegment); frags.push(Buffer.from(s.data)); });
+    tx.push(new Uint8Array(TS)); tx.flush();
+  }
+  const { makeBox } = require('../src/main/media/mp4');
+  // sidx v0: version/flags, reference_ID, timescale, earliest time, first_offset, reserved, count, refs
+  const body = Buffer.alloc(24 + frags.length * 12);
+  body.writeUInt32BE(1, 4); body.writeUInt32BE(90000, 8); body.writeUInt16BE(frags.length, 22);
+  frags.forEach((f, i) => { body.writeUInt32BE(f.length, 24 + i * 12); body.writeUInt32BE(900000, 28 + i * 12); body.writeUInt32BE(0x90000000, 32 + i * 12); });
+  return Buffer.concat([init, makeBox('sidx', body), ...frags]);
+}
+
+function rangeServer(t, files, { ranges = true } = {}) {
+  const server = http.createServer((req, res) => {
+    const body = files[req.url];
+    if (!body) { res.writeHead(404); return res.end(); }
+    const m = ranges && /bytes=(\d+)-(\d+)/.exec(req.headers.range || '');
+    if (!m) { res.writeHead(200, { 'Content-Length': body.length }); return res.end(body); }
+    const s = Number(m[1]); const e = Math.min(Number(m[2]), body.length - 1);
+    res.writeHead(206, { 'Content-Range': `bytes ${s}-${e}/${body.length}`, 'Content-Length': e - s + 1 });
+    res.end(body.subarray(s, e + 1));
+  });
+  t.after(() => server.close());
+  return server;
+}
+
+test('separate video and audio files with an index are merged without FFmpeg', async (t) => {
+  const files = { '/v.mp4': indexedFile('video', 3), '/a.m4a': indexedFile('audio', 3) };
+  const server = rangeServer(t, files);
+  const base = await listen(server);
+  const save = tmp();
+  const dl = new MergeDownload({ id: 'y', savePath: save, openConn: nodeOpen, source: { type: 'direct', tracks: [{ kind: 'video', url: base + '/v.mp4' }, { kind: 'audio', url: base + '/a.m4a' }] } });
+  await run(dl);
+  const r = check(save);
+  assert.deepEqual(r.tracks.sort(), ['soun', 'vide']);
+  assert.equal(r.top.filter((x) => x === 'moof').length, 6);
+  assert.ok(!r.top.includes('sidx'), 'the old index is not copied');
+});
+
+test('plain files are fetched in ranges and joined by FFmpeg; servers without ranges are refused', async (t) => {
+  const files = { '/v.webm': Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(9000, 1)]), '/a.webm': Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(5000, 2)]) };
+  const server = rangeServer(t, files);
+  const base = await listen(server);
+  const save = tmp();
+  const joined = [];
+  const ffmpeg = { available: () => true, merge: async (v, a, out) => { joined.push(out); fs.writeFileSync(out, Buffer.concat([fs.readFileSync(v), fs.readFileSync(a)])); } };
+  const dl = new MergeDownload({ id: 'p', savePath: save, openConn: nodeOpen, ffmpeg, source: { type: 'direct', tracks: [{ kind: 'video', url: base + '/v.webm' }, { kind: 'audio', url: base + '/a.webm' }] } });
+  let renamed = '';
+  dl.on('renamed', (p) => { renamed = p; });
+  await run(dl);
+  assert.match(renamed, /\.mkv$/);
+  assert.equal(fs.readFileSync(renamed).length, 9004 + 5004);
+
+  const noRanges = rangeServer(t, { '/big.bin': Buffer.alloc(3 * 1024 * 1024, 7) }, { ranges: false });
+  const base2 = await listen(noRanges);
+  const dl2 = new MergeDownload({ id: 'n', savePath: tmp(), openConn: nodeOpen, ffmpeg, source: { type: 'direct', tracks: [{ kind: 'video', url: base2 + '/big.bin' }] } });
+  const err = await new Promise((r) => { dl2.on('error', r); dl2.on('done', () => r(null)); dl2.start(); });
+  assert.match(String(err && err.message), /parts of files/);
+});

@@ -15,6 +15,9 @@ const { Scheduler } = require('./scheduler');
 const { Background } = require('./background');
 const { FFmpeg } = require('./ffmpeg');
 const { Aria2 } = require('./torrent/aria2');
+const { LocalApi, parseLaunchArgs } = require('./api');
+const { YtDlp } = require('./ytdlp');
+const { SiteExtensions } = require('./site-ext');
 const { HttpDownload } = require('./download/http');
 const util = require('./util');
 const { Browser } = require('./browser');
@@ -34,7 +37,8 @@ else migrateOldProfile();
 // One NovaDM at a time (per profile): starting it again brings the running one forward.
 const isFirstInstance = app.requestSingleInstanceLock();
 if (!isFirstInstance) app.quit();
-app.on('second-instance', () => showWindow());
+// A second start (command line, novadm:// link, magnet link, .torrent file) hands its arguments over.
+app.on('second-instance', (_e, argv) => { showWindow(); if (addFlow) handleLaunch(argv); });
 // Started by Windows at sign-in: stay in the tray.
 const startHidden = process.argv.includes('--hidden');
 
@@ -57,7 +61,7 @@ const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
 
 let win, chromeView, overlayView;
-let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg, aria2;
+let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt;
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
@@ -165,6 +169,7 @@ function wireEvents() {
   browser.on('page-changed', (tabId) => { blockedPopups.delete(tabId); sendPopupState(); });
   browser.on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win, addDownload: (spec, o) => addFlow.request(spec, o) }));
   browser.on('download', onPageDownload);
+  browser.on('page-loaded', (tab) => runSiteExtensions(tab));
   browser.on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
@@ -248,6 +253,76 @@ function onPageDownload(event, item, info) {
   downloads.addNative(item, info);
 }
 
+// Site extensions made for this page: their findings go to the media panel.
+function runSiteExtensions(tab) {
+  if (!siteExt || !/^https?:/i.test(tab.url || '')) return;
+  const url = tab.url;
+  const session = tab.incognito ? browser.incognitoSession : browser.normalSession;
+  siteExt.resolvePage({ url, title: tab.title, session }).then((results) => {
+    if (!browser.tabs.has(tab.id) || tab.url !== url) return;
+    for (const r of results) {
+      if (r.error) console.error(`site extension ${r.ext}: ${r.error}`);
+      for (const it of r.items) media.addExternal(tab.id, it, r.ext);
+    }
+  }).catch(() => {});
+}
+
+// One sandboxed page per run: no Node, an empty in-memory cookie jar, no network (CSP), no
+// navigation or pop-ups; it can only talk to the site-extension bridge.
+const siteExtSandboxes = new Map();
+function createSiteExtSandbox() {
+  const view = new WebContentsView({
+    webPreferences: {
+      sandbox: true, contextIsolation: true, nodeIntegration: false, partition: 'novadm-siteext',
+      preload: path.join(__dirname, 'siteext-preload.js'), images: false, webgl: false, spellcheck: false, backgroundThrottling: false,
+    },
+  });
+  const wc = view.webContents;
+  wc.on('will-navigate', (e) => e.preventDefault());
+  wc.on('will-redirect', (e) => e.preventDefault());
+  wc.setWindowOpenHandler(() => ({ action: 'deny' }));
+  wc.session.setPermissionRequestHandler((_w, _p, cb) => cb(false));
+  const box = {
+    webContents: wc, onResult: null,
+    run(job) { wc.loadFile(path.join(UI_DIR, 'siteext-host.html')).then(() => wc.send('siteext:run', job)).catch((e) => box.onResult && box.onResult({ error: e.message })); },
+    destroy() { siteExtSandboxes.delete(wc.id); try { wc.close(); } catch {} },
+  };
+  siteExtSandboxes.set(wc.id, box);
+  return box;
+}
+ipcMain.on('siteext:done', (e, r) => { const box = siteExtSandboxes.get(e.sender.id); if (box && box.onResult) box.onResult(r); });
+ipcMain.handle('siteext:fetch', (e, url, opts) => siteExt.fetchFor(e.sender.id, url, opts));
+
+// Links and files NovaDM was started with. novadm:// links always show the New download dialog.
+function handleLaunch(argv) {
+  for (const item of parseLaunchArgs(argv.slice(1))) {
+    if (item.torrentFile) {
+      try { addFlow.requestTorrentFile(require('fs').readFileSync(item.torrentFile), { origin: 'link' }); } catch (e) { notify({ title: 'Could not open the torrent', body: e.message }); }
+      continue;
+    }
+    const spec = require('./add-flow').specFromUrl(item.url, { pageUrl: item.referer || '' });
+    if (item.name) spec.name = item.name;
+    if (item.start) downloads.add(spec);
+    else addFlow.request(spec, { origin: 'link' });
+  }
+}
+
+let apiStatus = { running: false };
+let toolDownloadRef = null;
+
+// novadm:// links (and, if the user wants, magnet: links) from other apps open NovaDM. Never from
+// test runs; in development the app folder is passed along.
+function registerLinkHandlers() {
+  if (process.env.NOVADM_USERDATA || process.platform !== 'win32') return;
+  const args = app.isPackaged ? [] : [app.getAppPath()];
+  const exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+  try {
+    app.setAsDefaultProtocolClient('novadm', exe, args);
+    if (settings.get('magnetHandler')) app.setAsDefaultProtocolClient('magnet', exe, args);
+    else if (app.isDefaultProtocolClient('magnet', exe, args)) app.removeAsDefaultProtocolClient('magnet', exe, args);
+  } catch (e) { console.error('link handlers', e.message); }
+}
+
 // Refresh link for a stream: when the page opened for it plays the video again, take the new playlist.
 function refreshFromMedia(tabId) {
   const id = addFlow.armedFor(tabId);
@@ -290,7 +365,7 @@ function sendMediaState() {
   const tabId = browser.activeId;
   if (tabId == null) return;
   const data = media.list(tabId);
-  sendUI('media', { count: media.count(tabId), ...data });
+  sendUI('media', { count: media.count(tabId), ...data, ytdlp: !!(ytdlp && ytdlp.available()) });
 }
 
 // Turn a detected media item into a download.
@@ -331,7 +406,7 @@ function downloadItem(tabId, itemId, variantUrl) {
     add({
       kind: 'http', name, url: item.url, sources: [item.url], mirrors: item.mirrors,
       headers: item.headers, pageUrl: item.pageUrl, size: item.size,
-      mime: item.mime, category: item.kind === 'audio' ? 'music' : item.kind === 'subtitle' ? 'documents' : 'video',
+      mime: item.mime, category: item.kind === 'audio' ? 'music' : item.kind === 'subtitle' ? 'documents' : item.kind === 'file' ? undefined : 'video',
     });
   }
   return { ok: true };
@@ -369,19 +444,46 @@ app.whenReady().then(async () => {
   // Helper tools on demand (FFmpeg, aria2): downloaded with NovaDM's own engine (speed limit and
   // proxy apply) and checked before use.
   const toolText = async (url) => (await net.fetchText(url, { session: browser.normalSession, timeoutMs: 20000 })).text;
-  const toolDownload = (url, savePath, onProgress) => new Promise((resolve, reject) => {
+  const toolDownload = (url, savePath, onProgress = () => {}) => new Promise((resolve, reject) => {
     const dl = new HttpDownload({ id: 'tool', savePath, sources: [url], session: browser.normalSession, transport, limiter: downloads.limiter, connections: 8, retries: 5 });
     dl.on('progress', (p) => onProgress({ received: p.received, size: p.size }));
     dl.on('done', resolve);
     dl.on('error', reject);
     dl.start();
   });
+  toolDownloadRef = toolDownload;
   ffmpeg = new FFmpeg({ settings, userDataDir: app.getPath('userData'), fetchText: toolText, download: toolDownload });
   downloads.ffmpeg = ffmpeg;
   aria2 = new Aria2({ settings, userDataDir: app.getPath('userData'), fetchText: toolText, download: toolDownload });
   downloads.aria2 = aria2;
   downloads.askTorrentFiles = (rec, files) => addFlow.askTorrentFiles(rec, files);
+  ytdlp = new YtDlp({ settings, userDataDir: app.getPath('userData'), fetchText: toolText, download: toolDownload });
+  siteExt = new SiteExtensions({
+    settings, userDataDir: app.getPath('userData'), createSandbox: createSiteExtSandbox,
+    fetchText: async (url, { headers, session }) => {
+      const r = await net.fetchText(url, { session: session || browser.normalSession, headers, timeoutMs: 20000, maxBytes: 8 * 1024 * 1024 });
+      return { status: r.status, url: r.finalUrl, text: r.text };
+    },
+    confirm: async (man) => {
+      const { dialog } = require('electron');
+      const r = await dialog.showMessageBox(win, {
+        type: 'question', buttons: ['Install', 'Cancel'], defaultId: 1, cancelId: 1, title: 'Install site extension',
+        message: `Install "${man.name}" ${man.version}?`,
+        detail: `${man.description ? man.description + '\n\n' : ''}It can read pages on:\n${man.matches.join('\n')}\n\nOnly install extensions from people you trust.`,
+      });
+      return r.response === 0;
+    },
+  });
   settings.on('change', (c) => { if (Object.keys(c).some((k) => k.startsWith('torrent'))) aria2.applySettings(); });
+
+  // Local API (browser extension, scripts) and links from other apps.
+  api = new LocalApi({ settings, downloads, addFlow, version: app.getVersion(), onAdd: () => showWindow() });
+  api.update().then((st) => { apiStatus = st; });
+  settings.on('change', (c) => {
+    if ('apiEnabled' in c || 'apiPort' in c) api.update().then((st) => { apiStatus = st; });
+    if ('magnetHandler' in c) registerLinkHandlers();
+  });
+  registerLinkHandlers();
 
   // Proxy for pages and downloads (system settings unless the user chose otherwise).
   const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession];
@@ -437,6 +539,8 @@ app.whenReady().then(async () => {
 
   createWindow();
   wireEvents();
+  // Started with a link or file (command line, novadm://, magnet:, .torrent).
+  setTimeout(() => handleLaunch(process.argv), 800);
   // "Resume unfinished downloads when NovaDM starts".
   if (settings.get('autoResume')) setTimeout(() => downloads.resumeInterrupted(), 1500);
   // Queues with schedules, tray / background, keep-awake and "when all downloads finish".
@@ -458,7 +562,7 @@ app.whenReady().then(async () => {
     .catch((e) => console.error('extensions init failed', e));
 
   const ipcHandlers = registerIpc({
-    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2 }),
+    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, toolDownloadFn: () => toolDownloadRef, getApiStatus: () => apiStatus }),
     setPanel, sendUI, sendMediaState,
     downloadItem,
     reviewBlockedPopup,
@@ -502,7 +606,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions|ffmpeg|torrents)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return ipcHandlers[method](args || {});
   });
   // Live updates for open Downloads pages.
@@ -536,7 +640,7 @@ app.whenReady().then(async () => {
   if (process.env.NOVADM_SELFTEST) {
     const t = require(path.resolve(process.env.NOVADM_SELFTEST));
     setTimeout(() => {
-      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, getWindow: () => win }))
+      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, api, ytdlp, siteExt, handleLaunch, getWindow: () => win }))
         .catch((e) => console.error('selftest failed', e));
     }, Number(process.env.NOVADM_SELFTEST_DELAY) || 3000);
   }
@@ -551,7 +655,7 @@ app.on('before-quit', (e) => {
   if (quitReady || !downloads) { downloads && downloads.persist(); return; }
   e.preventDefault();
   quitReady = true;
-  downloads.shutdown(4000).finally(() => { if (aria2) aria2.stop(); app.quit(); });
+  downloads.shutdown(4000).finally(() => { if (aria2) aria2.stop(); if (api) api.stop(); app.quit(); });
 });
 
 module.exports = { get win() { return win; } };

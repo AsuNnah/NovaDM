@@ -7,6 +7,8 @@ const { encryptPassword } = require('./proxy');
 
 const GRAB_CATEGORY = { image: 'images', video: 'video', audio: 'music', document: 'documents', archive: 'archives', program: 'programs' };
 
+let ytdlpChoices = null;
+
 function registerIpc(ctx) {
   const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission } = ctx;
 
@@ -49,6 +51,40 @@ function registerIpc(ctx) {
       for (const it of m.list(b.activeId).items) if (it.kind !== 'subtitle' && it.encryption !== 'drm') out.push(downloadItem(b.activeId, it.id));
       return { ok: true, count: out.filter((o) => o.ok).length };
     },
+    // yt-dlp add-on: what it finds on the page in the active tab; the choices stay here, the panel
+    // only gets their labels and answers with a number.
+    'media.ytdlpFind': async () => {
+      const { browser, ytdlp } = getManagers();
+      const tab = browser.activeTab();
+      if (!tab || !/^https?:/i.test(tab.url || '')) return { ok: false, error: 'Open a web page first' };
+      try {
+        const ses = tab.incognito ? browser.incognitoSession : browser.normalSession;
+        const cookies = await ses.cookies.get({ url: tab.url });
+        const r = await ytdlp.find(tab.url, { cookies, referer: tab.url });
+        ytdlpChoices = { tabId: tab.id, incognito: tab.incognito, list: r.choices };
+        return { ok: true, title: r.title, duration: r.duration, choices: r.choices.map((c) => c.label) };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    },
+    'media.ytdlpDownload': (a) => {
+      const c = ytdlpChoices && ytdlpChoices.list[a.index];
+      if (!c) return { ok: false };
+      return getManagers().addFlow.request({ ...c.spec, tabId: ytdlpChoices.tabId, incognito: ytdlpChoices.incognito }, { origin: 'media' });
+    },
+    'ytdlp.status': () => getManagers().ytdlp.status(),
+    'ytdlp.install': async () => {
+      const { ytdlp, browser } = getManagers();
+      const push = (p) => { for (const t of browser.internalTabs('settings')) t.wc.send('novadm:internal-event', 'ytdlp', p); };
+      try { const st = await ytdlp.install(push); return { ok: true, status: st }; } catch (e) { push({ phase: 'error', error: e.message }); return { ok: false, error: e.message }; }
+    },
+    'ytdlp.uninstall': () => { getManagers().ytdlp.uninstall(); getManagers().settings.set({ ytdlpPath: '' }); return getManagers().ytdlp.status(); },
+    'ytdlp.choose': async () => {
+      const { win, settings, ytdlp } = getManagers();
+      const r = await dialog.showOpenDialog(win, { title: 'Choose yt-dlp.exe', properties: ['openFile'], filters: [{ name: 'yt-dlp', extensions: ['exe'] }] });
+      if (!r.canceled && r.filePaths[0]) settings.set({ ytdlpPath: r.filePaths[0] });
+      return ytdlp.status();
+    },
     'media.clear': () => { const b = getManagers().browser; getManagers().media.clear(b.activeId); sendMediaState(); },
     'media.remove': (a) => { const b = getManagers().browser; getManagers().media.remove(b.activeId, a.id); sendMediaState(); },
 
@@ -59,6 +95,38 @@ function registerIpc(ctx) {
     'downloads.stopRecording': (a) => getManagers().downloads.stopRecording(a.id),
     'downloads.convert': (a) => {
       try { const r = getManagers().downloads.convert(a.id, a.action); return { ok: true, id: r.id }; } catch (e) { return { ok: false, error: e.message, code: e.code }; }
+    },
+
+    // ---- site extensions ----
+    'siteext.list': () => getManagers().siteExt.list(),
+    'siteext.setEnabled': (a) => { getManagers().siteExt.setEnabled(a.id, !!a.enabled); return getManagers().siteExt.list(); },
+    'siteext.remove': (a) => { getManagers().siteExt.remove(a.id); return getManagers().siteExt.list(); },
+    'siteext.installFolder': async () => {
+      const { win, siteExt } = getManagers();
+      const r = await dialog.showOpenDialog(win, { title: 'Choose the extension folder', properties: ['openDirectory'] });
+      if (r.canceled || !r.filePaths[0]) return { ok: false };
+      try { return await siteExt.installFromFolder(r.filePaths[0]); } catch (e) { return { ok: false, error: e.message }; }
+    },
+    'siteext.installGitHub': async (a) => {
+      const { siteExt, toolDownloadFn } = getManagers();
+      try { return await siteExt.installFromGitHub(a.url, toolDownloadFn()); } catch (e) { return { ok: false, error: e.message }; }
+    },
+
+    // ---- integration (local API, browser extension) ----
+    'integration.status': () => {
+      const { settings, getApiStatus } = getManagers();
+      const st = getApiStatus();
+      const path = require('path');
+      const { app } = require('electron');
+      const extDir = app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension');
+      return { enabled: !!settings.get('apiEnabled'), running: !!st.running, port: st.port || settings.get('apiPort'), error: st.error || '', key: settings.get('apiEnabled') ? settings.get('apiKey') : '', extensionFolder: extDir };
+    },
+    'integration.newKey': () => { getManagers().api.newKey(); return { ok: true }; },
+    'integration.copyKey': () => { copyText(getManagers().settings.get('apiKey') || ''); return { ok: true }; },
+    'integration.openExtensionFolder': () => {
+      const path = require('path');
+      const { app } = require('electron');
+      shell.openPath(app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension'));
     },
 
     // ---- torrents ----

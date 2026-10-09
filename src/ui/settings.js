@@ -3,9 +3,9 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList'];
+const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler'];
 const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser'];
-const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7] };
+const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7], apiPort: [1024, 65535] };
 const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads'];
 
 function flashSaved() {
@@ -130,6 +130,9 @@ async function init() {
   $('chooseDir').addEventListener('click', async () => { current = await bridge.chooseDownloadDir(); render(); });
   initFfmpeg();
   initAria2();
+  initIntegration();
+  initYtdlp();
+  initSiteExtensions();
 }
 
 // ---- FFmpeg (Video tools) ----
@@ -170,6 +173,79 @@ async function initFfmpeg() {
   $('ffChoose').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.choose'));
   $('ffRemove').onclick = async () => renderFfmpeg(await bridge.call('ffmpeg.uninstall'));
   refresh();
+}
+
+// ---- site extensions ----
+function renderSiteExtensions(list) {
+  const host = $('seList');
+  host.innerHTML = '';
+  for (const e of list || []) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<div class="lbl"><b></b><span></span></div><label class="sw"><input type="checkbox"><i></i></label><button>Remove</button>`;
+    row.querySelector('b').textContent = `${e.name} ${e.version}`;
+    row.querySelector('span').textContent = (e.description ? e.description + ' · ' : '') + 'Reads: ' + e.matches.join(', ');
+    const cb = row.querySelector('input');
+    cb.checked = e.enabled;
+    cb.onchange = async () => renderSiteExtensions(await bridge.call('siteext.setEnabled', { id: e.id, enabled: cb.checked }));
+    row.querySelector('button').onclick = async () => renderSiteExtensions(await bridge.call('siteext.remove', { id: e.id }));
+    host.append(row);
+  }
+}
+function siteExtMessage(text) { $('seMsg').hidden = !text; $('seMsgText').textContent = text || ''; }
+async function initSiteExtensions() {
+  const refresh = async () => { try { renderSiteExtensions(await bridge.call('siteext.list')); } catch {} };
+  const after = (r) => { siteExtMessage(r && r.error ? r.error : r && r.ok ? `Installed ${r.name}.` : ''); refresh(); };
+  $('seFolder').onclick = async () => after(await bridge.call('siteext.installFolder'));
+  $('seGitHubAdd').onclick = async () => { siteExtMessage('Downloading…'); after(await bridge.call('siteext.installGitHub', { url: $('seGitHub').value.trim() })); };
+  refresh();
+}
+
+// ---- yt-dlp (Video tools) ----
+function initYtdlp() {
+  const render = (st) => {
+    const el = $('ytStatus');
+    el.className = 'status';
+    if (st.installing) el.textContent = 'Installing…';
+    else if (st.installed) { el.textContent = `yt-dlp ${st.version} is ready` + (st.custom ? ` (${st.path})` : ''); el.classList.add('ok'); }
+    else el.textContent = 'Not installed.';
+    $('ytInstall').hidden = !!st.installed && !st.custom;
+    $('ytInstall').textContent = st.installed ? 'Install NovaDM\'s copy' : 'Install';
+    $('ytRemove').hidden = !st.installed;
+  };
+  const refresh = async () => { try { render(await bridge.call('ytdlp.status')); } catch {} };
+  bridge.on('ytdlp', (p) => {
+    const el = $('ytStatus'); const bar = $('ytBar');
+    if (p.phase === 'error') { el.textContent = p.error; el.className = 'status warn'; bar.hidden = true; return; }
+    if (p.phase === 'done') { bar.hidden = true; refresh(); return; }
+    el.textContent = { checking: 'Reading the release…', downloading: 'Downloading…', verifying: 'Checking the download…' }[p.phase] || p.phase;
+    if (p.phase === 'downloading' && p.size > 0) { bar.hidden = false; bar.firstElementChild.style.width = Math.round((p.received / p.size) * 100) + '%'; }
+  });
+  $('ytInstall').onclick = async () => { $('ytInstall').disabled = true; const r = await bridge.call('ytdlp.install'); $('ytInstall').disabled = false; if (r && r.ok) render(r.status); };
+  $('ytChoose').onclick = async () => render(await bridge.call('ytdlp.choose'));
+  $('ytRemove').onclick = async () => render(await bridge.call('ytdlp.uninstall'));
+  refresh();
+}
+
+// ---- other browsers and apps (local API) ----
+async function renderIntegration() {
+  let st;
+  try { st = await bridge.call('integration.status'); } catch { return; }
+  const el = $('apiStatus');
+  el.className = 'status';
+  if (!st.enabled) el.textContent = 'Off.';
+  else if (st.running) { el.textContent = `On: http://127.0.0.1:${st.port}`; el.classList.add('ok'); }
+  else { el.textContent = st.error || 'Starting…'; el.classList.add('warn'); }
+  $('apiKeyRow').hidden = !st.enabled;
+  $('apiPortRow').hidden = !st.enabled;
+  $('apiKey').textContent = st.key || '';
+}
+function initIntegration() {
+  $('apiCopy').onclick = async () => { await bridge.call('integration.copyKey'); $('apiCopy').textContent = 'Copied'; setTimeout(() => { $('apiCopy').textContent = 'Copy'; }, 1000); };
+  $('apiNewKey').onclick = async () => { await bridge.call('integration.newKey'); renderIntegration(); };
+  $('openExtFolder').onclick = () => bridge.call('integration.openExtensionFolder');
+  for (const id of ['apiEnabled', 'apiPort']) $(id).addEventListener('change', () => setTimeout(renderIntegration, 400));
+  renderIntegration();
 }
 
 // ---- aria2 (Torrents) ----

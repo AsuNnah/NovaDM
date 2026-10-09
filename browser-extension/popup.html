@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>NovaDM</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#1c1e24;--fg2:#5a6271;--line:#dfe2e8;--accent:#3b6ef5;--ok:#1f9d6b;--bad:#d23b30;}
+@media (prefers-color-scheme: dark){:root{--bg:#22252c;--fg:#e6e8ec;--fg2:#a6adbb;--line:#3a3f4b;--accent:#5b7cfa;--ok:#35c28a;--bad:#e2574c;}}
+body{margin:0;width:340px;background:var(--bg);color:var(--fg);font:13px/1.4 'Segoe UI',system-ui,sans-serif;}
+header{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);}
+header b{font-size:14px;} header .sp{flex:1;} a{color:var(--accent);cursor:pointer;font-size:12px;}
+#state{padding:8px 12px;font-size:12px;color:var(--fg2);}
+#state.ok{color:var(--ok);} #state.bad{color:var(--bad);}
+.item{display:flex;gap:8px;align-items:center;padding:8px 12px;border-top:1px solid var(--line);}
+.item .u{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tag{font-size:10.5px;padding:1px 6px;border-radius:999px;border:1px solid var(--line);color:var(--fg2);}
+button{height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;cursor:pointer;}
+.empty{padding:16px 12px;color:var(--fg2);}
+label{display:flex;gap:6px;align-items:center;padding:8px 12px;border-top:1px solid var(--line);}
+</style>
+</head>
+<body>
+<header><b>NovaDM</b><span class="sp"></span><a id="opts">Options</a></header>
+<div id="state">Checking the connection…</div>
+<div id="list"></div>
+<label><input type="checkbox" id="intercept"> Send this browser's downloads to NovaDM</label>
+<script src="popup.js"></script>
+</body>
+</html>

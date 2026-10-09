@@ -1,0 +1,7 @@
+{
+  "name": "Example gallery",
+  "version": "1.0",
+  "description": "Shows how a site extension works: lists the files a page describes in its JSON feed.",
+  "matches": ["https://gallery.example.com/*"],
+  "script": "index.js"
+}

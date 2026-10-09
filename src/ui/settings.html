@@ -132,6 +132,45 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     </div>
   </div>
 
+  <h2>Other browsers and apps</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Let the NovaDM browser extension and other apps add downloads</b><span>Turns on NovaDM's local connection (only this PC can reach it, and it needs the key below). The extension for Chrome, Edge and Brave sends downloads and videos from those browsers to NovaDM.</span><div class="status" id="apiStatus"></div></div>
+      <label class="sw"><input type="checkbox" id="apiEnabled"><i></i></label>
+    </div>
+    <div class="row" id="apiKeyRow" hidden>
+      <div class="lbl"><b>Key for the extension</b><span>Paste it in the extension's options. A new key disconnects everything that used the old one.</span><div class="path" id="apiKey" style="font-family:Consolas,monospace"></div></div>
+      <div class="ffacts"><button id="apiCopy">Copy</button><button id="apiNewKey">New key</button></div>
+    </div>
+    <div class="row" id="apiPortRow" hidden>
+      <div class="lbl"><b>Port</b><span>Change it only if another program uses this one. The extension must use the same port.</span></div>
+      <input type="number" id="apiPort" min="1024" max="65535" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Browser extension</b><span>In Chrome, Edge or Brave: open the extensions page, turn on Developer mode, choose "Load unpacked" and pick this folder.</span></div>
+      <button id="openExtFolder">Show the extension folder</button>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Open magnet links from other apps in NovaDM</b><span>Makes NovaDM the program for magnet: links in Windows.</span></div>
+      <label class="sw"><input type="checkbox" id="magnetHandler"><i></i></label>
+    </div>
+  </div>
+
+  <h2>Site extensions</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Site extensions</b><span>Small scripts that find the downloads of a particular site; what they find shows in the media panel. Each one can only read the sites it names, and runs in a closed sandbox. Only install extensions from people you trust.</span></div>
+      <div class="ffacts"><button id="seFolder">Add from a folder…</button></div>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Add from GitHub</b><span>The address of the extension's repository.</span></div>
+      <input type="text" id="seGitHub" placeholder="https://github.com/owner/repository" style="width:260px" spellcheck="false" />
+      <button id="seGitHubAdd">Add</button>
+    </div>
+    <div id="seList"></div>
+    <div class="row" id="seMsg" hidden><div class="lbl"><span id="seMsgText"></span></div></div>
+  </div>
+
   <h2>Torrents</h2>
   <div class="card">
     <div class="row">
@@ -169,6 +208,10 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     <div class="row">
       <div class="lbl"><b>FFmpeg</b><span>Optional. Needed only to join picture and sound that come as WebM or plain MP4 files, to save a video's sound, and to repair videos. NovaDM downloads the official build (about 80 MB, from github.com/BtbN/FFmpeg-Builds) and checks it against its published checksum.</span><div class="status" id="ffStatus">Checking…</div><div class="ffbar" id="ffBar" hidden><i></i></div></div>
       <div class="ffacts"><button id="ffInstall">Install</button><button id="ffChoose">Use my own…</button><button id="ffRemove" hidden>Remove</button></div>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>yt-dlp</b><span>Optional. Finds the videos of over a thousand sites that NovaDM's own detection can't see ("Find with yt-dlp" in the media panel); NovaDM then downloads them. From github.com/yt-dlp/yt-dlp, checked against its published checksums. Each site's own terms apply.</span><div class="status" id="ytStatus">Checking…</div><div class="ffbar" id="ytBar" hidden><i></i></div></div>
+      <div class="ffacts"><button id="ytInstall">Install</button><button id="ytChoose">Use my own…</button><button id="ytRemove" hidden>Remove</button></div>
     </div>
   </div>
 

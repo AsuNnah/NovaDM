@@ -28,6 +28,7 @@ class MergeDownload extends EventEmitter {
    *   retries, retryDelayMs, timeoutMs, openConn/fetchText (tests)
    * source: { type: 'dash', url, height, videoId, audioId, lang }
    *       | { type: 'hls', url (master or video playlist), audioUrl, height, lang }
+   *       | { type: 'direct', tracks: [{ kind: 'video' | 'audio', url, headers }] }  (e.g. from yt-dlp)
    */
   constructor(opts) {
     super();
@@ -109,6 +110,7 @@ class MergeDownload extends EventEmitter {
     const src = this.source;
     let defs;
     if (src.type === 'dash') defs = await this.resolveDash(src);
+    else if (src.type === 'direct') defs = await this.resolveDirect(src);
     else defs = await this.resolveHls(src);
     defs = defs.filter((d) => d.segments.length);
     if (!defs.length) throw new Error('Nothing to download in this stream');
@@ -147,14 +149,54 @@ class MergeDownload extends EventEmitter {
           const idx = await this.getBytes(s.index.url, s.index.range);
           segments = dash.segmentsFromSidx(idx, s.index.url, s.index.range.offset);
         }
-        if (s.whole) segments = [{ url: s.segments[0].url, range: null, time: 0, duration: rep._periodDuration }];
+        let initSpec = s.init;
+        let raw = false;
+        if (s.whole) {
+          // One file for the whole representation: split it by its own index, or into byte ranges.
+          const w = await this.splitWholeFile(s.segments[0].url, rep._periodDuration);
+          segments = w.segments; initSpec = w.initSpec; raw = w.raw;
+        }
         const shifted = segments.map((x) => ({ url: x.url, range: x.range, time: (x.time || 0) + period.start, duration: x.duration || 0 }));
-        if (!def) def = { kind, container: 'fmp4', initSpec: s.init, whole: s.whole, segments: [], label: rep.height ? `${rep.height}p` : rep.lang || kind };
+        if (!def) def = { kind, container: 'fmp4', initSpec, raw, segments: [], label: rep.height ? `${rep.height}p` : rep.lang || kind };
         def.segments.push(...shifted);
       }
       if (def) defs.push(def);
     }
     return defs;
+  }
+
+  // Separate video and audio files given directly (yt-dlp's "best video + best audio").
+  async resolveDirect(src) {
+    const defs = [];
+    for (const t of src.tracks || []) {
+      const w = await this.splitWholeFile(t.url, t.duration || 0, t.headers);
+      defs.push({ kind: t.kind, container: 'fmp4', initSpec: w.initSpec, raw: w.raw, segments: w.segments, headers: t.headers || null });
+    }
+    return defs;
+  }
+
+  /**
+   * A whole media file as segments, without reading it into memory at once:
+   *  - fragmented MP4 with an index (sidx) at the start: its fragments, mergeable without FFmpeg
+   *  - anything else: 4 MB byte ranges, saved as they are (FFmpeg joins the tracks at the end)
+   */
+  async splitWholeFile(url, duration = 0, headers = null) {
+    const head = await this.getBytes(url, { offset: 0, length: 512 * 1024 }, false, headers);
+    const boxes = readBoxes(head);
+    const moov = boxes.find((b) => b.type === 'moov');
+    const sidx = boxes.find((b) => b.type === 'sidx');
+    if (moov && sidx) {
+      const segs = dash.segmentsFromSidx(head.subarray(0, sidx.end), url, 0);
+      if (segs.length) return { initSpec: { url, range: { offset: 0, length: moov.end } }, segments: segs, raw: false };
+    }
+    const size = this._lastTotal;
+    if (!(size > 0)) throw new Error('The server did not say how big the file is, so it can’t be split');
+    const CHUNK = 4 * 1024 * 1024;
+    const segments = [];
+    for (let off = 0; off < size; off += CHUNK) {
+      segments.push({ url, range: { offset: off, length: Math.min(CHUNK, size - off) }, time: duration ? (off / size) * duration : off / CHUNK, duration: 0 });
+    }
+    return { initSpec: null, segments, raw: true };
   }
 
   async resolveHls(src) {
@@ -199,14 +241,15 @@ class MergeDownload extends EventEmitter {
   // First segment of every track: inits (from the stream or from converting TS), the common timeline.
   async prepareFresh() {
     for (const t of this.tracks) {
-      if (t.initSpec) t.init = await this.getBytes(t.initSpec.url, t.initSpec.range);
+      if (t.initSpec) t.init = await this.getBytes(t.initSpec.url, t.initSpec.range, false, t.headers);
       const first = await this.fetchSegment(t, 0);
       if (t.container === 'sniff') {
         const kind = hls.sniffContainer(first);
         t.container = kind === 'fmp4' ? 'fmp4' : 'ts';
       }
-      if (t.container !== 'ts' && needsFfmpeg(t, first)) {
+      if (t.raw || (t.container !== 'ts' && needsFfmpeg(t, first))) {
         t.raw = true;
+        t.webm = isWebm(t.init) || isWebm(first);
         t.ready.set(0, first);
         t.nextFetch = 1;
         continue;
@@ -309,7 +352,7 @@ class MergeDownload extends EventEmitter {
     for (const f of files) { fs.truncateSync(f.path, f.written); f.fd = fs.openSync(f.path, 'a'); }
     this.mode = 'files';
     this.files = files;
-    this.tracks = defs.map((d, i) => ({ ...d, raw: true, nextFetch: m.next[i], nextWrite: m.next[i], ready: new Map() }));
+    this.tracks = defs.map((d, i) => ({ ...d, raw: true, webm: !!(m.webm && m.webm[i]), nextFetch: m.next[i], nextWrite: m.next[i], ready: new Map() }));
     this.writtenBytes = files.reduce((a, f) => a + f.written, 0);
     this._checkpointWritten = this.writtenBytes;
     this._lastCheckpoint = Date.now();
@@ -418,7 +461,7 @@ class MergeDownload extends EventEmitter {
     for (let attempt = 0; attempt <= this.retries; attempt++) {
       if (this._stopping) throw new Error('stopped');
       try {
-        let data = await this.getBytes(seg.url, seg.range, true);
+        let data = await this.getBytes(seg.url, seg.range, true, t.headers);
         if (seg.key && seg.key.method === 'AES-128') data = await this.decrypt(seg, data);
         else if (seg.key && seg.key.method !== 'NONE') { const e = new Error('This stream is DRM-protected and cannot be downloaded'); e.code = 'DRM'; throw e; }
         return data;
@@ -459,14 +502,21 @@ class MergeDownload extends EventEmitter {
     return t.open(url, { ...opts, direct });
   }
 
-  async getBytes(url, range, count = false) {
+  async getBytes(url, range, count = false, headers = null) {
     const r = range ? `bytes=${range.offset}-${range.offset + range.length - 1}` : undefined;
-    const conn = await this.open(url, { session: this.session, headers: { ...this.headers }, range: r, timeoutMs: this.timeoutMs });
+    const conn = await this.open(url, { session: this.session, headers: { ...this.headers, ...(headers || {}) }, range: r, timeoutMs: this.timeoutMs });
+    const cr = /\/(\d+)\s*$/.exec((conn.headers && conn.headers['content-range']) || '');
+    this._lastTotal = cr ? Number(cr[1]) : Number((conn.headers && conn.headers['content-length']) || 0);
     if (!this.httpMajor) {
       const v = conn.res && (conn.res.httpVersionMajor || Number(String(conn.res.httpVersion || conn.httpVersion || '1').split('.')[0]));
       this.httpMajor = v || 1;
     }
     if (conn.status >= 400) { conn.abort(); throw new HttpError(conn.status); }
+    // Asked for a part but got the whole (big) file: don't read it all into memory.
+    if (range && conn.status === 200 && Number(conn.headers['content-length'] || 0) > range.length * 2) {
+      conn.abort();
+      throw new Error('The server does not send parts of files, so this stream can’t be downloaded in pieces');
+    }
     return readAll(conn, {
       limiter: this.limiter, taskLimiter: this.taskLimiter, timeoutMs: this.timeoutMs, stopping: () => this._stopping,
       onBytes: count ? (n) => { this.receivedBytes += n; this.sample(n); this.emitUpdate(); } : null,
@@ -506,7 +556,7 @@ class MergeDownload extends EventEmitter {
     try {
       const tmp = this.metaPath + '.tmp';
       if (this.mode === 'files') {
-        fs.writeFileSync(tmp, JSON.stringify({ v: 1, kind: 'merge', mode: 'files', next: this.tracks.map((t) => t.nextWrite), files: this.files.map((f) => f.written) }));
+        fs.writeFileSync(tmp, JSON.stringify({ v: 1, kind: 'merge', mode: 'files', next: this.tracks.map((t) => t.nextWrite), files: this.files.map((f) => f.written), webm: this.tracks.map((t) => !!t.webm) }));
         fs.renameSync(tmp, this.metaPath);
         return;
       }
@@ -535,7 +585,7 @@ class MergeDownload extends EventEmitter {
     this.closeOut();
     const video = this.files[this.tracks.findIndex((t) => t.kind === 'video')];
     const audio = this.files[this.tracks.findIndex((t) => t.kind === 'audio')];
-    const webm = this.tracks.some((t) => t.init && isWebm(t.init));
+    const webm = this.tracks.some((t) => t.webm || (t.init && isWebm(t.init)));
     if (webm && /\.mp4$/i.test(this.savePath)) {
       this.savePath = this.savePath.replace(/\.mp4$/i, '.mkv');
       this.emit('renamed', this.savePath);

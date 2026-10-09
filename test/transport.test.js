@@ -121,3 +121,21 @@ test('behind a proxy: http links use the browser stack; a proxy that drops the t
   assert.deepEqual(calls, ['http://files.example.com/a.zip', 'https://cdn.example.com/b.zip']);
   assert.equal(tr.useDirect('https://cdn.example.com/c.zip'), false);
 });
+
+test('cookies handed over with a download go only to their own site', async (t) => {
+  const seen = [];
+  const other = http.createServer((req, res) => { seen.push(['other', req.headers.cookie || '']); res.writeHead(200, { 'Content-Length': 2 }); res.end('ok'); });
+  t.after(() => other.close());
+  const otherPort = await listen(other);
+  const server = http.createServer((req, res) => {
+    seen.push(['own', req.headers.cookie || '']);
+    res.writeHead(302, { Location: `http://localhost:${otherPort}/x` }); res.end(); // no session cookies for /x
+  });
+  t.after(() => server.close());
+  const port = await listen(server);
+  const tr = new Transport({ session: fakeSession(), settings: settings() });
+  t.after(() => tr.close());
+  const conn = await tr.open(`http://127.0.0.1:${port}/f`, { direct: true, headers: { cookie: 'ext=from-chrome' } });
+  await read(conn);
+  assert.deepEqual(seen, [['own', 'ext=from-chrome'], ['other', '']]);
+});

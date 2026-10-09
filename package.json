@@ -1,7 +1,7 @@
 {
   "name": "novadm",
   "productName": "NovaDM",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
   "author": "NovaDM",
   "main": "src/main/main.js",
@@ -52,6 +52,28 @@
     },
     "portable": {
       "artifactName": "NovaDM-Portable-${version}.${ext}"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "browser-extension",
+        "to": "browser-extension"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "NovaDM link",
+        "schemes": [
+          "novadm"
+        ]
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "torrent",
+        "name": "Torrent file",
+        "description": "Torrent file",
+        "role": "Viewer"
+      }
+    ]
   }
 }
