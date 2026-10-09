@@ -8,6 +8,8 @@
 // the resolved track lists are kept next to the download so a resume works after the links expire.
 // Tracks that are not fragmented MP4 (WebM, or plain MP4 files) are saved as separate files and
 // joined by FFmpeg at the end ("files" mode); without FFmpeg the user is asked to install it first.
+// Live DASH (type="dynamic") is recorded: the manifest is read again and new segments are added
+// until the user stops the recording or the stream ends; the file is finished and playable.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -21,6 +23,7 @@ const { HttpError } = net;
 const CHECKPOINT_MS = 10000;
 const CHECKPOINT_BYTES = 32 * 1024 * 1024;
 const BROWSER_H1_CAP = 6;
+const LIVE_START_SECONDS = 3; // a recording starts about this many segments' worth before the live edge
 
 class MergeDownload extends EventEmitter {
   /**
@@ -73,6 +76,9 @@ class MergeDownload extends EventEmitter {
     this._lastCheckpoint = 0;
     this._checkpointWritten = 0;
     this._wake = null;
+    this.live = false;
+    this.liveEnded = false; // recording stopped by the user, or the stream ended
+    this.liveGaps = 0; // segments that left the manifest before they could be fetched
   }
 
   get totalSegments() { return this.tracks.reduce((s, t) => s + t.segments.length, 0); }
@@ -96,6 +102,7 @@ class MergeDownload extends EventEmitter {
         await this.prepareFresh();
       }
       if (this._stopping) return;
+      if (this.live) this.startLivePolling();
       await this.run();
       if (this._stopping) return;
       await this.finish();
@@ -132,7 +139,7 @@ class MergeDownload extends EventEmitter {
   async resolveDash(src) {
     const r = await this.fetchText(src.url);
     const mpd = dash.parse(r.text, r.finalUrl || src.url);
-    if (mpd.live) throw new Error('Live DASH streams can’t be downloaded yet (live HLS streams can be recorded)');
+    if (mpd.live) return this.resolveLiveDash(src, mpd, r.finalUrl || src.url);
     const defs = [];
     const want = { height: src.height, videoId: src.videoId, audioId: src.audioId, lang: src.lang };
     // One video and one audio track across all periods (ads/chapters): their segments in a row.
@@ -163,6 +170,101 @@ class MergeDownload extends EventEmitter {
       if (def) defs.push(def);
     }
     return defs;
+  }
+
+  // ---- live DASH ------------------------------------------------------------------------------
+
+  /** The current period of a live manifest: the chosen video and audio, from near the live edge. */
+  resolveLiveDash(src, mpd, url) {
+    this.live = true;
+    const period = mpd.periods[mpd.periods.length - 1];
+    if (!period) throw new Error('Nothing to download in this stream');
+    const picked = dash.pick(period, { height: src.height, videoId: src.videoId, audioId: src.audioId, lang: src.lang });
+    if (picked.drm) { const e = new Error('This stream is DRM-protected and cannot be downloaded'); e.code = 'DRM'; throw e; }
+    this.liveSrc = { url, periodId: period.id, ids: {}, minUpdate: mpd.minimumUpdatePeriod || 0 };
+    const defs = [];
+    for (const kind of ['video', 'audio']) {
+      const rep = picked[kind];
+      if (!rep) continue;
+      const s = dash.segmentsFor(rep);
+      if (s.index || s.whole) throw new Error('This live stream type can’t be recorded');
+      this.liveSrc.ids[kind] = rep.id;
+      defs.push({ kind, container: 'fmp4', initSpec: s.init, raw: false, label: rep.height ? `${rep.height}p` : rep.lang || kind, segments: s.segments.map((x) => ({ url: x.url, range: x.range, time: x.time + period.start, duration: x.duration })) });
+    }
+    // Start a few seconds before the live edge, at the same moment on every track.
+    const edge = Math.min(...defs.filter((d) => d.segments.length).map((d) => { const l = d.segments[d.segments.length - 1]; return l.time + l.duration; }));
+    const longest = Math.max(...defs.map((d) => Math.max(0, ...d.segments.map((x) => x.duration))));
+    const from = edge - Math.max(LIVE_START_SECONDS, longest) * 1.5;
+    for (const d of defs) {
+      const i = d.segments.findIndex((x) => x.time + x.duration > from);
+      if (i > 0) d.segments = d.segments.slice(i);
+    }
+    this.liveStartedAt = Date.now();
+    return defs;
+  }
+
+  isRecording() { return this.live && !this.liveEnded; }
+
+  livePollMs() {
+    const seg = Math.max(1, ...this.tracks.map((t) => (t.segments[t.segments.length - 1] || {}).duration || 2));
+    const every = this.liveSrc.minUpdate > 0 ? Math.min(this.liveSrc.minUpdate, seg) : seg;
+    return Math.min(10000, Math.max(1000, every * 1000));
+  }
+
+  startLivePolling() {
+    this._liveNewAt = Date.now();
+    const tick = async () => {
+      if (!this.isRecording() || this._stopping) return;
+      try {
+        await this.addLiveSegments();
+        this._liveErrors = 0;
+      } catch {
+        // Short network trouble is ridden out; a stream that stays unreachable ends the recording.
+        if (++this._liveErrors >= 5) this.stopRecording();
+      }
+      if (this.isRecording() && !this._stopping) this._livePoll = setTimeout(tick, this.livePollMs());
+    };
+    this._liveErrors = 0;
+    this._livePoll = setTimeout(tick, this.livePollMs());
+  }
+
+  async addLiveSegments() {
+    const r = await this.fetchText(this.liveSrc.url);
+    const mpd = dash.parse(r.text, r.finalUrl || this.liveSrc.url);
+    const period = mpd.periods.find((p) => p.id === this.liveSrc.periodId) || mpd.periods[mpd.periods.length - 1];
+    let added = 0;
+    if (period) {
+      const reps = period.sets.flatMap((x) => x.representations);
+      for (const t of this.tracks) {
+        const rep = reps.find((x) => x.id === this.liveSrc.ids[t.kind] && x.kind === t.kind);
+        if (!rep) continue;
+        const last = t.segments[t.segments.length - 1];
+        const lastEnd = last ? last.time + last.duration : -Infinity;
+        const fresh = dash.segmentsFor(rep).segments
+          .map((x) => ({ url: x.url, range: x.range, time: x.time + period.start, duration: x.duration }))
+          .filter((x) => !last || x.time > last.time + 1e-3);
+        if (fresh.length && last && fresh[0].time > lastEnd + 0.5) this.liveGaps += Math.round((fresh[0].time - lastEnd) / (last.duration || 1));
+        t.segments.push(...fresh);
+        added += fresh.length;
+      }
+    }
+    if (added) { this._liveNewAt = Date.now(); if (this._wake) this._wake(); }
+    // The broadcast ended (the manifest became static, or a new programme period with other
+    // tracks began), or nothing new for a long time: finish the file.
+    const stalled = Date.now() - this._liveNewAt > Math.max(30000, this.livePollMs() * 6);
+    if (!mpd.live || (period && period.id !== this.liveSrc.periodId) || stalled) this.stopRecording();
+  }
+
+  /** Stop recording: what has been listed so far is written and the file is finished. */
+  stopRecording() {
+    if (!this.live || this.liveEnded) return;
+    this.liveEnded = true;
+    clearTimeout(this._livePoll);
+    if (this._wake) this._wake();
+  }
+
+  recordedSeconds() {
+    return Math.max(0, ...this.tracks.map((t) => t.segments.slice(0, t.nextWrite).reduce((s, x) => s + (x.duration || 0), 0)));
   }
 
   // Separate video and audio files given directly (yt-dlp's "best video + best audio").
@@ -388,8 +490,8 @@ class MergeDownload extends EventEmitter {
     while (!this._stopping) {
       const t = this.pickFetch();
       if (!t) {
-        if (this.tracks.every((x) => x.nextFetch >= x.segments.length)) return;
-        await sleep(30);
+        if (this.tracks.every((x) => x.nextFetch >= x.segments.length) && !this.isRecording()) return;
+        await sleep(this.isRecording() ? 200 : 30);
         continue;
       }
       const idx = t.nextFetch++;
@@ -423,9 +525,17 @@ class MergeDownload extends EventEmitter {
 
   async writeNext() {
     let t = null;
+    // While recording, a track only goes ahead when the others have their next segment listed too,
+    // so picture and sound stay interleaved in time order.
+    const waitAll = this.isRecording() && this.tracks.some((x) => x.nextWrite >= x.segments.length);
     for (const x of this.tracks) {
-      if (x.nextWrite >= x.segments.length) continue;
+      if (waitAll || x.nextWrite >= x.segments.length) continue;
       if (!t || x.segments[x.nextWrite].time < t.segments[t.nextWrite].time) t = x;
+    }
+    if (!t && this.isRecording()) {
+      await new Promise((resolve) => { this._wake = resolve; setTimeout(resolve, 300); });
+      this._wake = null;
+      return 'wait';
     }
     if (!t) return 'done'; // all written
     const i = this.tracks.indexOf(t);
@@ -602,11 +712,19 @@ class MergeDownload extends EventEmitter {
 
   stop() {
     this._stopping = true;
+    clearTimeout(this._livePoll);
     if (this._wake) this._wake();
   }
 
   async pause() {
     if (this.state !== 'downloading') return;
+    if (this.live) {
+      // A live recording can't continue later: finish it, so the file is complete and playable.
+      const done = new Promise((r) => { this.once('done', r); this.once('error', r); });
+      this.stopRecording();
+      await Promise.race([done, sleep(15000)]);
+      return;
+    }
     this.stop();
     this.state = 'paused';
     await this._writerIdle();
@@ -666,6 +784,15 @@ class MergeDownload extends EventEmitter {
     const total = this.totalSegments;
     const done = this.doneSegments;
     const frac = total ? done / total : 0;
+    if (this.live) {
+      return {
+        id: this.id, state: this.state, size: this.writtenBytes, sizeIsEstimate: this.isRecording(), received: this.writtenBytes,
+        percent: 0, resumable: false, segments: total, doneSegments: done, live: true, recording: this.isRecording() && this.state === 'downloading',
+        recordedSeconds: Math.round(this.recordedSeconds()), liveGaps: this.liveGaps,
+        speed: this.state === 'downloading' ? this.speed() : 0, connections: this.state === 'downloading' ? this.concurrency : 0,
+        error: this.error ? String(this.error.message || this.error) : null, errorCode: this.error && this.error.code ? this.error.code : null,
+      };
+    }
     return {
       id: this.id, state: this.state, size: done > 4 && frac > 0 ? Math.round(this.writtenBytes / frac) : -1, sizeIsEstimate: done < total,
       received: this.writtenBytes, percent: frac * 100, resumable: true, segments: total, doneSegments: done,

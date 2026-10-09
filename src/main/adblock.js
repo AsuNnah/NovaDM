@@ -101,19 +101,30 @@ class AdBlocker extends EventEmitter {
     this._ipcDone = true;
     // Cosmetic filters: preload reports DOM info; we inject CSS/scriptlets unless whitelisted.
     ipcMain.handle(INJECT_CH, (event, url, msg) => {
-      if (this.siteWhitelisted(url)) return;
+      if (!this.engine || this.cosmetic === false || this.siteWhitelisted(url)) return; // cosmetic=false: benchmark only
       return this.engine.onInjectCosmeticFilters(event, url, msg);
     });
-    ipcMain.handle(MUTATION_CH, (event) => this.engine.onIsMutationObserverEnabled(event));
+    ipcMain.handle(MUTATION_CH, (event) => (this.engine ? this.engine.onIsMutationObserverEnabled(event) : false));
   }
 
+  /**
+   * Install the request hooks on a session (once). They run from the first request; ad blocking
+   * starts when the lists are loaded. `this.shields` (main) rewrites page addresses (Shields).
+   */
   attach(session) {
-    if (!this.engine) return;
+    if (!this._attached) this._attached = new WeakSet();
+    if (this._attached.has(session)) return;
+    this._attached.add(session);
     this.registerIpcOnce();
     session.registerPreloadScript({ type: 'frame', filePath: PRELOAD_PATH });
 
     session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
-      if (!this.ready) return callback({});
+      const isMain = details.resourceType === 'mainFrame';
+      if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents) {
+        const to = this.shields.rewrite(details.url, { isMain });
+        if (to && to !== details.url) return callback({ redirectURL: to });
+      }
+      if (!this.ready || !this.engine) return callback({});
       const pageUrl = this.pageUrlFor(details);
       if (this.siteWhitelisted(pageUrl)) return callback({});
       const request = fromElectronDetails(details);
@@ -126,7 +137,7 @@ class AdBlocker extends EventEmitter {
     });
 
     session.webRequest.onHeadersReceived({ urls: ['<all_urls>'] }, (details, callback) => {
-      if (!this.ready || this.siteWhitelisted(this.pageUrlFor(details))) return callback({});
+      if (!this.ready || !this.engine || this.siteWhitelisted(this.pageUrlFor(details))) return callback({});
       this.engine.onHeadersReceived(details, callback);
     });
   }

@@ -1,11 +1,12 @@
 'use strict';
 // Everyday-browser features around the tab manager: history, bookmarks (+ bar), find in page,
-// restoring tabs, address-bar suggestions, the size of NovaDM's own screens and "clear when NovaDM
-// closes".
+// restoring tabs, address-bar suggestions, reader view, unloading idle tabs, the size of NovaDM's
+// own screens, Shields rules and "clear when NovaDM closes".
 const fs = require('fs');
 const path = require('path');
 const { WebContentsView, Menu, dialog } = require('electron');
 const { History, Bookmarks, TabSession } = require('./library');
+const { Shields } = require('./shields');
 
 const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
@@ -18,10 +19,14 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   const history = new History(userDataDir);
   const bookmarks = new Bookmarks(userDataDir);
   const tabSession = new TabSession(userDataDir);
+  const shields = new Shields(settings);
+  browser.shields = shields;
   browser.isBookmarked = (url) => !!url && bookmarks.has(url);
 
   let findView = null;
   let findOpen = false;
+  const readerPages = new Map(); // id -> { article, url }
+  let readerSeq = 0;
 
   const scale = () => Math.max(0.75, Math.min(2, (Number(settings.get('uiScale')) || 100) / 100));
   const barVisible = () => settings.get('showBookmarksBar') !== false && bookmarks.items.length > 0;
@@ -48,6 +53,12 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     browser.selectTab(ids[s.active] || ids[0]);
     return ids[s.active] || ids[0];
   }
+
+  // ---- unload idle tabs ----
+  setInterval(() => {
+    const minutes = Number(settings.get('discardTabsAfter')) || 0;
+    if (minutes > 0) browser.discardIdle(minutes);
+  }, 60000).unref();
 
   // ---- find in page ----
   function createFindView(parent) {
@@ -144,6 +155,29 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     return list.map((b) => ({ label: (b.title || b.url).slice(0, 60), click: () => openBookmark(b, 'here') }));
   }
 
+  // ---- reader view ----
+  async function openReader(tabId) {
+    const tab = browser.tabs.get(tabId || browser.activeId);
+    if (!tab || !tab.wc || !/^https?:/i.test(tab.url || '')) return { ok: false, error: 'Open an article first' };
+    const src = fs.readFileSync(require.resolve('@mozilla/readability/Readability.js'), 'utf8');
+    const code = `${src}\n;(function(){try{var a=new Readability(document.cloneNode(true),{charThreshold:300}).parse();` +
+      'return a?{title:a.title||"",byline:a.byline||"",siteName:a.siteName||"",content:a.content||"",lang:a.lang||"",dir:a.dir||""}:null;}catch(e){return null;}})()';
+    let article = null;
+    // A page busy with a dialog or a long script never answers: give up after 10 s.
+    try {
+      article = await Promise.race([
+        tab.wc.executeJavaScriptInIsolatedWorld(1999, [{ code }]),
+        new Promise((r) => setTimeout(() => r(null), 10000)),
+      ]);
+    } catch {}
+    if (!article || !article.content) return { ok: false, error: 'No article found on this page' };
+    const id = String(++readerSeq);
+    readerPages.set(id, { article, url: tab.url });
+    if (readerPages.size > 20) readerPages.delete(readerPages.keys().next().value);
+    browser.loadInTab(tab, `novadm://reader?id=${id}`);
+    return { ok: true };
+  }
+
   // ---- size of NovaDM's screens ----
   function applyScale(views) {
     const s = scale();
@@ -178,7 +212,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     tabSession.flush();
   }
 
-  // ---- IPC (toolbar, find bar, History and Bookmarks pages) ----
+  // ---- IPC (toolbar, find bar, History and Bookmarks pages, reader page) ----
   const handlers = {
     'find.open': () => openFind(),
     'find.query': (a) => browser.find(a.text, { forward: a.forward !== false, followUp: !!a.findNext }),
@@ -238,12 +272,18 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'history.remove': (a) => { history.remove((a.ids || []).map(Number)); return { ok: true }; },
     'history.clear': (a) => clearData(a),
     'history.open': (a) => { if (/^https?:/i.test(a.url || '')) { if (a.newTab) browser.createTab({ url: a.url, background: true }); else browser.navigate(browser.activeId, a.url); } },
+
+    'reader.open': () => openReader(),
+    'reader.get': (a) => { const p = readerPages.get(String(a.id)); return p ? { ok: true, ...p } : { ok: false }; },
+    'reader.original': (a) => { const p = readerPages.get(String(a.id)); if (p) browser.navigate(browser.activeId, p.url); },
+
+    'tabs.unload': (a) => ({ ok: browser.discard(Number(a.id)) }),
   };
 
   return {
-    history, bookmarks, tabSession, handlers,
+    history, bookmarks, tabSession, shields, handlers,
     chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData,
-    toggleActiveBookmark, bookmarkState,
+    toggleActiveBookmark, openReader, bookmarkState,
     get findView() { return findView; },
     get findOpen() { return findOpen; },
     scale,

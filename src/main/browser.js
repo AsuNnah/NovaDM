@@ -12,7 +12,7 @@ const NEWTAB = 'novadm://newtab';
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
-  ['bookmarks', 'Bookmarks'],
+  ['bookmarks', 'Bookmarks'], ['reader', 'Reader view'],
 ]);
 
 class Browser extends EventEmitter {
@@ -116,7 +116,7 @@ class Browser extends EventEmitter {
     const tab = {
       id, view: null, wc: null, wcId: null, incognito, url: '', title: title || 'New tab', favicon: '',
       loading: false, canGoBack: false, canGoForward: false, secure: false, muted: false,
-      discarded: false, saved: null, hiddenAt: Date.now(),
+      discarded: false, saved: null, hiddenAt: Date.now(), readable: false,
     };
     this.tabs.set(id, tab);
     if (openerPartition != null) { const i = this.order.indexOf(openerPartition); this.order.splice(i >= 0 ? i + 1 : this.order.length, 0, id); }
@@ -158,7 +158,7 @@ class Browser extends EventEmitter {
     this.emit('tab-created', tab);
   }
 
-  /** Load a restored tab when it is first selected. */
+  /** Load an unloaded tab again: its back/forward list, scroll position and form values come back. */
   revive(tab) {
     const saved = tab.saved;
     tab.saved = null;
@@ -168,6 +168,42 @@ class Browser extends EventEmitter {
     } else {
       this.loadInTab(tab, tab.url || NEWTAB);
     }
+  }
+
+  /**
+   * Unload a background tab to free its memory and CPU (Settings → Unload inactive tabs). The tab
+   * stays in the strip; selecting it loads it again. Returns true if it was unloaded.
+   */
+  discard(id) {
+    const tab = this.tabs.get(id);
+    if (!tab || tab.discarded || id === this.activeId || !tab.wc || tab.wc.isDestroyed()) return false;
+    let entries = [];
+    let index = 0;
+    try {
+      entries = tab.wc.navigationHistory.getAllEntries().map((e) => ({ url: e.url, title: e.title, pageState: e.pageState }));
+      index = tab.wc.navigationHistory.getActiveIndex();
+    } catch {}
+    tab.saved = { entries, index };
+    if (this.adblock) this.adblock.removeTab(tab.wcId);
+    try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {}
+    try { tab.wc.close(); } catch {}
+    tab.view = null; tab.wc = null; tab.wcId = null;
+    tab.discarded = true; tab.loading = false;
+    this.emit('tab-discarded', tab);
+    this.emitTabs();
+    return true;
+  }
+
+  /** Background tabs idle for `minutes` that aren't playing sound or loading. */
+  discardIdle(minutes, now = Date.now()) {
+    const out = [];
+    for (const tab of this.tabs.values()) {
+      if (tab.discarded || tab.id === this.activeId || !tab.wc || tab.wc.isDestroyed()) continue;
+      if (now - (tab.hiddenAt || now) < minutes * 60000) continue;
+      if (tab.loading || tab.wc.isCurrentlyAudible() || tab.keepLoaded) continue;
+      if (this.discard(tab.id)) out.push(tab.id);
+    }
+    return out;
   }
 
   wireTab(tab) {
@@ -228,12 +264,25 @@ class Browser extends EventEmitter {
       tab.url = internal === 'novadm://error' && tab.failed ? tab.failed.url : (internal || url);
       if (internal !== 'novadm://error') tab.failed = null;
       tab.secure = url.startsWith('https:');
+      tab.readable = false;
+      if (tab.ampFrom && url !== tab.ampFrom) {
+        // Arrived on the real page: drop the AMP page from the back list so Back doesn't bounce.
+        try {
+          const nh = wc.navigationHistory;
+          const i = nh.getActiveIndex() - 1;
+          if (i >= 0 && nh.getEntryAtIndex(i).url === tab.ampFrom) nh.removeEntryAtIndex(i);
+        } catch {}
+        tab.ampFrom = null;
+      }
       update();
       if (!tab.incognito) this.emit('visit', tab, url);
     });
     wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
       // -3 = aborted (user navigated away / download started): not an error.
       if (!isMain || code === -3 || !/^https?:/i.test(url)) return;
+      // A link NovaDM upgraded to HTTPS, and the site has no working HTTPS: open it as it was.
+      const plain = this.shields ? this.shields.fallback(url) : null;
+      if (plain) { tab.wc.loadURL(plain).catch(() => {}); return; }
       tab.failed = { url, code, desc };
       tab.loading = false;
       wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '' } }).catch(() => {});
@@ -282,6 +331,18 @@ class Browser extends EventEmitter {
       case 'novadm:download-video':
         this.emit('download-video-request', tab.id);
         break;
+      case 'novadm:readable':
+        if (payload && payload.url === (tab.wc && tab.wc.getURL()) && tab.readable !== !!payload.ok) { tab.readable = !!payload.ok; this.refreshTabState(tab); }
+        break;
+      case 'novadm:amp': {
+        // De-AMP: open the publisher's own page; the AMP copy is taken out of the back list.
+        if (this.settings.get('deAmp') === false || !payload || !/^https?:/i.test(payload.canonical || '')) break;
+        if (!tab.wc || payload.from !== tab.wc.getURL() || tab.ampFrom === payload.from) break;
+        tab.ampFrom = payload.from;
+        if (this.shields) this.shields.stats.deAmp++;
+        tab.wc.loadURL(payload.canonical).catch(() => {});
+        break;
+      }
       case 'novadm:link-click': {
         const list = (tab.clicks || []).filter((c) => Date.now() - c.t < 3000);
         list.push({ href: payload.href, mods: !!payload.mods, t: Date.now() });
@@ -474,7 +535,7 @@ class Browser extends EventEmitter {
       id: tab.id, title: tab.title || 'New tab', url: displayUrl(tab.url), favicon: tab.favicon,
       loading: tab.loading, incognito: tab.incognito, secure: tab.secure,
       canGoBack: tab.canGoBack, canGoForward: tab.canGoForward, active: tab.id === this.activeId,
-      discarded: !!tab.discarded,
+      discarded: !!tab.discarded, readable: !!tab.readable,
       bookmarked: this.isBookmarked ? this.isBookmarked(tab.url) : false,
     };
   }

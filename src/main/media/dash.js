@@ -2,6 +2,8 @@
 // MPEG-DASH manifest (.mpd) parser: periods, adaptation sets, representations, and the segment list
 // of a representation from SegmentTemplate ($Number$ / $Time$ / SegmentTimeline), SegmentList,
 // SegmentBase (an index in the file: sidx) or a single BaseURL. ContentProtection marks DRM.
+// Live (type="dynamic") manifests: the segments available now, from the timeline or, for numbered
+// templates, from the clock (availabilityStartTime + segment duration).
 const { readBoxes, parseSidx } = require('./mp4');
 
 // ---- a small XML reader (MPDs are plain, well-formed XML) ------------------------------------------
@@ -104,6 +106,11 @@ function parse(text, mpdUrl) {
   const mpd = kid(doc, 'MPD');
   const live = (mpd.attrs.type || 'static') === 'dynamic';
   const duration = parseDuration(mpd.attrs.mediaPresentationDuration);
+  // Live timing: when segment numbers count from, and how far back the server keeps them.
+  const liveInfo = live ? {
+    availabilityStart: Date.parse(mpd.attrs.availabilityStartTime || '') || 0,
+    timeShiftBufferDepth: parseDuration(mpd.attrs.timeShiftBufferDepth) || 0,
+  } : null;
   const mpdBase = baseOf(mpd, mpdUrl);
   const periodsEl = kids(mpd, 'Period');
   const periods = [];
@@ -129,22 +136,25 @@ function parse(text, mpdUrl) {
           lang: as.attrs.lang || r.attrs.lang || '', label: (kid(as, 'Label') || {}).text || as.attrs.label || '',
           drm: asDrm || kids(r, 'ContentProtection').length > 0,
           // what segmentsFor() needs
-          _levels: [p, as, r], _base: baseOf(r, asBase), _periodStart: start, _periodDuration: pdur,
+          _levels: [p, as, r], _base: baseOf(r, asBase), _periodStart: start, _periodDuration: pdur, _live: liveInfo,
         };
       });
       return { id: as.attrs.id || '', kind: reps[0] ? reps[0].kind : 'other', lang: as.attrs.lang || '', representations: reps };
     });
     periods.push({ id: p.attrs.id || String(pi), start, duration: pdur, sets });
   });
-  return { live, duration: duration || cursor, periods, minimumUpdatePeriod: parseDuration(mpd.attrs.minimumUpdatePeriod) };
+  return {
+    live, duration: duration || cursor, periods, minimumUpdatePeriod: parseDuration(mpd.attrs.minimumUpdatePeriod),
+    suggestedPresentationDelay: parseDuration(mpd.attrs.suggestedPresentationDelay), ...(liveInfo || {}),
+  };
 }
 
 /**
  * Segments of a representation: { init: { url, range } | null, segments: [{ url, range, time, duration }],
  *   index: { url, range } (SegmentBase: the sidx must be fetched; see segmentsFromSidx), whole (one file) }.
- * time/duration in seconds.
+ * time/duration in seconds. Live: only the segments available at `now` (ms).
  */
-function segmentsFor(rep) {
+function segmentsFor(rep, { now = Date.now() } = {}) {
   const levels = rep._levels;
   const base = rep._base;
   const tpl = mergedSegInfo(levels, 'SegmentTemplate');
@@ -161,20 +171,36 @@ function segmentsFor(rep) {
       let t = 0;
       let n = startNumber;
       const ss = kids(timeline, 'S');
-      const periodEnd = rep._periodDuration ? pto + rep._periodDuration * timescale : Infinity;
+      // Live: a repeat count of -1 runs up to the live edge (now), not to the end of the period.
+      const liveEdge = rep._live && rep._live.availabilityStart ? pto + ((now - rep._live.availabilityStart) / 1000 - rep._periodStart) * timescale : Infinity;
+      const periodEnd = rep._periodDuration ? pto + rep._periodDuration * timescale : liveEdge;
       ss.forEach((s, si) => {
         if (s.attrs.t !== undefined) t = Number(s.attrs.t);
         const d = Number(s.attrs.d) || 0;
         let r = Number(s.attrs.r) || 0;
         if (r < 0) {
           const nextT = ss[si + 1] && ss[si + 1].attrs.t !== undefined ? Number(ss[si + 1].attrs.t) : periodEnd;
-          r = d > 0 && Number.isFinite(nextT) ? Math.ceil((nextT - t) / d) - 1 : 0;
+          const toEdge = !(ss[si + 1] && ss[si + 1].attrs.t !== undefined) && !rep._periodDuration && rep._live;
+          if (toEdge) r = d > 0 && Number.isFinite(nextT) ? Math.floor((nextT - t) / d + 1e-9) - 1 : 0; // complete segments only
+          else r = d > 0 && Number.isFinite(nextT) ? Math.ceil((nextT - t) / d) - 1 : 0;
         }
         for (let k = 0; k <= r && d > 0; k++) {
           segments.push({ url: resolveUrl(fillTemplate(a.media, { ...vars, Number: n, Time: t }), base), range: null, time: (t - pto) / timescale, duration: d / timescale });
           t += d; n++;
         }
       });
+    } else if (a.duration && rep._live) {
+      // Live numbered segments: segment k is complete once its end has passed (counted from
+      // availabilityStartTime); the server keeps the last timeShiftBufferDepth seconds.
+      const d = Number(a.duration);
+      const live = rep._live;
+      const elapsed = (now - live.availabilityStart) / 1000 - rep._periodStart;
+      const segDur = d / timescale;
+      const last = Math.floor(elapsed / segDur + 1e-9) - 1;
+      const keep = live.timeShiftBufferDepth ? Math.floor(live.timeShiftBufferDepth / segDur) : 60;
+      for (let k = Math.max(0, last - keep + 1); k <= last; k++) {
+        segments.push({ url: resolveUrl(fillTemplate(a.media, { ...vars, Number: startNumber + k, Time: pto + k * d }), base), range: null, time: (k * d) / timescale, duration: segDur });
+      }
     } else if (a.duration) {
       const d = Number(a.duration);
       const count = Math.max(1, Math.ceil((rep._periodDuration * timescale) / d - 1e-9));

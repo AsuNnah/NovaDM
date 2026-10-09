@@ -64,11 +64,18 @@ function defaults() {
     uiScale: '100', // size of NovaDM's own screens, in percent
     showBookmarksBar: true, // shown when there are bookmarks
 
-    // Privacy
+    // Tabs and pages
+    discardTabsAfter: '30', // unload background tabs after this many idle minutes ('0' = never)
+
+    // Privacy and speed
     blockThirdPartyCookies: true, // Chromium's own switch, applied when NovaDM starts
     clearCookiesOnExit: false,
     clearCacheOnExit: false,
     clearHistoryOnExit: false,
+    httpsUpgrade: true, // open http:// links over HTTPS when the site supports it
+    debounceLinks: true, // skip known tracking redirects (google.com/url?q=…)
+    stripTrackingParams: true, // remove fbclid, gclid… from addresses
+    deAmp: true, // open the publisher's page instead of its Google AMP copy
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
     ytdlpPath: '', // the user's own yt-dlp.exe
 

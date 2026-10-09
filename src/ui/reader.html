@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src 'self' about:; img-src https: http: data:;" />
+<title>Reader view</title>
+<style>
+:root{color-scheme:dark;--bg:#1b1d22;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#5b7cfa;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#faf8f3;--line:#e2ddd2;--fg:#22201c;--fg2:#5a564e;--fg3:#8b867b;}}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:15px/1.5 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
+body{display:flex;flex-direction:column;}
+.bar{display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid var(--line);font-size:13px;}
+.bar .site{color:var(--fg3);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+button{height:30px;padding:0 12px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;font-size:13px;}
+button:hover{border-color:var(--fg3);}
+iframe{flex:1;border:none;width:100%;background:var(--bg);}
+.msg{padding:60px 20px;text-align:center;color:var(--fg3);}
+</style>
+</head>
+<body>
+<div class="bar">
+  <span class="site" id="site"></span>
+  <button id="smaller" title="Smaller text">A−</button>
+  <button id="bigger" title="Bigger text">A+</button>
+  <button id="font" title="Serif or sans-serif">Serif</button>
+  <button id="original">Original page</button>
+</div>
+<iframe id="doc" sandbox="allow-top-navigation-by-user-activation" referrerpolicy="no-referrer" title="Article"></iframe>
+<script src="reader.js"></script>
+</body>
+</html>

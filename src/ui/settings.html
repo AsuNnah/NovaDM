@@ -79,6 +79,10 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <div class="lbl"><b>Open the tabs from last time</b><span>Only the tab you were on loads right away; the others load when you click them. Private tabs are never kept.</span></div>
       <label class="sw"><input type="checkbox" id="restoreTabs"><i></i></label>
     </div>
+    <div class="row">
+      <div class="lbl"><b>Unload inactive tabs</b><span>Frees the memory and CPU of tabs you haven't looked at for a while. They stay in the tab strip and load again when clicked, back where you were. Tabs playing sound are kept.</span></div>
+      <select id="discardTabsAfter"><option value="0">Never</option><option value="15">After 15 minutes</option><option value="30">After 30 minutes</option><option value="60">After 1 hour</option><option value="120">After 2 hours</option></select>
+    </div>
   </div>
 
   <h2>Privacy and security</h2>
@@ -102,6 +106,22 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     <div class="row">
       <div class="lbl"><b>Block third-party cookies</b><span>Sites embedded in other sites (ads, trackers, "like" buttons) can't keep cookies there. A few embedded sign-ins and comment boxes may need you to open the site itself. Takes effect after NovaDM restarts.</span></div>
       <label class="sw"><input type="checkbox" id="blockThirdPartyCookies"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Use HTTPS when the site supports it</b><span>http:// links open over an encrypted connection; sites without HTTPS open as before.</span></div>
+      <label class="sw"><input type="checkbox" id="httpsUpgrade"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Skip tracking redirects</b><span>Links that pass through a tracker first (google.com/url, l.facebook.com…) go straight to the page.</span></div>
+      <label class="sw"><input type="checkbox" id="debounceLinks"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Remove tracking codes from addresses</b><span>fbclid, gclid, msclkid and similar click identifiers.</span></div>
+      <label class="sw"><input type="checkbox" id="stripTrackingParams"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Open the original page instead of AMP</b><span>Google AMP copies of news pages open on the publisher's own site.</span></div>
+      <label class="sw"><input type="checkbox" id="deAmp"><i></i></label>
     </div>
     <div class="row">
       <div class="lbl"><b>When NovaDM closes, clear</b><span>Cookies and site data sign you out of sites.</span>

@@ -30,6 +30,10 @@ AB Download Manager, XDM). No code from any of them is included.
 - **Restore tabs**: last time's tabs come back, loading only when clicked
 - **Third-party cookies blocked** (can be turned off); optionally clear history, cookies and cache
   when NovaDM closes
+- **Faster, cleaner pages** (like Brave's Shields): tracking redirects skipped, tracking codes
+  removed from addresses, AMP pages opened on the publisher's site, http:// links upgraded to HTTPS
+- **Unload inactive tabs** to save memory and CPU; they come back where you left them
+- **Reader view** for articles
 - **Theme and accent colour**: like Windows, dark or light, and seven accent colours; size of
   NovaDM's own screens (90–150 %)
 - Keyboard shortcuts (Ctrl+T/W/L/J/R/F/D/H, Ctrl+Tab, Alt+arrows) and page zoom with Ctrl + plus / minus / 0
@@ -51,7 +55,7 @@ AB Download Manager, XDM). No code from any of them is included.
   segment, so memory use stays flat)
 - **Separate picture and sound joined into one MP4 without FFmpeg**: DASH video + audio, and HLS
   streams whose audio is a separate rendition
-- **Live stream recording** (HLS): records until you press Stop or the broadcast ends
+- **Live stream recording** (HLS and DASH): records until you press Stop or the broadcast ends
 - **FFmpeg on demand** (optional, Settings → Video tools): verified one-click install of the
   official build, used for WebM/plain-MP4 tracks and for "Save sound only", "Convert sound to MP3"
   and "Repair video"
@@ -190,6 +194,10 @@ set NOVADM_SELFTEST=tools/selftest-popup.js
 node_modules\electron\dist\electron.exe .
 ```
 
+`tools/bench-pageload.js` is a page-load benchmark run the same way (offline by default; set
+`NOVADM_BENCH_URLS` to a file of addresses to measure real pages). Results go to
+`%TEMP%\novadm-bench.json`.
+
 Other debug variables: `NOVADM_OPEN=<url>` opens a page at start-up instead of the new tab, and
 `NOVADM_PANEL=<name>` opens a toolbar panel.
 
@@ -202,6 +210,7 @@ src/main/                 Electron main process
   browser.js              tabs (one WebContentsView per tab)
   browsing.js, library.js history, bookmarks, find bar, restore tabs, address-bar suggestions
   adblock.js, popup.js    ad blocker and pop-up guard
+  shields.js              redirect skipping, tracking codes, de-AMP, HTTPS upgrade
   dns.js                  Secure DNS
   extensions.js           Chrome extensions and Web Store
   grabber.js              content (image) grabber

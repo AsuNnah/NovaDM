@@ -67,6 +67,7 @@ function setActive(tab) {
   $('star-btn').classList.toggle('hidden', !web);
   $('star-btn').classList.toggle('on', !!tab.bookmarked);
   $('star-btn').title = tab.bookmarked ? 'Remove bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)';
+  $('reader-btn').classList.toggle('hidden', !(web && tab.readable));
   renderTabs();
 }
 
@@ -120,6 +121,7 @@ function renderBar() {
 api.on('bookmarks', (d) => { marks = d; renderBar(); });
 window.addEventListener('resize', () => renderBar());
 $('star-btn').onclick = () => call('bookmarks.toggleActive');
+$('reader-btn').onclick = () => call('reader.open');
 
 // ---- events from main ----
 api.on('tabs', (d) => { tabs = d.tabs; activeId = d.activeId; renderTabs(); const a = tabs.find((t) => t.id === activeId); if (a && !urlFocused) $('url').value = a.url || ''; });

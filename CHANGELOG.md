@@ -8,6 +8,76 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [1.1.0] — 2026-10-09
+
+Speed, in the way Brave gets it (less work per page; same Chromium engine underneath), reader view,
+and live DASH recording.
+
+### Added
+- **Live DASH recording** (the last open item of the video roadmap): live MPEG-DASH streams are
+  recorded like live HLS: "Record" in the media panel, "● Recording" with the recorded time in
+  Downloads, Stop finishes the file. Works with numbered segments (timed from the stream's start
+  time) and with segment timelines; the recording starts a few seconds before the live edge on
+  picture and sound alike. The file is finished when you press Stop, when the broadcast ends (the
+  manifest turns static or a new programme period starts), or when nothing new arrives for a
+  while. Separate picture and sound are joined into one MP4 without FFmpeg.
+- **Skip tracking redirects**: links through google.com/url, l.facebook.com, youtube.com/redirect,
+  Bing, DuckDuckGo, LinkedIn, Reddit, Steam, VK and others go straight to the page; the tracker is
+  never contacted.
+- **Remove tracking codes from addresses**: fbclid, gclid, msclkid and ~30 similar click
+  identifiers (campaign names like utm_* are kept).
+- **Open the original page instead of AMP**: Google AMP addresses and AMP pages open on the
+  publisher's own site; the AMP copy is left out of the back list.
+- **Use HTTPS when the site supports it**: http:// links open over HTTPS; a site without working
+  HTTPS opens over http again (remembered until NovaDM closes), as do sites that send visitors back
+  to http, local addresses and addresses with a port.
+- **Unload inactive tabs** (Settings → Tabs, after 30 minutes by default): background tabs give
+  back their memory and CPU and stay in the tab strip (dimmed); clicking one brings it back with
+  its back/forward list, scroll position and form values. Tabs playing sound are kept.
+- **Reader view**: a book icon in the address bar on article pages (and in the menu) shows just the
+  article (Mozilla Readability), with text size and serif / sans-serif choices. The site's HTML is
+  cleaned (only text, pictures and links kept) and shown in a sandboxed frame without scripts.
+- **Benchmark** `tools/bench-pageload.js`: an offline "fake web" (news pages loading scripts from
+  the real ad and tracker domains, which do work like real ads) or your own list of pages.
+
+### Changed
+- Shields rules apply from the first page after start (before the filter lists have loaded).
+- The page scan for video links runs at most every 2 s and only when the page is idle (it re-ran
+  600 ms after every change, which costs CPU on busy pages).
+
+### Measured (offline fake web, median of 3 rounds × 4 pages)
+| | Load | CPU of the page | Requests |
+|---|---|---|---|
+| Ad blocking off | 779 ms | 1062 ms | 32 |
+| Ad blocking on | 178 ms | 29 ms | 2 |
+| On, without element hiding | 178 ms | 27 ms | 2 |
+- Element hiding costs ~2 ms per page, so there was nothing to cut there.
+- The filter engine needs ~7 µs per request (20,000 requests in 142 ms). **Decision: keep the
+  Ghostery engine**; Brave's adblock-rust could not make pages noticeably faster (and needs a Rust
+  build for every Electron version).
+- 8 open tabs: 1240 MB of page memory; with 7 of them unloaded: 490 MB.
+
+### Fixed
+- Reader view no longer waits forever on a page that has a dialog open (gives up after 10 s).
+
+### Tests
+- 124 unit tests (new: redirect skipping incl. Bing's encoded links, tracking codes, AMP addresses,
+  HTTPS upgrade with fallback, local addresses and redirect loops; live DASH segments from the
+  clock and from a timeline, static timelines unchanged).
+- In-app self-test `tools/selftest-speed.js`: each rule on a real navigation, HTTPS upgrade through a
+  local proxy (a site without HTTPS falls back, one with HTTPS stays), a tab unloaded and brought
+  back at scroll position 2000 with its back list, reader view without scripts / event handlers /
+  `javascript:` links, video links still found.
+- In-app self-test `tools/selftest-livedash.js`: a local live DASH server (real fragmented MP4 video
+  and audio); recording, Stop, the file plays in Chromium with picture and sound; a broadcast that
+  ends by itself finishes the file.
+- All earlier self-tests (phase 2–7, downloads, transport, menu, pop-ups, 1.0) pass unchanged.
+
+### Not verified here
+- The speed figures come from the offline fake web, not from real sites; run the benchmark with
+  `NOVADM_BENCH_URLS` for your own pages.
+- Live DASH was tested against a local server, not a real broadcaster.
+
 ## [1.0.0] — 2026-10-09
 
 Everyday browsing: the browser features the 1DM feature map still had open. Plan for 1.x:

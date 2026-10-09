@@ -61,8 +61,42 @@ function scan() {
   if (found.length) send('novadm:dom-media', found);
 }
 
+// Pages that keep changing (feeds, players) would re-scan constantly: at most one scan every 2 s,
+// run when the page is idle so it never competes with the page's own work.
 let scanTimer = null;
-function scheduleScan() { clearTimeout(scanTimer); scanTimer = setTimeout(scan, 600); }
+const idle = (fn) => (typeof requestIdleCallback === 'function' ? requestIdleCallback(fn, { timeout: 3000 }) : setTimeout(fn, 0));
+function scheduleScan() {
+  if (scanTimer) return;
+  scanTimer = setTimeout(() => idle(() => { scanTimer = null; scan(); }), 2000);
+}
+
+// ---- de-AMP and reader view -------------------------------------------------------------------
+// An AMP page names its real (canonical) page; NovaDM opens that one instead (Settings → Privacy).
+function checkAmp() {
+  const html = document.documentElement;
+  if (!html || !(html.hasAttribute('amp') || html.hasAttribute('⚡'))) return;
+  const link = document.querySelector('link[rel="canonical"][href]');
+  const canonical = link ? abs(link.getAttribute('href')) : '';
+  if (/^https?:/.test(canonical) && canonical.split('#')[0] !== location.href.split('#')[0]) send('novadm:amp', { canonical, from: location.href });
+}
+
+// Enough article text for reader view (same idea as Firefox's "probably readerable" check).
+function checkReadable() {
+  if (INTERNAL || !/^https?:/.test(location.protocol)) return;
+  let score = 0;
+  const nodes = document.querySelectorAll('p, pre, article');
+  for (let i = 0; i < nodes.length && i < 400; i++) {
+    const n = nodes[i];
+    if (!n.offsetParent && n.offsetHeight === 0) continue; // hidden
+    const m = `${n.className} ${n.id}`;
+    if (/comment|footer|sidebar|sponsor|promo|share|related/i.test(m) && !/article|content|main|body|post/i.test(m)) continue;
+    const len = (n.textContent || '').trim().length;
+    if (len < 140) continue;
+    score += Math.sqrt(len - 140);
+    if (score > 20) break;
+  }
+  send('novadm:readable', { ok: score > 20, url: location.href });
+}
 
 // ---- on-video download button ----------------------------------------------------------------
 let btn = null;
@@ -132,7 +166,12 @@ window.addEventListener('auxclick', onUserClick, true);
 function boot() {
   injectEmeHook();
   send('novadm:page-meta', meta());
-  scan();
+  if (!INTERNAL) checkAmp();
+  idle(scan);
+  if (!INTERNAL) {
+    if (document.readyState === 'complete') idle(checkReadable);
+    else window.addEventListener('load', () => idle(checkReadable), { once: true });
+  }
   try {
     const obs = new MutationObserver(scheduleScan);
     obs.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'href'] });

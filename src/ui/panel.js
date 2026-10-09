@@ -267,6 +267,7 @@ function renderMenu() {
     ['History', 'tabs.new', { url: 'novadm://history' }],
     ['Bookmarks', 'tabs.new', { url: 'novadm://bookmarks' }],
     ['Find in page', 'find.open', {}],
+    ['Reader view', 'reader.open', {}],
     ['Detected media', '_panel', 'media'],
     ['Grab page content', '_panel', 'grabber'],
     ['Get extensions (Chrome Web Store)', 'extensions.openStore', {}],

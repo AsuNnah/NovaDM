@@ -521,6 +521,7 @@ app.whenReady().then(async () => {
     settings, browser, net, userDataDir: app.getPath('userData'), sendUI, setPanel,
     getWindow: () => win, relayout: () => layout(), restack: () => restack(),
   });
+  adblock.shields = browsing.shields;
   transport = new Transport({ session: browser.normalSession, settings });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
@@ -728,7 +729,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return ipcHandlers[method](args || {});
   });
   // Live updates for open Downloads pages.
