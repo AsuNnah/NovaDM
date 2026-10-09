@@ -8,6 +8,35 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [1.2.1] — 2026-10-09
+
+Code review and clean-up: 328 lines removed, 68 added, no feature changed.
+
+### Fixed
+- **Fingerprinting noise (Standard) sometimes did nothing.** About half of NovaDM starts left
+  canvas exports unchanged, so a site could still read the real canvas fingerprint. Two causes,
+  depending on the random per-start key: noise of 0 was possible, and noise written into transparent
+  pixels was lost (canvases store premultiplied alpha). The changed pixels now always change. Found
+  when the 1.2 self-test failed after the clean-up; the self-test now passes 5 runs out of 5.
+
+### Removed (unused)
+- 11 IPC methods nothing called: `window.isMaximized`, `nav.stop`, `media.state`, `popup.setMode`,
+  `settings.set`, `settings.setProxyPassword`, `settings.chooseDownloadDir`, `clipboard.read`,
+  `util.copy`, `bookmarks.move`, `tabs.unload`. The Settings page uses its own bridge for these.
+- The `askBeforeExternalApps` setting (never read: NovaDM always asks), the unused bookmark
+  reordering, an unused MP4 constant, and the "window-state" event that the toolbar ignored.
+- Old one-off scripts from 0.1: `tools/try-download.js`, `try-resume.js` (covered by the unit tests),
+  `check-electron.js`, `check-headers.js` (covered by the transport and phase 2 self-tests).
+- Unused imports.
+
+### Changed
+- `main.js` and `ipc.js` load their modules once at the top instead of in about 30 places.
+- The live-recording progress in the merge engine is shared with the normal progress.
+
+### Tests
+- 127 unit tests pass. All in-app self-tests pass (phases 2–7, downloads, transport, menu, pop-ups,
+  speed, live DASH, 1.0 and 1.2 with restarts).
+
 ## [1.2.0] — 2026-10-09
 
 Brave's keyboard shortcuts and Tor-style protections for normal tabs. Private browsing in Tor

@@ -50,16 +50,15 @@ test('history: kept 90 days, saved to disk', () => {
   assert.deepStrictEqual(again.visits.map((v) => v.title), ['New']);
 });
 
-test('bookmarks: star toggle, edit, move, import and export (Chrome / Firefox HTML)', () => {
+test('bookmarks: star toggle, edit, import and export (Chrome / Firefox HTML)', () => {
   const b = new Bookmarks(tmp());
   assert.strictEqual(b.toggle('https://a.example/', 'A'), true);
   assert.strictEqual(b.has('https://a.example/'), true);
   assert.strictEqual(b.toggle('https://a.example/', 'A'), false);
   assert.strictEqual(b.add({ url: 'javascript:alert(1)' }), null);
   const x = b.add({ url: 'https://x.example/', title: 'X' });
-  const y = b.add({ url: 'https://y.example/', title: 'Y' });
-  b.move(y.id, 0);
-  assert.deepStrictEqual(b.list().map((i) => i.title), ['Y', 'X']);
+  b.add({ url: 'https://y.example/', title: 'Y' });
+  assert.deepStrictEqual(b.list().map((i) => i.title), ['X', 'Y']);
   b.update(x.id, { title: 'Ex', folder: 'Work', url: 'javascript:bad' });
   assert.strictEqual(b.find('https://x.example/').title, 'Ex');
   assert.strictEqual(b.find('https://x.example/').folder, 'Work');

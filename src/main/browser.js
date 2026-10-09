@@ -5,7 +5,6 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { WebContentsView, session: electronSession, ipcMain } = require('electron');
 const net = require('./net');
-const { siteOf, hostOf } = require('./util');
 const { shortcutFor } = require('./shortcuts');
 
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');

@@ -1,16 +1,18 @@
 'use strict';
+const fs = require('fs');
 const path = require('path');
-const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, session: electronSession, nativeTheme, safeStorage } = require('electron');
+const { pathToFileURL } = require('url');
+const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, dialog, session: electronSession, nativeTheme, safeStorage } = require('electron');
 const { Settings } = require('./settings');
 const { AdBlocker } = require('./adblock');
 const { PopupGuard } = require('./popup');
 const { MediaRegistry } = require('./media/registry');
 const { DownloadManager } = require('./download/manager');
 const { Transport } = require('./transport');
-const { AddFlow } = require('./add-flow');
+const { AddFlow, specFromUrl } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
-const { applyProxy, proxyCredentials } = require('./proxy');
+const { applyProxy, proxyCredentials, encryptPassword } = require('./proxy');
 const { Scheduler } = require('./scheduler');
 const { Background } = require('./background');
 const { FFmpeg } = require('./ffmpeg');
@@ -25,9 +27,11 @@ const util = require('./util');
 const { Browser } = require('./browser');
 const net = require('./net');
 const { registerIpc } = require('./ipc');
-const { applySecureDns } = require('./dns');
+const { applySecureDns, PROVIDERS } = require('./dns');
 const { showContextMenu } = require('./contextmenu');
 const { setupBrowsing } = require('./browsing');
+const { shortcutFor, LIST: SHORTCUT_LIST } = require('./shortcuts');
+const hardening = require('./hardening');
 // Must load before the app is ready (registers the crx:// scheme for extension icons).
 const { Extensions } = require('./extensions');
 
@@ -41,7 +45,7 @@ else migrateOldProfile();
 // Third-party cookies (Settings → Privacy) use Chromium's own switch, which must be set before
 // Chromium starts: read straight from the settings file. Blocked unless turned off.
 try {
-  const saved = JSON.parse(require('fs').readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
+  const saved = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
   if (saved.blockThirdPartyCookies !== false) app.commandLine.appendSwitch('test-third-party-cookie-phaseout');
   // Security level Safer / Safest: no JIT compiler (like Tor Browser). Applies to every page.
   if (['safer', 'safest'].includes(saved.securityLevel)) app.commandLine.appendSwitch('js-flags', '--jitless');
@@ -57,7 +61,6 @@ const startHidden = process.argv.includes('--hidden');
 // The app was called "Swoop" before 0.2.0: move that profile (settings, downloads list,
 // extensions, cookies) to NovaDM's folder once, if NovaDM has none yet.
 function migrateOldProfile() {
-  const fs = require('fs');
   try {
     const oldDir = path.join(app.getPath('appData'), 'Swoop');
     const newDir = app.getPath('userData');
@@ -148,8 +151,6 @@ function createWindow() {
 
   layout();
   win.on('resize', layout);
-  win.on('maximize', () => sendUI('window-state', { maximized: true }));
-  win.on('unmaximize', () => sendUI('window-state', { maximized: false }));
   win.on('close', (e) => {
     // Downloads running: keep going in the tray instead of quitting (Settings → Background).
     if (background && background.keepRunningOnClose()) { e.preventDefault(); background.hideToTray(); return; }
@@ -187,7 +188,7 @@ function wireEvents() {
   browser.on('download', onPageDownload);
   browser.on('page-loaded', (tab) => { runSiteExtensions(tab); if (/^novadm:\/\//.test(tab.url || '')) styleUi(tab.wc); });
   browser.on('shortcut', (tab, action) => handleShortcut(tab, action));
-  browser.on('download-link', (tab, url) => addFlow.request(require('./add-flow').specFromUrl(url, { pageUrl: tab.url, incognito: tab.incognito }), { origin: 'page' }));
+  browser.on('download-link', (tab, url) => addFlow.request(specFromUrl(url, { pageUrl: tab.url, incognito: tab.incognito }), { origin: 'page' }));
   browser.on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
@@ -268,8 +269,8 @@ function onPageDownload(event, item, info) {
   }
   const name = util.sanitizeFilename(info.name || 'download');
   const dir = downloads.categoryDir(util.categoryOf(name, info.mime));
-  try { require('fs').mkdirSync(dir, { recursive: true }); } catch {}
-  item.setSavePath(util.uniquePath(require('path').join(dir, name), downloads.reservedPaths()));
+  try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+  item.setSavePath(util.uniquePath(path.join(dir, name), downloads.reservedPaths()));
   downloads.addNative(item, info);
 }
 
@@ -354,10 +355,10 @@ ipcMain.handle('siteext:fetch', (e, url, opts) => siteExt.fetchFor(e.sender.id, 
 function handleLaunch(argv) {
   for (const item of parseLaunchArgs(argv.slice(1))) {
     if (item.torrentFile) {
-      try { addFlow.requestTorrentFile(require('fs').readFileSync(item.torrentFile), { origin: 'link' }); } catch (e) { notify({ title: 'Could not open the torrent', body: e.message }); }
+      try { addFlow.requestTorrentFile(fs.readFileSync(item.torrentFile), { origin: 'link' }); } catch (e) { notify({ title: 'Could not open the torrent', body: e.message }); }
       continue;
     }
-    const spec = require('./add-flow').specFromUrl(item.url, { pageUrl: item.referer || '' });
+    const spec = specFromUrl(item.url, { pageUrl: item.referer || '' });
     if (item.name) spec.name = item.name;
     if (item.start) downloads.add(spec);
     else addFlow.request(spec, { origin: 'link' });
@@ -460,14 +461,12 @@ function handleShortcut(tab, action) {
 }
 
 async function openFileInTab() {
-  const { dialog } = require('electron');
   const r = await dialog.showOpenDialog(win, { title: 'Open a file', properties: ['openFile'], filters: [{ name: 'Web pages and files', extensions: ['html', 'htm', 'pdf', 'txt', 'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mp3'] }] });
-  if (!r.canceled && r.filePaths[0]) browser.createTab({ url: require('url').pathToFileURL(r.filePaths[0]).href });
+  if (!r.canceled && r.filePaths[0]) browser.createTab({ url: pathToFileURL(r.filePaths[0]).href });
 }
 
 // Shift+Esc: memory of each tab, and unloading the background ones.
 async function showTaskManager() {
-  const { dialog } = require('electron');
   const mem = new Map(app.getAppMetrics().map((m) => [m.pid, m.memory.workingSetSize]));
   const lines = browser.order.map((id) => browser.tabs.get(id)).map((t) => {
     const kb = t.wc && !t.wc.isDestroyed() ? mem.get(t.wc.getOSProcessId()) || 0 : 0;
@@ -479,9 +478,7 @@ async function showTaskManager() {
 }
 
 function showShortcutList() {
-  const { dialog } = require('electron');
-  const { LIST } = require('./shortcuts');
-  dialog.showMessageBox(win, { type: 'info', title: 'Keyboard shortcuts', message: 'Keyboard shortcuts', detail: LIST.map(([h, t]) => `${h}\n${t}`).join('\n\n'), buttons: ['OK'] });
+  dialog.showMessageBox(win, { type: 'info', title: 'Keyboard shortcuts', message: 'Keyboard shortcuts', detail: SHORTCUT_LIST.map(([h, t]) => `${h}\n${t}`).join('\n\n'), buttons: ['OK'] });
 }
 
 // F3 / Ctrl+G while the find bar is open: next or previous match of what it holds.
@@ -578,7 +575,6 @@ app.whenReady().then(async () => {
     getWindow: () => win, relayout: () => layout(), restack: () => restack(),
   });
   adblock.shields = browsing.shields;
-  const hardening = require('./hardening');
   hardening.install(settings);
   adblock.protection = (url) => hardening.protectionFor(settings, url);
   transport = new Transport({ session: browser.normalSession, settings });
@@ -608,8 +604,7 @@ app.whenReady().then(async () => {
       return { status: r.status, url: r.finalUrl, text: r.text };
     },
     confirm: async (man) => {
-      const { dialog } = require('electron');
-      const r = await dialog.showMessageBox(win, {
+          const r = await dialog.showMessageBox(win, {
         type: 'question', buttons: ['Install', 'Cancel'], defaultId: 1, cancelId: 1, title: 'Install site extension',
         message: `Install "${man.name}" ${man.version}?`,
         detail: `${man.description ? man.description + '\n\n' : ''}It can read pages on:\n${man.matches.join('\n')}\n\nOnly install extensions from people you trust.`,
@@ -697,7 +692,7 @@ app.whenReady().then(async () => {
   for (const v of [chromeView, overlayView]) v.webContents.on('did-finish-load', () => v.webContents.setZoomFactor(browsing.scale()));
   for (const v of [chromeView, overlayView, browsing.findView]) {
     v.webContents.on('before-input-event', (e, input) => {
-      const action = require('./shortcuts').shortcutFor(input);
+      const action = shortcutFor(input);
       if (!action || action === 'stop' || action.startsWith('zoom') && v !== chromeView) return;
       e.preventDefault();
       handleShortcut(browser.activeTab(), action);
@@ -759,7 +754,7 @@ app.whenReady().then(async () => {
     ads: adsBlockedTotal, popups: popupsBlockedTotal, downloads: downloads.list().filter((d) => d.state === 'done').length,
   }));
   // Settings for the novadm://settings page. Only NovaDM's own UI files may call this.
-  const UI_FILE_PREFIX = require('url').pathToFileURL(UI_DIR).href + '/';
+  const UI_FILE_PREFIX = pathToFileURL(UI_DIR).href + '/';
   ipcMain.handle('novadm:internal-settings', async (event, op, arg) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
@@ -767,29 +762,25 @@ app.whenReady().then(async () => {
     if (op === 'sitePassword') {
       // { site, password }: stored encrypted on that site's entry.
       try {
-        const enc = arg && arg.password ? require('./proxy').encryptPassword(String(arg.password)) : '';
+        const enc = arg && arg.password ? encryptPassword(String(arg.password)) : '';
         settings.set({ siteSettings: (settings.get('siteSettings') || []).map((s) => (String(s.site).toLowerCase() === String(arg.site).toLowerCase() ? { ...s, passEnc: enc } : s)) });
       } catch (e) { return { ok: false, error: e.message }; }
     }
     if (op === 'chooseProgram') {
-      const { dialog } = require('electron');
-      const r = await dialog.showOpenDialog(win, { title: 'Choose a program', properties: ['openFile'], filters: [{ name: 'Programs', extensions: ['exe'] }] });
+          const r = await dialog.showOpenDialog(win, { title: 'Choose a program', properties: ['openFile'], filters: [{ name: 'Programs', extensions: ['exe'] }] });
       if (!r.canceled && r.filePaths[0]) settings.set({ afterProgram: r.filePaths[0] });
     }
     if (op === 'chooseFolder') {
-      const { dialog } = require('electron');
-      const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
+          const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
       return { folder: r.canceled ? '' : r.filePaths[0] || '' };
     }
     if (op === 'proxyPassword') {
-      try { settings.set({ proxyPassEnc: require('./proxy').encryptPassword(String(arg || '')) }); } catch (e) { return { ok: false, error: e.message }; }
+      try { settings.set({ proxyPassEnc: encryptPassword(String(arg || '')) }); } catch (e) { return { ok: false, error: e.message }; }
     }
     if (op === 'chooseDir') {
-      const { dialog } = require('electron');
-      const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });
+          const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });
       if (!r.canceled && r.filePaths[0]) settings.set({ downloadDir: r.filePaths[0] });
     }
-    const { PROVIDERS } = require('./dns');
     return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS };
   });
   // Actions for internal pages (Downloads page). Same sender check plus an allow list.
@@ -816,7 +807,7 @@ app.whenReady().then(async () => {
   if (process.env.NOVADM_SHOT) {
     setTimeout(async () => {
       try {
-        const os = require('os'); const fs = require('fs');
+        const os = require('os');
         const c = await chromeView.webContents.capturePage();
         fs.writeFileSync(path.join(os.tmpdir(), 'novadm-chrome.png'), c.toPNG());
         const t = browser.activeTab();

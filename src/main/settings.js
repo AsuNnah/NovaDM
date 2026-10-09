@@ -20,7 +20,6 @@ function defaults() {
     searchEngine: 'google',
     homepage: 'novadm://newtab',
     restoreTabs: true,
-    askBeforeExternalApps: true,
     secureDns: 'cloudflare', // off | cloudflare | google | quad9 | adguard | custom
     secureDnsCustom: '',
 

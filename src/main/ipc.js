@@ -1,9 +1,16 @@
 'use strict';
-const { ipcMain, shell, clipboard, dialog } = require('electron');
+const fs = require('fs');
+const path = require('path');
+const { app, ipcMain, shell, clipboard, dialog } = require('electron');
 const { siteOf, extractLinks, expandPattern } = require('./util');
 const grabber = require('./grabber');
 const { copyText } = require('./clipboard-watch');
-const { encryptPassword } = require('./proxy');
+const { specFromUrl } = require('./add-flow');
+const { toggleSite } = require('./hardening');
+const { parseCurl } = require('./curl');
+const { exportData, importData } = require('./backup');
+const { nextStart, normalizeQueues } = require('./scheduler');
+const { STORE_URL } = require('./extensions');
 
 const GRAB_CATEGORY = { image: 'images', video: 'video', audio: 'music', document: 'documents', archive: 'archives', program: 'programs' };
 
@@ -17,7 +24,6 @@ function registerIpc(ctx) {
     'window.minimize': () => getManagers().win.minimize(),
     'window.maximizeToggle': () => { const w = getManagers().win; w.isMaximized() ? w.unmaximize() : w.maximize(); return w.isMaximized(); },
     'window.close': () => getManagers().win.close(),
-    'window.isMaximized': () => getManagers().win.isMaximized(),
 
     // ---- tabs / navigation ----
     'tabs.list': () => { const b = getManagers().browser; return { tabs: b.order.map((id) => b.serializeTab(b.tabs.get(id))).filter(Boolean), activeId: b.activeId }; },
@@ -28,7 +34,6 @@ function registerIpc(ctx) {
     'nav.back': (a) => getManagers().browser.back(a && a.tabId),
     'nav.forward': (a) => getManagers().browser.forward(a && a.tabId),
     'nav.reload': (a) => getManagers().browser.reload(a && a.tabId),
-    'nav.stop': (a) => getManagers().browser.stop(a && a.tabId),
 
     // ---- panels ----
     'panel.open': (a) => { getManagers().addFlow.dismiss(); setPanel(true); sendUI('open-panel', { name: a.name, anchor: a.anchor }); if (a.name === 'media') sendMediaState(); if (a.name === 'downloads') pushDownloads(); if (a.name === 'shields') pushShields(); },
@@ -44,7 +49,6 @@ function registerIpc(ctx) {
     },
 
     // ---- media ----
-    'media.state': () => { const b = getManagers().browser; const m = getManagers().media; return b.activeId == null ? { count: 0, items: [] } : { count: m.count(b.activeId), ...m.list(b.activeId) }; },
     'media.download': (a) => { const b = getManagers().browser; return downloadItem(b.activeId, a.id, a.variantUrl); },
     'media.downloadAll': (a) => {
       const b = getManagers().browser; const m = getManagers().media; const out = [];
@@ -116,16 +120,12 @@ function registerIpc(ctx) {
     'integration.status': () => {
       const { settings, getApiStatus } = getManagers();
       const st = getApiStatus();
-      const path = require('path');
-      const { app } = require('electron');
       const extDir = app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension');
       return { enabled: !!settings.get('apiEnabled'), running: !!st.running, port: st.port || settings.get('apiPort'), error: st.error || '', key: settings.get('apiEnabled') ? settings.get('apiKey') : '', extensionFolder: extDir };
     },
     'integration.newKey': () => { getManagers().api.newKey(); return { ok: true }; },
     'integration.copyKey': () => { copyText(getManagers().settings.get('apiKey') || ''); return { ok: true }; },
     'integration.openExtensionFolder': () => {
-      const path = require('path');
-      const { app } = require('electron');
       shell.openPath(app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension'));
     },
 
@@ -134,7 +134,6 @@ function registerIpc(ctx) {
       const { win, addFlow } = getManagers();
       const r = await dialog.showOpenDialog(win, { title: 'Open a torrent file', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Torrent files', extensions: ['torrent'] }] });
       if (r.canceled) return { ok: false };
-      const fs = require('fs');
       for (const f of r.filePaths) addFlow.requestTorrentFile(fs.readFileSync(f), { origin: 'manual' });
       return { ok: true };
     },
@@ -190,8 +189,8 @@ function registerIpc(ctx) {
       const text = String(a.url || '').trim();
       if (/^curl(\.exe)?\s/i.test(text)) {
         try {
-          const c = require('./curl').parseCurl(text);
-          const spec = require('./add-flow').specFromUrl(c.url, { pageUrl: c.headers.referer || '' });
+          const c = parseCurl(text);
+          const spec = specFromUrl(c.url, { pageUrl: c.headers.referer || '' });
           spec.headers = { ...c.headers };
           return getManagers().addFlow.request(spec, { origin: 'manual' });
         } catch (e) { return { ok: false, error: e.message }; }
@@ -203,11 +202,10 @@ function registerIpc(ctx) {
     'downloads.extract': async (a) => getManagers().downloads.extract(a.id),
     'downloads.export': async () => {
       const { win, settings, downloads } = getManagers();
-      const { app } = require('electron');
       const r = await dialog.showSaveDialog(win, { title: 'Export downloads and settings', defaultPath: `NovaDM backup ${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'NovaDM backup', extensions: ['json'] }] });
       if (r.canceled || !r.filePath) return { ok: false };
-      const data = require('./backup').exportData({ settings, downloads, version: app.getVersion() });
-      require('fs').writeFileSync(r.filePath, JSON.stringify(data, null, 2));
+      const data = exportData({ settings, downloads, version: app.getVersion() });
+      fs.writeFileSync(r.filePath, JSON.stringify(data, null, 2));
       return { ok: true, downloads: data.downloads.length };
     },
     'downloads.import': async () => {
@@ -215,8 +213,8 @@ function registerIpc(ctx) {
       const r = await dialog.showOpenDialog(win, { title: 'Import downloads and settings', properties: ['openFile'], filters: [{ name: 'NovaDM backup', extensions: ['json'] }] });
       if (r.canceled || !r.filePaths[0]) return { ok: false };
       try {
-        const data = JSON.parse(require('fs').readFileSync(r.filePaths[0], 'utf8'));
-        return { ok: true, ...require('./backup').importData(data, { settings, downloads }) };
+        const data = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8'));
+        return { ok: true, ...importData(data, { settings, downloads }) };
       } catch (e) { return { ok: false, error: e.message }; }
     },
     'downloads.setSpeedLimit': (a) => { getManagers().downloads.setSpeedLimit(a.id, a.kbps); return { ok: true }; },
@@ -228,7 +226,6 @@ function registerIpc(ctx) {
     // ---- queues and scheduling ----
     'downloads.queues': () => {
       const { downloads, settings } = getManagers();
-      const { nextStart } = require('./scheduler');
       return {
         queues: downloads.queues().map((q) => {
           const next = q.schedule && q.schedule.enabled ? nextStart(q.schedule) : null;
@@ -238,7 +235,6 @@ function registerIpc(ctx) {
       };
     },
     'downloads.saveQueues': (a) => {
-      const { normalizeQueues } = require('./scheduler');
       const queues = normalizeQueues(a.queues);
       const { downloads, settings, scheduler } = getManagers();
       // Downloads in a deleted queue move to Main.
@@ -301,12 +297,12 @@ function registerIpc(ctx) {
     // ---- Chrome extensions ----
     'extensions.list': () => ({ ready: getManagers().extensions.ready, list: getManagers().extensions.list() }),
     'extensions.remove': async (a) => { await getManagers().extensions.remove(a.id); return { ok: true }; },
-    'extensions.openStore': () => getManagers().browser.createTab({ url: require('./extensions').STORE_URL }),
+    'extensions.openStore': () => getManagers().browser.createTab({ url: STORE_URL }),
 
     // ---- shields (adblock) ----
     'shields.state': () => shieldsState(),
     'shields.toggleSite': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { const on = getManagers().adblock.isWhitelisted(t.url); getManagers().adblock.setSiteEnabled(t.url, on); b.reload(t.id); } setTimeout(pushShields, 200); },
-    'shields.toggleHardening': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { require('./hardening').toggleSite(getManagers().settings, t.url); b.reload(t.id); } setTimeout(pushShields, 200); },
+    'shields.toggleHardening': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { toggleSite(getManagers().settings, t.url); b.reload(t.id); } setTimeout(pushShields, 200); },
     'shields.setGlobal': (a) => { getManagers().settings.set({ adblock: !!a.enabled }); pushShields(); },
 
     // ---- pop-up guard responses ----
@@ -315,7 +311,6 @@ function registerIpc(ctx) {
       if (a.always && a.pageUrl) getManagers().popup.allowSite(a.pageUrl, a.allow);
       if (a.allow && /^https?:/.test(a.url || '')) b.createTab({ url: a.url });
     },
-    'popup.setMode': (a) => getManagers().settings.set({ popupMode: a.mode }),
     'popup.review': () => reviewBlockedPopup(),
 
     // ---- permissions ----
@@ -330,20 +325,8 @@ function registerIpc(ctx) {
 
     // ---- settings ----
     'settings.get': () => getManagers().settings.all(),
-    'settings.set': (a) => { getManagers().settings.set(a.patch || {}); return getManagers().settings.all(); },
-    'settings.setProxyPassword': (a) => {
-      try { getManagers().settings.set({ proxyPassEnc: encryptPassword(a.password || '') }); return { ok: true }; } catch (e) { return { ok: false, error: e.message }; }
-    },
-    'settings.chooseDownloadDir': async () => {
-      const { win } = getManagers();
-      const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
-      if (!r.canceled && r.filePaths[0]) { getManagers().settings.set({ downloadDir: r.filePaths[0] }); }
-      return getManagers().settings.all();
-    },
 
     // ---- misc ----
-    'clipboard.read': async () => String((await clipboard.readText()) || ''),
-    'util.copy': (a) => copyText(a.text || ''),
   };
 
   function shieldsState() {

@@ -784,21 +784,20 @@ class MergeDownload extends EventEmitter {
     const total = this.totalSegments;
     const done = this.doneSegments;
     const frac = total ? done / total : 0;
-    if (this.live) {
-      return {
-        id: this.id, state: this.state, size: this.writtenBytes, sizeIsEstimate: this.isRecording(), received: this.writtenBytes,
-        percent: 0, resumable: false, segments: total, doneSegments: done, live: true, recording: this.isRecording() && this.state === 'downloading',
-        recordedSeconds: Math.round(this.recordedSeconds()), liveGaps: this.liveGaps,
-        speed: this.state === 'downloading' ? this.speed() : 0, connections: this.state === 'downloading' ? this.concurrency : 0,
-        error: this.error ? String(this.error.message || this.error) : null, errorCode: this.error && this.error.code ? this.error.code : null,
-      };
-    }
-    return {
+    const p = {
       id: this.id, state: this.state, size: done > 4 && frac > 0 ? Math.round(this.writtenBytes / frac) : -1, sizeIsEstimate: done < total,
       received: this.writtenBytes, percent: frac * 100, resumable: true, segments: total, doneSegments: done,
       speed: this.state === 'downloading' ? this.speed() : 0, connections: this.state === 'downloading' ? this.concurrency : 0,
       error: this.error ? String(this.error.message || this.error) : null, errorCode: this.error && this.error.code ? this.error.code : null,
     };
+    // A live recording has no known end: its size is what's written so far.
+    if (this.live) {
+      Object.assign(p, {
+        size: this.writtenBytes, sizeIsEstimate: this.isRecording(), percent: 0, resumable: false, live: true,
+        recording: this.isRecording() && this.state === 'downloading', recordedSeconds: Math.round(this.recordedSeconds()), liveGaps: this.liveGaps,
+      });
+    }
+    return p;
   }
 }
 

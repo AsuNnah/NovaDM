@@ -149,15 +149,6 @@ class Bookmarks extends EventEmitter {
     return b;
   }
 
-  /** Move a bookmark to position `index` (bookmarks bar order). */
-  move(id, index) {
-    const i = this.items.findIndex((x) => x.id === id);
-    if (i < 0) return;
-    const [b] = this.items.splice(i, 1);
-    this.items.splice(Math.max(0, Math.min(index, this.items.length)), 0, b);
-    this.changed();
-  }
-
   remove(id) {
     const before = this.items.length;
     this.store.data.items = this.items.filter((b) => b.id !== id);

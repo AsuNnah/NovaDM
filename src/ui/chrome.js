@@ -139,7 +139,6 @@ api.on('popups-blocked', (d) => {
 $('popup-pill').onclick = () => call('popup.review');
 api.on('media', (d) => setBadge('media-badge', d.count));
 api.on('downloads', (d) => setBadge('dl-badge', d.summary ? d.summary.active : 0, true));
-api.on('window-state', () => {});
 
 function setBadge(id, n, gray) {
   const b = $(id);

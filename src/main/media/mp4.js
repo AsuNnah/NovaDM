@@ -7,7 +7,6 @@
 // inputs' moof+mdat pairs, renumbered (mfhd sequence, tfhd track ID) and written in time order.
 // Boxes that would point to the wrong place in the new file (sidx, styp, emsg, prft) are dropped.
 
-const CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'mvex', 'moof', 'traf', 'edts', 'dinf']);
 
 /** Top-level boxes in buf[start, end): [{ type, start, end, header }]. Stops at a truncated box. */
 function readBoxes(buf, start = 0, end = buf.length) {

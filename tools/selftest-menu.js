@@ -3,7 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { BrowserWindow, webContents } = require('electron');
+const { BrowserWindow } = require('electron');
 const { buildContextMenuTemplate } = require('../src/main/contextmenu');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

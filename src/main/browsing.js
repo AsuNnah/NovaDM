@@ -238,7 +238,6 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'bookmarks.toggleActive': () => toggleActiveBookmark(),
     'bookmarks.update': (a) => ({ ok: !!bookmarks.update(Number(a.id), a) }),
     'bookmarks.remove': (a) => { bookmarks.remove(Number(a.id)); return { ok: true }; },
-    'bookmarks.move': (a) => { bookmarks.move(Number(a.id), Number(a.index)); return { ok: true }; },
     'bookmarks.open': (a) => openBookmark(bookmarks.items.find((b) => b.id === Number(a.id)), a.how),
     'bookmarks.contextMenu': (a) => {
       const b = bookmarks.items.find((x) => x.id === Number(a.id));
@@ -282,7 +281,6 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'reader.get': (a) => { const p = readerPages.get(String(a.id)); return p ? { ok: true, ...p } : { ok: false }; },
     'reader.original': (a) => { const p = readerPages.get(String(a.id)); if (p) browser.navigate(browser.activeId, p.url); },
 
-    'tabs.unload': (a) => ({ ok: browser.discard(Number(a.id)) }),
   };
 
   return {

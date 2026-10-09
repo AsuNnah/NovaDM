@@ -37,12 +37,23 @@ function protect(cfg) {
     } else {
       // Like Brave: tiny noise, different per site and per NovaDM start, so read-outs don't match
       // across sites but canvases still look the same to people.
-      const noise = (data) => { for (let i = (cfg.seed % 97); i < data.length; i += 97) data[i] ^= (cfg.seed >> (i % 13)) & 1; };
+      // XOR with 1 or 2, never 0: every chosen byte changes (a 0 left some sites without noise).
+      const noise = (data) => { for (let i = (cfg.seed % 97); i < data.length; i += 97) data[i] ^= 1 + ((cfg.seed >> (i % 13)) & 1); };
       CanvasRenderingContext2D.prototype.getImageData = function (...a) { const r = gid.apply(this, a); noise(r.data); return r; };
+      // Before an export the canvas itself gets 1–2 changed pixels. Canvas pixels are stored
+      // premultiplied: colour written into a transparent pixel is lost, so those get alpha instead.
       const noisy = (c) => {
         try {
           const ctx = c.getContext('2d');
-          if (ctx && c.width && c.height) { const row = gid.call(ctx, 0, 0, Math.min(c.width, 64), 1); noise(row.data); ctx.putImageData(row, 0, 0); }
+          if (ctx && c.width && c.height) {
+            const row = gid.call(ctx, 0, 0, Math.min(c.width, 64), 1);
+            const d = row.data;
+            for (let p = (cfg.seed % 61) * 4; p < d.length; p += 61 * 4) {
+              const a = d[p + 3];
+              if (a === 255) d[p] ^= 1 + (cfg.seed & 1); else d[p + 3] = a === 0 ? 1 + (cfg.seed & 3) : a ^ 1;
+            }
+            ctx.putImageData(row, 0, 0);
+          }
         } catch {}
         return c;
       };
