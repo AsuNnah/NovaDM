@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>Can't open this page</title>
+<style>
+:root{color-scheme:dark;--bg:#1b1d22;--card:#24272e;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#3b6ef5;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.6 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
+.wrap{max-width:600px;margin:0 auto;padding:12vh 28px 40px;}
+.icon{width:44px;height:44px;border-radius:12px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--fg2);margin-bottom:22px;}
+h1{font-size:22px;font-weight:600;margin:0 0 8px;}
+.host{color:var(--fg2);margin:0 0 18px;word-break:break-all;}
+.hint{color:var(--fg2);margin:0 0 6px;}
+ul{color:var(--fg2);margin:8px 0 22px;padding-left:20px;}
+.code{color:var(--fg3);font-size:12px;font-family:Consolas,monospace;margin-bottom:26px;}
+button{height:34px;padding:0 18px;border-radius:8px;border:1px solid var(--accent);background:var(--accent);color:#fff;font:inherit;cursor:pointer;}
+button.sec{background:transparent;color:var(--fg);border-color:var(--line);margin-left:8px;}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg></div>
+    <h1 id="title">This page can't be opened</h1>
+    <p class="host" id="host"></p>
+    <p class="hint" id="hint"></p>
+    <ul id="tips"></ul>
+    <div class="code" id="code"></div>
+    <button id="retry">Try again</button><button class="sec" id="settings">Open settings</button>
+  </div>
+  <script src="error.js"></script>
+</body>
+</html>

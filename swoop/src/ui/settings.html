@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>Settings</title>
+<style>
+:root{color-scheme:dark;--bg:#1b1d22;--card:#24272e;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#3b6ef5;--ok:#35c28a;--warn:#e6a23c;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+*{box-sizing:border-box;}
+[hidden]{display:none !important;}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
+.wrap{max-width:720px;margin:0 auto;padding:32px 24px 60px;}
+h1{font-size:24px;font-weight:600;margin:0 0 24px;}
+h2{font-size:13px;font-weight:600;color:var(--fg2);text-transform:none;margin:28px 0 10px;}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;}
+.row{display:flex;align-items:center;gap:16px;padding:14px 18px;border-top:1px solid var(--line);}
+.row:first-child{border-top:none;}
+.lbl{flex:1;min-width:0;}
+.lbl b{display:block;font-weight:500;}
+.lbl span{display:block;color:var(--fg3);font-size:12.5px;}
+select,input[type=number],input[type=text]{height:32px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;padding:0 10px;outline:none;}
+select:focus,input:focus{border-color:var(--accent);}
+input[type=number]{width:96px;}
+input[type=text]{width:280px;}
+.path{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg2);font-size:12.5px;}
+button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;cursor:pointer;}
+.sw{position:relative;width:40px;height:22px;flex:none;}
+.sw input{opacity:0;width:0;height:0;}
+.sw i{position:absolute;inset:0;border-radius:999px;background:var(--line);cursor:pointer;transition:.15s;}
+.sw i::after{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:.15s;}
+.sw input:checked + i{background:var(--accent);}
+.sw input:checked + i::after{left:21px;}
+.status{font-size:12.5px;margin-top:4px;}
+.status.ok{color:var(--ok);} .status.warn{color:var(--warn);}
+.saved{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 16px;font-size:12.5px;opacity:0;transition:opacity .2s;}
+.saved.on{opacity:1;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Settings</h1>
+
+  <h2>Privacy and security</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Secure DNS</b><span>Looks up sites over an encrypted connection. Fixes sites that open in other browsers but show a certificate error here.</span><div class="status" id="dnsStatus"></div></div>
+      <select id="secureDns"></select>
+    </div>
+    <div class="row" id="customRow" hidden>
+      <div class="lbl"><b>Custom DNS-over-HTTPS address</b><span>For example https://dns.nextdns.io/your-id</span></div>
+      <input type="text" id="secureDnsCustom" placeholder="https://" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Block ads and trackers</b><span>Turn it off for one site from the shield in the address bar.</span></div>
+      <label class="sw"><input type="checkbox" id="adblock"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Pop-ups and new windows</b><span>Ask: pop-ups and links that open another site in a new tab ask first. Block: pop-ups are blocked; links to other sites still ask. Ad-site pop-ups are always blocked.</span></div>
+      <select id="popupMode"><option value="ask">Ask me (recommended)</option><option value="block">Block pop-ups</option><option value="allow">Allow all</option></select>
+    </div>
+  </div>
+
+  <h2>Downloads</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Save to</b><div class="path" id="downloadDir"></div></div>
+      <button id="chooseDir">Change</button>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Sort into folders by type</b><span>Video, Music, Documents, Archives, Programs, Images</span></div>
+      <label class="sw"><input type="checkbox" id="categoryFolders"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Connections per download</b><span>More connections are faster on most servers (1 to 32).</span></div>
+      <input type="number" id="connections" min="1" max="32" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Downloads at the same time</b></div>
+      <input type="number" id="maxActive" min="1" max="10" />
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Speed limit (KB/s)</b><span>0 means no limit.</span></div>
+      <input type="number" id="speedLimitKBps" min="0" step="100" />
+    </div>
+  </div>
+
+  <h2>Video detection</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Convert TS streams to MP4</b><span>Saves streamed videos as .mp4 so every player can open them.</span></div>
+      <label class="sw"><input type="checkbox" id="convertTsToMp4"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Name files after the page title</b></div>
+      <label class="sw"><input type="checkbox" id="pageTitleNames"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Ignore media smaller than (KB)</b><span>Hides short clips and sounds from the detected list.</span></div>
+      <input type="number" id="minMediaKB" min="0" step="50" />
+    </div>
+  </div>
+
+  <h2>Extensions</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Chrome Web Store</b><span>Install extensions with “Add to Chrome”. Most extensions work; some Chrome-only features may not.</span></div>
+      <button id="openStore">Get extensions</button>
+    </div>
+    <div id="extList"></div>
+  </div>
+
+  <h2>Search</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b>Search engine</b><span>Used when you type words in the address bar.</span></div>
+      <select id="searchEngine"></select>
+    </div>
+  </div>
+</div>
+<div class="saved" id="saved">Saved</div>
+<script src="settings.js"></script>
+</body>
+</html>

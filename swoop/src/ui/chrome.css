@@ -1,0 +1,66 @@
+:root {
+  color-scheme: dark;
+  --bg: #1b1d22; --bg2: #24272e; --bg3: #2d313a; --line: #3a3f4b;
+  --fg: #e6e8ec; --fg2: #a6adbb; --fg3: #767d8c; --accent: #5b7cfa; --accent2: #3b6ef5;
+  --danger: #e2574c; --ok: #35c28a; --radius: 8px; --tab-h: 40px; --bar-h: 48px;
+}
+@media (prefers-color-scheme: light) {
+  :root { color-scheme: light; --bg:#eceef2; --bg2:#f6f7f9; --bg3:#fff; --line:#d8dbe2; --fg:#1c1e24; --fg2:#5a6271; --fg3:#8b93a3; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body { font: 13px/1.4 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; color: var(--fg); background: var(--bg); user-select: none; }
+.hidden { display: none !important; }
+
+/* tab strip */
+#tabstrip { height: var(--tab-h); display: flex; align-items: flex-end; gap: 2px; padding: 6px 6px 0; -webkit-app-region: drag; }
+/* Tabs take only the room they need; the empty space after them stays draggable. */
+#tabs { display: flex; align-items: flex-end; gap: 2px; flex: 0 1 auto; min-width: 0; overflow: hidden; -webkit-app-region: no-drag; }
+#drag-space { flex: 1 1 40px; min-width: 40px; align-self: stretch; -webkit-app-region: drag; }
+.tab { -webkit-app-region: no-drag; display: flex; align-items: center; gap: 7px; height: 34px; flex: 0 1 220px; min-width: 56px; max-width: 220px; padding: 0 8px 0 11px; border-radius: 9px 9px 0 0; background: transparent; color: var(--fg2); cursor: default; position: relative; }
+.tab:hover { background: var(--bg2); }
+.tab.active { background: var(--bg3); color: var(--fg); }
+.tab .fav { width: 16px; height: 16px; flex: none; border-radius: 3px; background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; color: var(--fg3); }
+.tab .fav .spin { width: 12px; height: 12px; border: 2px solid var(--fg3); border-top-color: transparent; border-radius: 50%; animation: sp .7s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+.tab .ttl { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12.5px; }
+.tab .cls { width: 18px; height: 18px; border-radius: 5px; display: flex; align-items: center; justify-content: center; color: var(--fg3); opacity: 0; flex: none; }
+.tab:hover .cls, .tab.active .cls { opacity: 1; }
+.tab .cls:hover { background: var(--line); color: var(--fg); }
+.tab .inc { font-size: 11px; color: var(--accent); }
+#newtab { -webkit-app-region: no-drag; width: 28px; height: 28px; margin-bottom: 3px; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: var(--fg2); flex: none; }
+#newtab:hover { background: var(--bg2); color: var(--fg); }
+
+/* window controls */
+#winctl { display: flex; -webkit-app-region: no-drag; margin-left: 4px; }
+#winctl .wc { width: 42px; height: 34px; display: flex; align-items: center; justify-content: center; color: var(--fg2); }
+#winctl .wc:hover { background: var(--bg2); }
+#winctl .wc.close:hover { background: var(--danger); color: #fff; }
+
+/* toolbar */
+#toolbar { height: var(--bar-h); display: flex; align-items: center; gap: 4px; padding: 0 8px; background: var(--bg3); border-bottom: 1px solid var(--line); }
+.ic { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--fg2); flex: none; position: relative; }
+.ic:hover { background: var(--bg2); color: var(--fg); }
+.ic.disabled { color: var(--fg3); opacity: .5; pointer-events: none; }
+.ic svg { width: 18px; height: 18px; }
+.badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent2); color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
+.badge.gray { background: var(--fg3); }
+
+/* Chrome extension buttons (electron-chrome-extensions web component). */
+browser-action-list { display: flex; align-items: center; gap: 2px; flex: none; }
+/* Only background-color: the icon itself is the button's background-image (set by the component),
+   and outer ::part rules override the component's inline styles. */
+browser-action-list::part(action) { width: 32px; height: 32px; border-radius: 8px; background-color: transparent; background-size: 18px; border: none; }
+browser-action-list::part(action):hover { background-color: var(--bg2); }
+#omnibox { flex: 1; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; margin: 0 6px; border-radius: 999px; background: var(--bg2); border: 1px solid transparent; }
+#omnibox.focus { border-color: var(--accent); background: var(--bg3); }
+#omnibox .lock { color: var(--fg3); display: flex; }
+#omnibox .lock.secure { color: var(--ok); }
+#url { flex: 1; background: transparent; border: none; outline: none; color: var(--fg); font-size: 13px; }
+#url::placeholder { color: var(--fg3); }
+.pill { display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 12px; }
+.pill.shield { background: rgba(91,124,250,.16); color: var(--accent); cursor: default; }
+.pill.shield.off { background: var(--bg); color: var(--fg3); }
+.pill.popblk { background: rgba(230,162,60,.16); color: #e6a23c; cursor: default; }
+.pill.popblk.pulse { animation: pulse .9s ease-out 1; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(230,162,60,.6); } 100% { box-shadow: 0 0 0 10px rgba(230,162,60,0); } }

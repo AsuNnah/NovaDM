@@ -1,0 +1,17 @@
+# Dependencies and build output
+node_modules/
+swoop/dist/
+
+# The original Android APK (third-party, not part of this project)
+*.apk
+
+# Download temp files
+*.part
+*.part.meta
+*.part.meta.tmp
+
+# OS / editor files
+Thumbs.db
+desktop.ini
+.vs/
+.vscode/

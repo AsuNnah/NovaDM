@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>Downloads</title>
+<style>
+:root{color-scheme:dark;--bg:#1b1d22;--card:#24272e;--card2:#2b2f37;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#3b6ef5;--accent2:#5b7cfa;--ok:#35c28a;--warn:#e6a23c;--danger:#e2574c;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--card2:#f1f3f6;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+*{box-sizing:border-box;}
+[hidden]{display:none !important;}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
+.wrap{max-width:1000px;margin:0 auto;padding:26px 24px 60px;}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap;}
+h1{font-size:24px;font-weight:600;margin:0;}
+.summary{color:var(--fg2);font-size:13px;}
+.sp{flex:1;}
+button{height:32px;padding:0 13px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;font-size:13px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
+button:hover{background:var(--card2);}
+button.pri{background:var(--accent);border-color:var(--accent);color:#fff;}
+button.pri:hover{background:var(--accent2);}
+button.danger{background:var(--danger);border-color:var(--danger);color:#fff;}
+button.icon{width:32px;padding:0;justify-content:center;}
+input[type=text],input[type=search]{height:32px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;font-size:13px;padding:0 11px;outline:none;}
+input:focus{border-color:var(--accent);}
+.addbar{display:flex;gap:8px;margin-bottom:14px;}
+.addbar input{flex:1;}
+.filters{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+.tab{height:30px;padding:0 13px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--fg2);font-size:12.5px;}
+.tab.on{background:rgba(59,110,245,.16);border-color:transparent;color:var(--accent2);}
+.chip{height:26px;padding:0 10px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--fg3);font-size:12px;}
+.chip.on{color:var(--fg);border-color:var(--fg3);}
+.bulk{display:flex;align-items:center;gap:8px;padding:8px 12px;margin-bottom:10px;border-radius:10px;background:rgba(59,110,245,.12);font-size:13px;}
+.list{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
+.row{display:flex;align-items:center;gap:12px;padding:12px 14px;border-top:1px solid var(--line);}
+.row:first-child{border-top:none;}
+.row:hover{background:var(--card2);}
+.row.sel{background:rgba(59,110,245,.10);}
+.row input[type=checkbox]{width:16px;height:16px;flex:none;accent-color:var(--accent);}
+.ico{width:40px;height:40px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;flex:none;color:var(--fg2);position:relative;}
+.ico .dot{position:absolute;right:-2px;bottom:-2px;width:12px;height:12px;border-radius:50%;border:2px solid var(--card);}
+.dot.downloading,.dot.connecting{background:var(--accent2);}
+.dot.done{background:var(--ok);}
+.dot.paused,.dot.queued{background:var(--fg3);}
+.dot.error{background:var(--danger);}
+.main{flex:1;min-width:0;}
+.name{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.name.done{cursor:pointer;}
+.name.done:hover{text-decoration:underline;}
+.status{color:var(--fg2);font-size:12.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.status .err{color:var(--danger);}
+.bar{height:5px;border-radius:3px;background:var(--card2);overflow:hidden;margin-top:7px;}
+.bar>i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .3s;}
+.bar.paused>i{background:var(--fg3);}
+.bar.error>i{background:var(--danger);}
+.acts{display:flex;gap:4px;flex:none;}
+.empty{padding:60px 20px;text-align:center;color:var(--fg3);}
+.empty b{display:block;color:var(--fg);font-size:16px;font-weight:500;margin-bottom:6px;}
+.menu{position:fixed;z-index:20;min-width:210px;background:var(--card);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);padding:5px;}
+.menu div{padding:8px 12px;border-radius:6px;cursor:pointer;font-size:13px;}
+.menu div:hover{background:var(--card2);}
+.menu div.red{color:var(--danger);}
+.menu hr{border:none;border-top:1px solid var(--line);margin:4px 0;}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:30;padding:20px;}
+.dialog{width:min(620px,100%);max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 20px 50px rgba(0,0,0,.4);}
+.dialog h2{font-size:17px;font-weight:600;margin:0;padding:18px 20px 12px;}
+.props{padding:0 20px 8px;}
+.prop{display:grid;grid-template-columns:150px 1fr;gap:12px;padding:7px 0;border-top:1px solid var(--line);font-size:13px;}
+.prop:first-child{border-top:none;}
+.prop .k{color:var(--fg3);}
+.prop .v{word-break:break-all;}
+.prop .v a{color:var(--accent2);text-decoration:none;cursor:pointer;}
+.hash{font-family:Consolas,monospace;font-size:12px;}
+.dialog .foot{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid var(--line);}
+.dialog p{padding:0 20px;color:var(--fg2);margin:0 0 6px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Downloads</h1>
+    <div class="summary" id="summary"></div>
+    <div class="sp"></div>
+    <button id="resumeAll" title="Resume all paused and failed downloads">Resume all</button>
+    <button id="pauseAll" title="Pause all running downloads">Pause all</button>
+    <button id="openFolder" title="Open the download folder">Open folder</button>
+    <button id="clearDone" title="Remove finished downloads from the list (files stay on disk)">Clear finished</button>
+  </div>
+
+  <div class="addbar">
+    <input type="text" id="addUrl" placeholder="Paste a download link (file or .m3u8 stream) and press Enter" spellcheck="false" />
+    <button class="pri" id="addBtn">Download</button>
+  </div>
+
+  <div class="filters" id="tabs"></div>
+  <div class="filters" id="chips"></div>
+  <div class="filters"><input type="search" id="q" placeholder="Search downloads" style="width:260px" /></div>
+
+  <div class="bulk" id="bulk" hidden>
+    <span id="bulkCount"></span><span class="sp"></span>
+    <button id="bResume">Resume</button><button id="bPause">Pause</button>
+    <button id="bRemove">Remove from list</button><button id="bDelete">Delete files</button>
+    <button id="bNone">Clear selection</button>
+  </div>
+
+  <div class="list" id="list"></div>
+</div>
+<div id="layer"></div>
+<script src="downloads.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+<title>New tab</title>
+<style>
+:root{color-scheme:dark;--bg:#1b1d22;--card:#24272e;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#5b7cfa;}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+*{box-sizing:border-box;}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.5 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:26px;}
+.logo{font-size:34px;font-weight:600;letter-spacing:-.5px;}
+.logo span{color:var(--accent);}
+form{width:min(620px,92%);}
+.search{display:flex;align-items:center;gap:10px;height:52px;padding:0 18px;background:var(--card);border:1px solid var(--line);border-radius:999px;}
+.search:focus-within{border-color:var(--accent);}
+.search input{flex:1;border:none;outline:none;background:transparent;color:var(--fg);font-size:16px;}
+.search svg{color:var(--fg3);flex:none;}
+.clock{font-size:52px;font-weight:300;letter-spacing:1px;}
+.stats{display:flex;gap:28px;color:var(--fg2);font-size:13px;}
+.stats b{display:block;font-size:22px;font-weight:600;color:var(--fg);}
+.stat{text-align:center;}
+.hint{color:var(--fg3);font-size:12.5px;}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="clock" id="clock">--:--</div>
+    <div class="logo">Sw<span>oo</span>p</div>
+    <form id="f">
+      <div class="search">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <input id="q" type="text" placeholder="Search the web or type a URL" autofocus spellcheck="false" />
+      </div>
+    </form>
+    <div class="stats">
+      <div class="stat"><b id="s-ads">0</b> ads blocked</div>
+      <div class="stat"><b id="s-pop">0</b> pop-ups stopped</div>
+      <div class="stat"><b id="s-dl">0</b> downloads</div>
+    </div>
+    <div class="hint">Play a video on any site, then click the media icon in the toolbar to download it.</div>
+  </div>
+  <script src="newtab.js"></script>
+</body>
+</html>
