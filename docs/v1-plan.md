@@ -30,7 +30,7 @@ Progress (see CHANGELOG.md):
 | A18 UI size for NovaDM's own screens, more languages | **Not done** |
 | B12 ed2k, B13 mobile | Skipped by decision |
 
-### docs/1DM-feature-map.md
+### 1DM feature list
 
 | Area | Done | Not done |
 |---|---|---|

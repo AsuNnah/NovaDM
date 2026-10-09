@@ -2,7 +2,7 @@
 
 ## 1. What 1DM does (research summary)
 
-See `1DM-feature-map.md` section 3 for the class-level findings. In short, 1DM:
+In short, 1DM:
 
 1. Intercepts every WebView request and matches URLs against a list of media extensions.
 2. Injects JavaScript into each page that hooks `XMLHttpRequest`, `fetch`, `window.open` and
