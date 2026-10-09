@@ -107,7 +107,7 @@ class Aria2 extends EventEmitter {
     if (this.starting) return this.starting;
     this.starting = (async () => {
       const exe = this.exe();
-      if (!exe) { const e = new Error('aria2 is not installed (Settings → Torrents)'); e.code = 'NEEDS_ARIA2'; throw e; }
+      if (!exe) { const e = new Error('aria2 is not installed (Settings → Add-ons)'); e.code = 'NEEDS_ARIA2'; throw e; }
       fs.mkdirSync(this.stateDir, { recursive: true });
       this.port = await freePort();
       this.secret = crypto.randomBytes(16).toString('hex');

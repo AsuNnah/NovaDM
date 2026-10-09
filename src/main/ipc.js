@@ -152,7 +152,7 @@ function registerIpc(ctx) {
       return aria2.status();
     },
 
-    // ---- FFmpeg (Settings → Video tools) ----
+    // ---- FFmpeg (Settings → Add-ons) ----
     'ffmpeg.status': () => getManagers().ffmpeg.status(),
     'ffmpeg.install': async () => {
       const { ffmpeg, browser } = getManagers();

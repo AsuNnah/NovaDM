@@ -8,6 +8,33 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 Nothing yet.
 
+## [1.2.2] — 2026-10-09
+
+### Added
+- **Search in Settings**: a search box at the top filters the settings by their name, help text and
+  the choices in their lists (e.g. "cloudflare" finds Secure DNS); a section name shows the whole
+  section.
+- **Add-ons section**: aria2, FFmpeg and yt-dlp are together under "Add-ons (installed
+  separately)", with a note that they are separate programs NovaDM only downloads when you click
+  Install. Each one that isn't installed says what doesn't work without it (⚠ in orange). Torrents
+  point to the aria2 add-on.
+- **Installer: shortcuts page.** Tick "Create a desktop shortcut" and/or "Add NovaDM to the Start
+  menu" (both ticked by default). Updates keep the shortcuts you have; silent installs (`/S`)
+  create both.
+
+### Fixed
+- After installing an add-on, Settings kept showing "Installing…" (with a Remove button) until the
+  page was opened again: the status read right after the install still said "installing".
+
+### Tests
+- 127 unit tests pass. In-app check of the Settings page: the three "not installed" warnings,
+  searches for "proxy", "cloudflare", "torrent", a word that matches nothing ("No settings match")
+  and an empty search (all 64 settings back).
+
+### Not verified here
+- The installer was built (the shortcuts page compiles), but not run on this PC, since installing
+  would create shortcuts and an uninstall entry on the real system.
+
 ## [1.2.1] — 2026-10-09
 
 Code review and clean-up: 328 lines removed, 68 added, no feature changed.

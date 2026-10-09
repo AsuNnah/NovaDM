@@ -388,7 +388,7 @@ class MergeDownload extends EventEmitter {
   // WebM or plain MP4 tracks: each to its own file (init + segments as they are), FFmpeg joins them.
   async prepareFiles() {
     if (!this.ffmpeg || !this.ffmpeg.available()) {
-      const e = new Error('Picture and sound of this video come as separate WebM/MP4 files; joining them needs FFmpeg. Install it in Settings → Video tools, then retry.');
+      const e = new Error('Picture and sound of this video come as separate WebM/MP4 files; joining them needs FFmpeg. Install it in Settings → Add-ons, then retry.');
       e.code = 'NEEDS_FFMPEG';
       throw e;
     }

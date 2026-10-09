@@ -136,17 +136,46 @@ async function init() {
   initIntegration();
   initYtdlp();
   initSiteExtensions();
+  initSearch();
 }
 
-// ---- FFmpeg (Video tools) ----
+// An add-on that isn't installed: say so, and what doesn't work without it.
+function notInstalled(el, what) {
+  el.textContent = `\u26a0 Not installed: ${what}`;
+  el.classList.add('warn');
+}
+
+// ---- Search: hide the settings whose text (label, help, choices) doesn't match ----
+function initSearch() {
+  const box = $('settingsSearch');
+  box.addEventListener('input', () => {
+    const q = box.value.trim().toLowerCase();
+    let shown = 0;
+    for (const card of document.querySelectorAll('.card')) {
+      const head = card.previousElementSibling && card.previousElementSibling.tagName === 'H2' ? card.previousElementSibling : null;
+      const headHit = !!q && !!head && head.textContent.toLowerCase().includes(q);
+      let any = false;
+      for (const row of card.querySelectorAll(':scope > .row')) {
+        const hit = !q || headHit || row.textContent.toLowerCase().includes(q);
+        row.classList.toggle('nomatch', !hit);
+        if (hit && !row.hidden) any = true;
+      }
+      card.classList.toggle('nomatch', !any);
+      if (head) head.classList.toggle('nomatch', !any);
+      if (any) shown++;
+    }
+    $('noMatch').hidden = shown > 0;
+  });
+}
+
+// ---- FFmpeg (Add-ons) ----
 function renderFfmpeg(st) {
   const el = $('ffStatus');
   el.className = 'status';
-  if (st.installing) { el.textContent = 'Installing…'; return; }
   if (st.installed) {
     el.textContent = `FFmpeg ${st.version} is ready` + (st.custom ? ` (${st.path})` : '');
     el.classList.add('ok');
-  } else el.textContent = 'Not installed.';
+  } else if (st.installing) { el.textContent = 'Installing…'; return; } else notInstalled(el, 'joining WebM / plain MP4 picture and sound, saving sound only, and repairing videos don\u2019t work yet.');
   $('ffInstall').hidden = !!st.installed && !st.custom;
   $('ffInstall').textContent = st.installed ? 'Install NovaDM\'s copy' : 'Install';
   $('ffRemove').hidden = !st.installed;
@@ -263,14 +292,14 @@ async function initSiteExtensions() {
   refresh();
 }
 
-// ---- yt-dlp (Video tools) ----
+// ---- yt-dlp (Add-ons) ----
 function initYtdlp() {
   const render = (st) => {
     const el = $('ytStatus');
     el.className = 'status';
-    if (st.installing) el.textContent = 'Installing…';
-    else if (st.installed) { el.textContent = `yt-dlp ${st.version} is ready` + (st.custom ? ` (${st.path})` : ''); el.classList.add('ok'); }
-    else el.textContent = 'Not installed.';
+    if (st.installed) { el.textContent = `yt-dlp ${st.version} is ready` + (st.custom ? ` (${st.path})` : ''); el.classList.add('ok'); }
+    else if (st.installing) el.textContent = 'Installing…';
+    else notInstalled(el, '\u201cFind with yt-dlp\u201d in the media panel doesn\u2019t work yet.');
     $('ytInstall').hidden = !!st.installed && !st.custom;
     $('ytInstall').textContent = st.installed ? 'Install NovaDM\'s copy' : 'Install';
     $('ytRemove').hidden = !st.installed;
@@ -310,14 +339,14 @@ function initIntegration() {
   renderIntegration();
 }
 
-// ---- aria2 (Torrents) ----
+// ---- aria2 (Add-ons) ----
 async function initAria2() {
   const render = (st) => {
     const el = $('a2Status');
     el.className = 'status';
-    if (st.installing) el.textContent = 'Installing…';
-    else if (st.installed) { el.textContent = `aria2 ${st.version || ''} is ready` + (st.custom ? ` (${st.path})` : ''); el.classList.add('ok'); }
-    else el.textContent = 'Not installed: torrents and magnet links can’t be downloaded yet.';
+    if (st.installed) { el.textContent = `aria2 ${st.version || ''} is ready` + (st.custom ? ` (${st.path})` : ''); el.classList.add('ok'); }
+    else if (st.installing) el.textContent = 'Installing…';
+    else notInstalled(el, 'torrents and magnet links can\u2019t be downloaded yet.');
     $('a2Install').hidden = !!st.installed && !st.custom;
     $('a2Remove').hidden = !st.installed;
   };

@@ -230,7 +230,7 @@ function wireEvents() {
   downloads.on('failed', (rec) => {
     afterDownloadHooks('failed', rec);
     if (rec.errorCode === 'NEEDS_FFMPEG') {
-      notify({ title: 'This video needs FFmpeg', body: 'Install it in Settings → Video tools, then retry the download.', onClick: () => { showWindow(); browser.openInternal('settings'); } });
+      notify({ title: 'This video needs FFmpeg', body: 'Install it in Settings → Add-ons, then retry the download.', onClick: () => { showWindow(); browser.openInternal('settings'); } });
       return;
     }
     if (!settings.get('notifyOnComplete')) return;

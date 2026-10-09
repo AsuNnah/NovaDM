@@ -273,7 +273,7 @@ class DownloadManager extends EventEmitter {
 
   makeEngine(rec) {
     if (rec.kind === 'torrent') {
-      if (!this.aria2 || !this.aria2.available()) { const e = new Error('Torrents need aria2. Install it in Settings → Torrents, then retry.'); e.code = 'NEEDS_ARIA2'; throw e; }
+      if (!this.aria2 || !this.aria2.available()) { const e = new Error('Torrents need aria2. Install it in Settings → Add-ons, then retry.'); e.code = 'NEEDS_ARIA2'; throw e; }
       return new TorrentDownload({
         id: rec.id, aria2: this.aria2, magnet: rec.magnet, torrent: rec.torrentData, dir: path.dirname(rec.savePath),
         gid: rec.gid, selectFiles: rec.selectFiles, askFiles: this.askTorrentFiles ? (files) => this.askTorrentFiles(rec, files) : null,
@@ -439,7 +439,7 @@ class DownloadManager extends EventEmitter {
   convert(id, action) {
     const src = this.records.get(id);
     if (!src || src.state !== 'done') throw new Error('Only finished downloads can be converted');
-    if (!this.ffmpeg || !this.ffmpeg.available()) { const e = new Error('FFmpeg is not installed (Settings → Video tools)'); e.code = 'NEEDS_FFMPEG'; throw e; }
+    if (!this.ffmpeg || !this.ffmpeg.available()) { const e = new Error('FFmpeg is not installed (Settings → Add-ons)'); e.code = 'NEEDS_FFMPEG'; throw e; }
     const base = src.savePath.replace(/\.[^.\\/]+$/, '');
     const target = { audio: base + ' (sound).m4a', mp3: base + '.mp3', repair: base + ' (repaired)' + path.extname(src.savePath) }[action];
     if (!target) throw new Error('Unknown conversion');

@@ -252,7 +252,7 @@ function openMenu(anchor, d) {
     hr();
     const conv = (label, action) => add(label, async () => {
       const r = await api.call('downloads.convert', { id: d.id, action });
-      if (r && !r.ok) showNotice(r.code === 'NEEDS_FFMPEG' ? 'FFmpeg is needed for this. Install it in Settings → Video tools.' : r.error);
+      if (r && !r.ok) showNotice(r.code === 'NEEDS_FFMPEG' ? 'FFmpeg is needed for this. Install it in Settings → Add-ons.' : r.error);
     });
     if (d.category === 'video') conv('Save sound only (.m4a)', 'audio');
     conv('Convert sound to MP3', 'mp3');

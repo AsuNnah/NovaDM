@@ -34,6 +34,11 @@ input[type=text]{width:280px;}
 .path{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg2);font-size:12.5px;}
 button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;cursor:pointer;}
 .sw{position:relative;width:40px;height:22px;flex:none;}
+#settingsSearch{width:100%;height:38px;margin:0 0 6px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;outline:none;}
+#settingsSearch:focus{border-color:var(--accent);}
+.nomatch{display:none !important;}
+.empty-search{color:var(--fg3);padding:30px 0;text-align:center;}
+.note-row{background:color-mix(in srgb,var(--warn) 10%,transparent);}
 .chk,.mini label.chk{display:flex;flex-direction:row;align-items:center;gap:6px;font-size:13px;color:var(--fg2);}
 .sw input{opacity:0;width:0;height:0;}
 .sw i{position:absolute;inset:0;border-radius:999px;background:var(--line);cursor:pointer;transition:.15s;}
@@ -49,6 +54,8 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
 <body>
 <div class="wrap">
   <h1>Settings</h1>
+  <input type="search" id="settingsSearch" placeholder="Search settings" spellcheck="false" autocomplete="off" />
+  <div class="empty-search" id="noMatch" hidden>No settings match your search.</div>
 
   <h2>Appearance</h2>
   <div class="card">
@@ -294,8 +301,7 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
   <h2>Torrents</h2>
   <div class="card">
     <div class="row">
-      <div class="lbl"><b>aria2</b><span>Downloads torrents and magnet links (the engine Motrix uses). Installed on demand from the official release (about 2.5 MB, github.com/aria2/aria2), or use your own aria2c.exe.</span><div class="status" id="a2Status">Checking…</div><div class="ffbar" id="a2Bar" hidden><i></i></div></div>
-      <div class="ffacts"><button id="a2Install">Install</button><button id="a2Choose">Use my own…</button><button id="a2Remove" hidden>Remove</button></div>
+      <div class="lbl"><b>Torrents use the aria2 add-on</b><span>Install it under Add-ons below; the settings here apply once it's installed.</span></div>
     </div>
     <div class="row">
       <div class="lbl"><b>Choose the files before downloading</b><span>For torrents with several files.</span></div>
@@ -323,8 +329,15 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     </div>
   </div>
 
-  <h2>Video tools</h2>
+  <h2>Add-ons (installed separately)</h2>
   <div class="card">
+    <div class="row note-row">
+      <div class="lbl"><b>⚠ Not part of NovaDM</b><span>These are separate programs. NovaDM downloads one only when you click its Install button (from the project's official release, checked against its published checksum), or you choose your own copy. Features that need an add-on don't work until it is installed.</span></div>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>aria2</b><span>Downloads torrents and magnet links (the engine Motrix uses). Installed on demand from the official release (about 2.5 MB, github.com/aria2/aria2), or use your own aria2c.exe.</span><div class="status" id="a2Status">Checking…</div><div class="ffbar" id="a2Bar" hidden><i></i></div></div>
+      <div class="ffacts"><button id="a2Install">Install</button><button id="a2Choose">Use my own…</button><button id="a2Remove" hidden>Remove</button></div>
+    </div>
     <div class="row">
       <div class="lbl"><b>FFmpeg</b><span>Optional. Needed only to join picture and sound that come as WebM or plain MP4 files, to save a video's sound, and to repair videos. NovaDM downloads the official build (about 80 MB, from github.com/BtbN/FFmpeg-Builds) and checks it against its published checksum.</span><div class="status" id="ffStatus">Checking…</div><div class="ffbar" id="ffBar" hidden><i></i></div></div>
       <div class="ffacts"><button id="ffInstall">Install</button><button id="ffChoose">Use my own…</button><button id="ffRemove" hidden>Remove</button></div>

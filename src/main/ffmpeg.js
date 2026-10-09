@@ -1,7 +1,7 @@
 'use strict';
 // FFmpeg on demand. NovaDM works without it; it is only needed to join picture and sound that come
 // as plain MP4 or WebM files, to save a video's sound, and to repair a damaged video. The user
-// installs it from Settings → Video tools: the official build list (BtbN/FFmpeg-Builds on GitHub)
+// installs it from Settings → Add-ons: the official build list (BtbN/FFmpeg-Builds on GitHub)
 // gives the newest stable LGPL "shared" build and its SHA-256; the download is verified before it
 // is unpacked (with Windows' own tar.exe). Or the user picks an ffmpeg.exe they already have.
 const fs = require('fs');
@@ -115,7 +115,7 @@ class FFmpeg {
   run(args, { onProgress } = {}) {
     if (this.runner) return this.runner(args, { onProgress });
     const exe = this.exe();
-    if (!exe) { const e = new Error('FFmpeg is not installed (Settings → Video tools)'); e.code = 'NEEDS_FFMPEG'; return Promise.reject(e); }
+    if (!exe) { const e = new Error('FFmpeg is not installed (Settings → Add-ons)'); e.code = 'NEEDS_FFMPEG'; return Promise.reject(e); }
     return new Promise((resolve, reject) => {
       const p = spawn(exe, ['-hide_banner', '-nostdin', '-y', ...args], { windowsHide: true });
       let tail = '';

@@ -1,7 +1,7 @@
 {
   "name": "novadm",
   "productName": "NovaDM",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
   "author": "NovaDM",
   "main": "src/main/main.js",
@@ -48,6 +48,7 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
+      "include": "build/installer.nsh",
       "shortcutName": "NovaDM",
       "artifactName": "NovaDM-Setup-${version}.${ext}"
     },

@@ -60,7 +60,7 @@ AB Download Manager, XDM). No code from any of them is included.
 - **Separate picture and sound joined into one MP4 without FFmpeg**: DASH video + audio, and HLS
   streams whose audio is a separate rendition
 - **Live stream recording** (HLS and DASH): records until you press Stop or the broadcast ends
-- **FFmpeg on demand** (optional, Settings → Video tools): verified one-click install of the
+- **FFmpeg on demand** (optional add-on, Settings → Add-ons): verified one-click install of the
   official build, used for WebM/plain-MP4 tracks and for "Save sound only", "Convert sound to MP3"
   and "Repair video"
 - **Content grabber**: lists every image on a page (including lazy-loaded and CSS background
@@ -178,6 +178,9 @@ npm run dist
 
 This writes `NovaDM-Setup-<version>.exe` (installer) and `NovaDM-Portable-<version>.exe` to
 `dist/`. The builds are not code-signed, so Windows SmartScreen may warn on first run.
+
+The installer asks whether to create a desktop shortcut and a Start menu entry (both ticked);
+its extra page is `build/installer.nsh`.
 
 ## Tests
 

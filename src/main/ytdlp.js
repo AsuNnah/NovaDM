@@ -159,7 +159,7 @@ class YtDlp {
   run(args) {
     if (this.runner) return this.runner(args);
     const exe = this.exe();
-    if (!exe) { const e = new Error('yt-dlp is not installed (Settings → Video tools)'); e.code = 'NEEDS_YTDLP'; return Promise.reject(e); }
+    if (!exe) { const e = new Error('yt-dlp is not installed (Settings → Add-ons)'); e.code = 'NEEDS_YTDLP'; return Promise.reject(e); }
     return new Promise((resolve, reject) => {
       execFile(exe, args, { windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024 }, (err, out, errOut) => {
         if (err) {
