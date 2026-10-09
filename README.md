@@ -57,38 +57,37 @@ AB Download Manager, XDM). No code from any of them is included.
 Requirements: Windows 10/11 and [Node.js](https://nodejs.org/) 22 or newer.
 
 ```bash
-cd novadm
 npm install
+```
+
+```bash
 npm start
 ```
 
-After `npm install` you can also double-click `novadm/Start NovaDM.cmd`.
+After `npm install` you can also double-click `Start NovaDM.cmd`.
 
 ## Building the installer
 
 ```bash
-cd novadm
 npm run dist
 ```
 
 This writes `NovaDM-Setup-<version>.exe` (installer) and `NovaDM-Portable-<version>.exe` to
-`novadm/dist/`. The builds are not code-signed, so Windows SmartScreen may warn on first run.
+`dist/`. The builds are not code-signed, so Windows SmartScreen may warn on first run.
 
 ## Tests
 
 ```bash
-cd novadm
 npm test
 ```
 
 Unit tests cover the HLS parser, media classification, the media registry, TS→MP4 conversion, the
 HTTP and HLS download engines (against a local test server) and the content grabber.
 
-`novadm/tools/` holds in-app self-tests (`selftest-*.js`) and diagnostics. They run inside Electron
+`tools/` holds in-app self-tests (`selftest-*.js`) and diagnostics. They run inside Electron
 with a throwaway profile, for example:
 
 ```bat
-cd novadm
 set NOVADM_USERDATA=%TEMP%\novadm-test-profile
 set NOVADM_SELFTEST=tools/selftest-popup.js
 node_modules\electron\dist\electron.exe .
@@ -100,21 +99,21 @@ Other debug variables: `NOVADM_OPEN=<url>` opens a page at start-up instead of t
 ## Project layout
 
 ```
-docs/                       design notes and the roadmap
-novadm/
-  src/main/                 Electron main process
-    main.js                 window, views, layout, app start-up
-    browser.js              tabs (one WebContentsView per tab)
-    adblock.js, popup.js    ad blocker and pop-up guard
-    dns.js                  Secure DNS
-    extensions.js           Chrome extensions and Web Store
-    grabber.js              content (image) grabber
-    media/                  media detection, HLS parsing, TS→MP4
-    download/               download manager, HTTP and HLS engines, speed limiter
-    transport.js            direct HTTP transport for the new engine (in progress)
-  src/ui/                   toolbar, panels, downloads, settings, new tab pages
-  test/                     unit tests (node --test)
-  tools/                    self-tests, diagnostics, icon generator
+docs/                     design notes and the roadmap
+src/main/                 Electron main process
+  main.js                 window, views, layout, app start-up
+  browser.js              tabs (one WebContentsView per tab)
+  adblock.js, popup.js    ad blocker and pop-up guard
+  dns.js                  Secure DNS
+  extensions.js           Chrome extensions and Web Store
+  grabber.js              content (image) grabber
+  media/                  media detection, HLS parsing, TS→MP4
+  download/               download manager, HTTP and HLS engines, speed limiter
+  transport.js            direct HTTP transport for the new engine (in progress)
+src/ui/                   toolbar, panels, downloads, settings, new tab pages
+test/                     unit tests (node --test)
+tools/                    self-tests, diagnostics, icon generator
+assets/                   app icon
 ```
 
 ## Privacy

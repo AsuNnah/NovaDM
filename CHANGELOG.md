@@ -10,6 +10,8 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 - **Renamed from "Swoop" to NovaDM.** The app name, installer and portable file names
   (`NovaDM-Setup-<version>.exe`, `NovaDM-Portable-<version>.exe`), app ID, internal page scheme
   (`novadm://`), launcher (`Start NovaDM.cmd`) and debug variables (`NOVADM_*`) all use the new name.
+- The repository root is now the app folder (`NovaDM/`): `package.json`, `src/`, `docs/`, README and
+  changelog sit side by side. Before this, the app lived in a `swoop/` subfolder.
 - Existing Swoop profiles (settings, downloads list, extensions, cookies) are moved from
   `%APPDATA%\Swoop` to `%APPDATA%\NovaDM` on first start. If the download folder was still the
   default `Downloads\Swoop`, it changes to `Downloads\NovaDM`; a folder you chose yourself is kept.
@@ -27,12 +29,12 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 - **Direct transport** (`src/main/transport.js`): an undici-based HTTP stack that is not limited
   to 6 connections per server, with the browser's cookies, Secure DNS, proxy and the Windows
   certificate store. It falls back to the browser's own network stack if a server refuses it.
-- `npm test` runs the unit tests.
+- `npm test` runs the unit tests (all pass, including the engine v2 suite).
 - Documentation: this changelog and the README.
 
 ### Known issues
-- The engine v2 slow-start test still fails (it reaches 2 parallel connections on the test server
-  instead of 4). The app keeps using the 0.1.0 engine until engine v2 is wired in and passes.
+- Engine v2 and the direct transport are not used by the app yet; downloads still go through the
+  0.1.0 engine until they are wired in and tested in the app.
 
 ## [0.1.0] — 2026-10-09 (released as "Swoop")
 

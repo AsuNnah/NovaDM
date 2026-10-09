@@ -2,7 +2,7 @@
 node_modules/
 dist/
 
-# The original Android APK (third-party, not part of this project)
+# Android packages (never part of this project)
 *.apk
 
 # Download temp files
