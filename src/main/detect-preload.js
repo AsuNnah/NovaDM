@@ -15,6 +15,13 @@ function abs(u) { try { return new URL(u, location.href).href; } catch { return 
 function send(channel, payload) { try { ipcRenderer.send('novadm:tab', { ch: channel, payload }); } catch {} }
 
 // NovaDM's own internal pages (new tab, etc.) get a tiny navigation + stats bridge.
+// NovaDM's pages in a private window: purple colourway (theme.css).
+function markPrivate() { // the preload runs before <html> exists: tag it as soon as it does
+  if (document.documentElement) return document.documentElement.classList.add('private');
+  const o = new MutationObserver(() => { if (document.documentElement) { document.documentElement.classList.add('private'); o.disconnect(); } });
+  o.observe(document, { childList: true });
+}
+if (INTERNAL && new URLSearchParams(location.search).has('private')) markPrivate();
 if (INTERNAL) {
   try {
     contextBridge.exposeInMainWorld('novadmInternal', {

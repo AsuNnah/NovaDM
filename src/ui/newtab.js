@@ -14,7 +14,7 @@ function tick() {
   const mm = String(d.getMinutes()).padStart(2, '0');
   document.getElementById('clock').textContent = `${hh}:${mm}`;
   const h = d.getHours();
-  document.getElementById('greet').textContent = h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  document.getElementById('greet').textContent = document.documentElement.classList.contains('private') ? 'Private window' : h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 tick();
 setInterval(tick, 10000);

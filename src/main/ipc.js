@@ -30,7 +30,7 @@ const ADDONS = [
 ];
 
 function registerIpc(ctx) {
-  const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission } = ctx;
+  const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission, inSenderCtx = (_s, fn) => fn() } = ctx;
 
   const handlers = {
     // ---- window ----
@@ -429,7 +429,7 @@ function registerIpc(ctx) {
     if (!((e.senderFrame && e.senderFrame.url) || '').toLowerCase().startsWith(UI_PREFIX)) throw new Error('not allowed');
     const fn = handlers[method];
     if (!fn) throw new Error('Unknown method ' + method);
-    return fn(args || {});
+    return inSenderCtx(e.sender, () => fn(args || {}));
   });
   return handlers;
 }

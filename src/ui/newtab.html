@@ -21,6 +21,11 @@ form{width:min(620px,92%);}
 .stats b{display:block;font-size:22px;font-weight:600;color:var(--fg);}
 .stat{text-align:center;}
 .hint{color:var(--fg3);font-size:12.5px;}
+.privnote{display:none;max-width:560px;padding:18px 22px;border-radius:var(--r-lg);background:var(--card);box-shadow:var(--ring);color:var(--fg2);font-size:13px;line-height:1.6;}
+.privnote b{color:var(--fg);}
+.privnote ul{margin:6px 0 10px;padding-left:18px;}
+:root.private .privnote{display:block;}
+:root.private .stats,:root.private .hint{display:none;}
 </style>
 <link rel="stylesheet" href="theme.css" />
 </head>
@@ -38,6 +43,10 @@ form{width:min(620px,92%);}
       <div class="stat"><b id="s-ads">0</b> ads blocked</div>
       <div class="stat"><b id="s-pop">0</b> pop-ups stopped</div>
       <div class="stat"><b id="s-dl">0</b> downloads</div>
+    </div>
+    <div class="privnote">
+      <b>NovaDM won't keep</b> from this window: the pages you visit, cookies and site data, sign-ins, and what you type into forms. They are deleted when you close the private window.
+      <ul><li>Files you download and bookmarks you add are kept.</li><li>Websites, your employer or school, and your internet provider can still see what you visit.</li></ul>
     </div>
     <div class="hint">Play a video on any site, then click the media icon in the toolbar to download it.</div>
   </div>

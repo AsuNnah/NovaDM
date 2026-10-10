@@ -21,6 +21,13 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   after; toolbar and panel memory 186 → 189 MB; idle CPU 0.01 % → 0.01 %.
 
 ### Added
+- **Private windows**, like Chrome, Edge and Brave: Ctrl+Shift+N (or the menu) opens a separate
+  private window instead of a private tab in the normal one. It has its own purple colourway, a
+  "Private" badge in the toolbar, and its own icon on the window and taskbar (the NovaDM arrow on
+  purple with a glasses badge), so it can't be mistaken for a normal window. Its new tab page says
+  what is and isn't kept. Links and new tabs from a private tab stay in it. Closing the private
+  window (or its last tab) deletes its cookies, site data, cache and sign-ins; the normal window and
+  the tabs it restores next time are untouched. Tested in `tools/selftest-private.js`.
 - **Update notice**: once a day NovaDM asks GitHub which release is the newest. A newer version
   shows on the menu button (green) and in the menu, with *Download…* and *Later*. Nothing is
   downloaded or installed by itself. Settings → Privacy can turn the check off.

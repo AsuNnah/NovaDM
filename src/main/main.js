@@ -84,6 +84,39 @@ const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST && !app.isPackaged) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
 
+// Windows: 'normal' and, while one is open, 'private' (like Chrome's incognito window). win /
+// chromeView / overlayView / panelOpen above always point at the current window: the one being
+// used, or the one an event belongs to (inCtx).
+const wins = {};
+let curKind = 'normal';
+const viewKind = new Map(); // webContents id of a window's toolbar / panel view -> 'normal' | 'private'
+function useCtx(kind) {
+  const c = wins[kind];
+  if (!c) return;
+  curKind = kind;
+  ({ win, chromeView, overlayView, panelOpen } = c);
+  if (browser) browser.cur = kind;
+}
+function inCtx(kind, fn) {
+  if (!wins[kind] || kind === curKind) return fn();
+  const prev = curKind;
+  useCtx(kind);
+  // Back to the previous window, unless it is a private window whose last tab just closed.
+  try { return fn(); } finally { useCtx(wins[prev] && (prev !== 'private' || browser.groups.private.order.length) ? prev : 'normal'); }
+}
+// The window an event's tab (or tab id, or { tabId }, or { incognito }) belongs to.
+function kindOfArgs(args) {
+  for (const a of args) {
+    if (a === 'normal' || a === 'private') return a;
+    if (typeof a === 'number' && browser.tabs.has(a)) return browser.kindOf(browser.tabs.get(a));
+    if (a && typeof a === 'object' && !Array.isArray(a)) {
+      if (typeof a.incognito === 'boolean') return a.incognito ? 'private' : 'normal';
+      if (a.tabId != null && browser.tabs.has(a.tabId)) return browser.kindOf(browser.tabs.get(a.tabId));
+    }
+  }
+  return curKind;
+}
+
 function contentBounds() {
   const [w, h] = win.getContentSize();
   const top = browsing.chromeHeight();
@@ -110,119 +143,178 @@ function restack() {
   try { root.addChildView(chromeView); } catch {}
 }
 
+// Downloads, add-ons and bookmarks show in every window; everything else in the current one.
+const TO_ALL = new Set(['downloads', 'addons', 'bookmarks', 'download-complete', 'adblock-ready']);
 function sendUI(name, data) {
-  for (const v of [chromeView, overlayView]) {
-    if (v && !v.webContents.isDestroyed()) v.webContents.send('novadm:event', name, data);
+  for (const c of TO_ALL.has(name) ? Object.values(wins) : [wins[curKind]]) {
+    for (const v of c ? [c.chromeView, c.overlayView] : []) {
+      if (v && !v.webContents.isDestroyed()) v.webContents.send('novadm:event', name, data);
+    }
   }
 }
 
 function setPanel(open) {
   panelOpen = open;
+  if (wins[curKind]) wins[curKind].panelOpen = open;
   overlayView.setVisible(open);
   if (open) restack();
 }
 
 function showWindow() {
-  if (!app.isReady()) return;
-  if (!win) return;
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
+  const w = wins.normal && wins.normal.win;
+  if (!app.isReady() || !w) return;
+  if (w.isMinimized()) w.restore();
+  w.show();
+  w.focus();
 }
 
-function createWindow() {
-  win = new BaseWindow({
+function createWindow(kind = 'normal') {
+  const priv = kind === 'private';
+  const icon = path.join(__dirname, '..', '..', 'assets', priv ? 'icon-private.ico' : 'icon.ico');
+  const w = new BaseWindow({
     width: 1280, height: 820, minWidth: 680, minHeight: 480, frame: false,
-    backgroundColor: '#08090b', title: 'NovaDM', show: !startHidden,
-    icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
+    backgroundColor: priv ? '#120a1f' : '#08090b', title: priv ? 'NovaDM – Private' : 'NovaDM', show: priv || !startHidden, icon,
   });
+  // Its own taskbar button with the private icon, so a private window is easy to tell apart.
+  if (priv && w.setAppDetails) w.setAppDetails({ appId: 'app.novadm.browser.private', appIconPath: icon, appIconIndex: 0 });
+  const query = priv ? { private: '1' } : {};
 
   // shortcut: not sandboxed, because its preload loads the extension buttons (electron-chrome-extensions/browser-action),
   // which a sandboxed preload can't require; bundle that into one preload file to sandbox it too.
-  chromeView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false } });
-  chromeView.setBackgroundColor('#00000000');
-  chromeView.webContents.loadFile(path.join(UI_DIR, 'chrome.html'));
-  diagnostics.watchConsole(chromeView.webContents, 'toolbar');
+  const cv = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false } });
+  cv.setBackgroundColor('#00000000');
+  cv.webContents.loadFile(path.join(UI_DIR, 'chrome.html'), { query });
+  diagnostics.watchConsole(cv.webContents, 'toolbar');
 
-  overlayView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
-  overlayView.setBackgroundColor('#00000000');
-  overlayView.webContents.loadFile(path.join(UI_DIR, 'panel.html'));
-  diagnostics.watchConsole(overlayView.webContents, 'panel');
-  overlayView.setVisible(false);
+  const ov = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
+  ov.setBackgroundColor('#00000000');
+  ov.webContents.loadFile(path.join(UI_DIR, 'panel.html'), { query });
+  diagnostics.watchConsole(ov.webContents, 'panel');
+  ov.setVisible(false);
 
-  win.contentView.addChildView(chromeView);
-  win.contentView.addChildView(overlayView);
-  browsing.createFindView(win.contentView);
+  w.contentView.addChildView(cv);
+  w.contentView.addChildView(ov);
+  wins[kind] = { win: w, chromeView: cv, overlayView: ov, panelOpen: false };
+  for (const v of [cv, ov]) {
+    viewKind.set(v.webContents.id, kind);
+    // Size of NovaDM's own screens (Settings → Appearance) and the accent colour.
+    v.webContents.on('did-finish-load', () => { v.webContents.setZoomFactor(browsing.scale()); styleUi(v.webContents); });
+    v.webContents.on('before-input-event', (e, input) => {
+      const action = shortcutFor(input);
+      if (!action || action === 'stop' || action.startsWith('zoom') && v !== cv) return;
+      e.preventDefault();
+      inCtx(kind, () => handleShortcut(browser.activeTab(), action));
+    });
+  }
+  useCtx(kind);
+  if (!browsing.findView) browsing.createFindView(w.contentView);
 
-  browser.setParentView(win.contentView);
-  browser.onRestack = restack;
+  browser.setParentView(w.contentView);
+  browser.onRestack = () => inCtx(kind, restack);
 
   layout();
-  win.on('resize', layout);
-  win.on('close', (e) => {
+  w.on('resize', () => inCtx(kind, layout));
+  w.on('focus', () => {
+    if (curKind !== kind && browsing.findOpen) browsing.closeFind(); // the find bar belongs to the other window
+    useCtx(kind);
+  });
+  // Open links that must leave the app (none by default) in the OS browser.
+  cv.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+
+  if (priv) { w.on('closed', closePrivateWindow); return; }
+  w.on('close', (e) => {
     // Downloads running: keep going in the tray instead of quitting (Settings → Background).
     if (background && background.keepRunningOnClose()) { e.preventDefault(); background.hideToTray(); return; }
     browser.shuttingDown = true;
+    if (wins.private) wins.private.win.close();
   });
-  win.on('closed', () => { browser.shuttingDown = true; win = null; });
-
-  // Open links that must leave the app (none by default) in the OS browser.
-  chromeView.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  w.on('closed', () => { browser.shuttingDown = true; delete wins.normal; win = null; });
 
   // The tabs from last time (Settings → Restore tabs), or a new tab. NOVADM_OPEN (debug) opens a
   // given address instead.
   browsing.openStartTabs(process.env.NOVADM_OPEN || '');
 }
 
+// The private window closed (or its last tab did): its tabs close and everything the private
+// session kept (cookies, site data, cache, sign-ins) is deleted, as in Chrome / Edge / Brave.
+function closePrivateWindow() {
+  const c = wins.private;
+  if (!c) return;
+  const g = browser.groups.private;
+  g.closing = true;
+  browser.inGroup('private', () => { for (const id of [...g.order]) browser.closeTab(id); });
+  Object.assign(g, { closing: false, parentView: null, onRestack: null, activeId: null });
+  for (const v of [c.chromeView, c.overlayView]) { viewKind.delete(v.webContents.id); try { v.webContents.close(); } catch {} }
+  delete wins.private;
+  useCtx('normal');
+  if (win && browsing.findView) { win.contentView.addChildView(browsing.findView); browsing.findView.setVisible(false); }
+  const ses = browser.incognitoSession;
+  Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache()]).catch(() => {});
+}
+
 function wireEvents() {
-  browser.on('tabs', (tabs, activeId) => sendUI('tabs', { tabs, activeId }));
-  browser.on('active', (tab) => { sendUI('active-tab', tab); refreshChromeIndicators(tab); });
-  browser.on('tab-updated', (tab) => { if (tab.active) refreshChromeIndicators(tab); sendUI('tab-updated', tab); });
-  browser.on('popup-ask', (info) => {
+  // Events from tabs act in the tab's own window: `on` wraps each listener below in inCtx.
+  const on = (ev, fn) => browser.on(ev, (...a) => inCtx(kindOfArgs(a), () => fn(...a)));
+  on('tabs', (tabs, activeId) => sendUI('tabs', { tabs, activeId }));
+  on('active', (tab) => { sendUI('active-tab', tab); refreshChromeIndicators(tab); });
+  on('tab-updated', (tab) => { if (tab.active) refreshChromeIndicators(tab); sendUI('tab-updated', tab); });
+  on('popup-ask', (info) => {
     // Only ask about the tab you're looking at; background tabs' pop-ups are blocked.
     if (info.tabId !== browser.activeId) { browser.emit('popup-blocked', info.tabId, info.url, 'background'); return; }
     setPanel(true);
     sendUI('popup-ask', info);
   });
-  browser.on('popup-blocked', (tabId, url, reason) => {
+  on('popup-blocked', (tabId, url, reason) => {
     const list = blockedPopups.get(tabId) || [];
     const tab = browser.tabs.get(tabId);
     list.push({ url, reason, pageUrl: tab ? tab.url : '' });
     blockedPopups.set(tabId, list.slice(-20));
     sendPopupState();
   });
-  browser.on('page-changed', (tabId) => { blockedPopups.delete(tabId); sendPopupState(); });
-  browser.on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win, addDownload: (spec, o) => addFlow.request(spec, o) }));
-  browser.on('download', onPageDownload);
-  browser.on('page-loaded', (tab) => { runSiteExtensions(tab); if (/^novadm:\/\//.test(tab.url || '')) styleUi(tab.wc); });
-  browser.on('shortcut', (tab, action) => handleShortcut(tab, action));
-  browser.on('download-link', (tab, url) => addFlow.request(specFromUrl(url, { pageUrl: tab.url, incognito: tab.incognito }), { origin: 'page' }));
-  browser.on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
+  on('page-changed', (tabId) => { blockedPopups.delete(tabId); sendPopupState(); });
+  on('context-menu', (tab, params) => showContextMenu({ tab, params, browser, downloads, settings, extensions, win, addDownload: (spec, o) => addFlow.request(spec, o) }));
+  on('download', onPageDownload);
+  on('page-loaded', (tab) => { runSiteExtensions(tab); if (/^novadm:\/\//.test(tab.url || '')) styleUi(tab.wc); });
+  on('shortcut', (tab, action) => handleShortcut(tab, action));
+  on('download-link', (tab, url) => addFlow.request(specFromUrl(url, { pageUrl: tab.url, incognito: tab.incognito }), { origin: 'page' }));
+  on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   // A new tab's page takes the keyboard when it has loaded, so the address bar is focused again then.
-  browser.on('blank-tab', (tab) => {
+  on('blank-tab', (tab) => {
     const focus = () => { if (browser.activeTab() === tab) { chromeView.webContents.focus(); sendUI('focus-address', { keep: true }); } };
     focus();
     if (tab.wc) tab.wc.once('did-finish-load', focus);
   });
-  browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
-  browser.on('tab-selected', (tab) => { if (extensions.ready && !tab.incognito) extensions.selectTab(tab.wc); });
-  browser.on('permission-ask', (info, cb) => {
+  on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
+  on('tab-selected', (tab) => {
+    if (extensions.ready && !tab.incognito) extensions.selectTab(tab.wc);
+    // A tab opened for the other window (a private link, the Downloads page): bring that window forward.
+    const w = wins[browser.kindOf(tab)];
+    if (w && w.win.isVisible() && !w.win.isFocused() && BaseWindow.getFocusedWindow()) w.win.focus();
+  });
+  on('permission-ask', (info, cb) => {
     if (pendingPermission) { try { pendingPermission.cb(false); } catch {} }
     pendingPermission = { info, cb };
     setPanel(true);
     sendUI('permission-ask', info);
   });
-  browser.on('download-video-request', (tabId) => downloadBestVideo(tabId));
+  on('download-video-request', (tabId) => downloadBestVideo(tabId));
+  // After closeTab has finished: closing the window inside it would leave its window marker on the closed window.
+  on('group-empty', (kind) => setImmediate(() => {
+    if (kind !== 'private' || !wins.private) return;
+    const w = wins.private.win;
+    useCtx('normal'); // the main window is current again right away, not only once this one has closed
+    w.close();
+  }));
 
-  media.on('changed', (tabId) => {
+  media.on('changed', (tabId) => inCtx(kindOfArgs([tabId]), () => {
     if (browser.activeId === tabId) sendMediaState();
     refreshFromMedia(tabId);
-  });
-  adblock.on('blocked', (wcId, n) => {
+  }));
+  adblock.on('blocked', (wcId, n) => inCtx(kindOfArgs([browser.tabIdForWc(wcId)]), () => {
     const tab = browser.activeTab();
     if (tab && tab.wcId === wcId) sendUI('adblock-count', { count: n });
-  });
+  }));
   downloads.on('changed', () => sendUI('downloads', { list: downloads.list(), summary: downloads.activeSummary() }));
   downloads.on('completed', (rec) => {
     sendUI('download-complete', { name: rec.name, id: rec.id });
@@ -312,7 +404,7 @@ async function styleUi(wc) {
 }
 function applyAppearance() {
   nativeTheme.themeSource = ['dark', 'light'].includes(settings.get('theme')) ? settings.get('theme') : 'system';
-  for (const v of [chromeView, overlayView]) if (v) styleUi(v.webContents);
+  for (const c of Object.values(wins)) for (const v of [c.chromeView, c.overlayView]) styleUi(v.webContents);
   for (const t of browser.tabs.values()) if (/^novadm:\/\//.test(t.url || '')) styleUi(t.wc);
 }
 
@@ -728,25 +820,22 @@ app.whenReady().then(async () => {
     }
   });
 
+  // A private tab (Ctrl+Shift+N, a link from a private tab) opens the private window.
+  browser.ensureWindow = (kind) => { if (kind === 'private' && !wins.private && wins.normal) createWindow('private'); };
   createWindow();
   wireEvents();
-  // Size of NovaDM's own screens (Settings → Appearance) and the bookmarks bar.
-  for (const v of [chromeView, overlayView]) v.webContents.on('did-finish-load', () => v.webContents.setZoomFactor(browsing.scale()));
-  for (const v of [chromeView, overlayView, browsing.findView]) {
-    v.webContents.on('before-input-event', (e, input) => {
-      const action = shortcutFor(input);
-      if (!action || action === 'stop' || action.startsWith('zoom') && v !== chromeView) return;
-      e.preventDefault();
-      handleShortcut(browser.activeTab(), action);
-    });
-  }
+  browsing.findView.webContents.on('before-input-event', (e, input) => {
+    const action = shortcutFor(input);
+    if (!action || action === 'stop' || action.startsWith('zoom')) return;
+    e.preventDefault();
+    handleShortcut(browser.activeTab(), action);
+  });
   settings.on('change', (c) => {
-    if ('uiScale' in c) browsing.applyScale([chromeView, overlayView, browsing.findView]);
+    if ('uiScale' in c) browsing.applyScale([...Object.values(wins).flatMap((w) => [w.chromeView, w.overlayView]), browsing.findView]);
     if ('showBookmarksBar' in c) { layout(); sendUI('bookmarks', browsing.bookmarkState()); }
   });
   // Appearance: theme now, accent once NovaDM's own views have loaded, and on every change.
   applyAppearance();
-  for (const v of [chromeView, overlayView]) v.webContents.on('did-finish-load', () => styleUi(v.webContents));
   settings.on('change', (c) => { if ('theme' in c || 'accent' in c) applyAppearance(); });
   // Started with a link or file (command line, novadm://, magnet:, .torrent).
   setTimeout(() => handleLaunch(process.argv), 800);
@@ -756,7 +845,7 @@ app.whenReady().then(async () => {
   scheduler = new Scheduler({ settings, downloads });
   downloads.scheduler = scheduler;
   scheduler.start();
-  background = new Background({ settings, downloads, getWindow: () => win, showWindow, notify, sendUI, setPanel });
+  background = new Background({ settings, downloads, getWindow: () => (wins.normal ? wins.normal.win : null), showWindow, notify, sendUI, setPanel }); // the tray hides the main window
   background.start();
   // Extensions start after the window exists; tabs opened before that are registered now.
   extensions.init({ browser, getWindow: () => win })
@@ -773,6 +862,7 @@ app.whenReady().then(async () => {
   ipcHandlers = registerIpc({
     getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, toolDownloadFn: () => toolDownloadRef, getApiStatus: () => apiStatus }),
     setPanel, sendUI, sendMediaState,
+    inSenderCtx: (sender, fn) => inCtx(viewKind.get(sender.id) || curKind, fn), // a call from a window's toolbar acts in that window
     downloadItem,
     reviewBlockedPopup,
     getPendingPermission: () => pendingPermission,
@@ -832,7 +922,7 @@ app.whenReady().then(async () => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
     if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
-    return ipcHandlers[method](args || {});
+    return inCtx(kindOfArgs([browser.tabIdForWc(event.sender.id)]), () => ipcHandlers[method](args || {}));
   });
   // Live updates for open Downloads pages.
   downloads.on('changed', () => {

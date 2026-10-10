@@ -24,7 +24,7 @@ the SHA-256 of its files so you can check your download.
 ## What it does
 
 **Browser**
-- Tabs, private tabs, history, bookmarks (with a bookmarks bar and import/export from Chrome,
+- Tabs, private windows (their own purple look and taskbar icon), history, bookmarks (with a bookmarks bar and import/export from Chrome,
   Brave, Edge and Firefox), find in page, reader view, restore tabs on start
 - Chrome Web Store extensions
 - Brave's keyboard shortcuts (Ctrl+/ lists them), dark/light theme and accent colours
@@ -93,7 +93,8 @@ On its own it only connects to download the ad-block lists (every 4 days) and th
 (daily), to ask GitHub once a day whether a newer NovaDM is out (can be turned off), and to the
 Secure DNS provider you choose; add-ons and the torrent tracker list are downloaded only when you
 use them. The sites you visit are checked against the lists on your PC, never sent anywhere.
-Private tabs leave no history or downloads list entries. Passwords for proxies and sites are
+Private windows leave no history or downloads list entries, and their cookies, site data and
+sign-ins are deleted when the private window closes. Passwords for proxies and sites are
 encrypted with Windows' data protection.
 
 **Sign-ins.** Cookies (what keeps you logged in) are encrypted on disk. When you sign in, NovaDM

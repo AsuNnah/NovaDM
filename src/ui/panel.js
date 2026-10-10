@@ -327,7 +327,7 @@ function renderMenu() {
   }
   const items = [
     ['New tab', 'tabs.new', {}],
-    ['New private tab', 'tabs.new', { incognito: true }],
+    ['New private window', 'tabs.new', { incognito: true }],
     ['Downloads', 'downloads.openPageTab', {}],
     ['History', 'tabs.new', { url: 'novadm://history' }],
     ['Bookmarks', 'tabs.new', { url: 'novadm://bookmarks' }],

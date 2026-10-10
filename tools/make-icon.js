@@ -1,6 +1,7 @@
 'use strict';
 // Draws the NovaDM icon (download arrow over a blue-violet rounded square) and writes
-// assets/icon.png (512 px) and assets/icon.ico (16-256 px, PNG-compressed entries).
+// assets/icon.png (512 px) and assets/icon.ico (16-256 px, PNG-compressed entries). The private
+// window's icon (assets/icon-private.*) is the same arrow on deep purple with a glasses badge.
 const fs = require('fs');
 const path = require('path');
 const { encode } = require('./png');
@@ -37,7 +38,14 @@ function onGlyph(x, y) {
   return false;
 }
 
-function pixelAt(size) {
+// Private badge: a dark disc at the bottom right with white "glasses" (two rings and a bridge).
+function onBadge(x, y) { return Math.hypot(x - 0.76, y - 0.76) <= 0.22; }
+function onGlasses(x, y) {
+  const ring = (cx) => Math.abs(Math.hypot(x - cx, y - 0.79) - 0.05) <= 0.022;
+  return ring(0.69) || ring(0.83) || (Math.abs(y - 0.77) <= 0.016 && x > 0.73 && x < 0.79);
+}
+
+function pixelAt(size, priv) {
   return (px, py) => {
     let bgCov = 0, glyphCov = 0, rr = 0, gg = 0, bb = 0;
     for (let sy = 0; sy < SS; sy++) {
@@ -46,9 +54,16 @@ function pixelAt(size) {
         const y = (py + (sy + 0.5) / SS) / size;
         if (!roundRectInside(x, y, 0.03, 0.22)) continue;
         bgCov++;
-        // Diagonal gradient #4f7dfb -> #7a4dfa
         const t = (x + y) / 2;
-        rr += 79 + (122 - 79) * t; gg += 125 + (77 - 125) * t; bb += 251 + (250 - 251) * t;
+        if (priv && onBadge(x, y)) {
+          // Badge: #120a1f with white glasses.
+          const w = onGlasses(x, y) ? 1 : 0;
+          rr += 18 + 237 * w; gg += 10 + 245 * w; bb += 31 + 224 * w;
+          continue;
+        }
+        // Diagonal gradient #4f7dfb -> #7a4dfa (private: #3b1466 -> #8b2fd1)
+        if (priv) { rr += 59 + (139 - 59) * t; gg += 20 + (47 - 20) * t; bb += 102 + (209 - 102) * t; }
+        else { rr += 79 + (122 - 79) * t; gg += 125 + (77 - 125) * t; bb += 251 + (250 - 251) * t; }
         if (onGlyph(x, y)) glyphCov++;
       }
     }
@@ -63,7 +78,7 @@ function pixelAt(size) {
   };
 }
 
-function render(size) { return encode(size, size, pixelAt(size)); }
+function render(size, priv = false) { return encode(size, size, pixelAt(size, priv)); }
 
 function ico(pngs) {
   // ICONDIR + ICONDIRENTRY[n] + PNG payloads.
@@ -87,4 +102,6 @@ fs.mkdirSync(outDir, { recursive: true });
 fs.writeFileSync(path.join(outDir, 'icon.png'), render(512));
 const sizes = [16, 24, 32, 48, 64, 128, 256];
 fs.writeFileSync(path.join(outDir, 'icon.ico'), ico(sizes.map((s) => ({ size: s, data: render(s) }))));
-console.log('wrote assets/icon.png and assets/icon.ico');
+fs.writeFileSync(path.join(outDir, 'icon-private.png'), render(512, true));
+fs.writeFileSync(path.join(outDir, 'icon-private.ico'), ico(sizes.map((s) => ({ size: s, data: render(s, true) }))));
+console.log('wrote assets/icon.png, icon.ico, icon-private.png and icon-private.ico');

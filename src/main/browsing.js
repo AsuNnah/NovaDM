@@ -39,10 +39,11 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // ---- restore tabs ----
   function saveSession() {
     if (browser.shuttingDown || settings.get('restoreTabs') === false) return;
-    const list = browser.order.map((id) => browser.tabs.get(id)).filter((t) => t && !t.incognito && /^(https?|novadm):/i.test(t.url || ''));
-    tabSession.save(list, Math.max(0, list.findIndex((t) => t.id === browser.activeId)));
+    const { order, activeId } = browser.groups.normal; // private windows are never kept
+    const list = order.map((id) => browser.tabs.get(id)).filter((t) => t && !t.incognito && /^(https?|novadm):/i.test(t.url || ''));
+    tabSession.save(list, Math.max(0, list.findIndex((t) => t.id === activeId)));
   }
-  browser.on('tabs', saveSession);
+  browser.on('tabs', (_tabs, _active, kind) => { if (kind !== 'private') saveSession(); });
 
   /** First tabs at start-up: the saved ones (only the active one loads right away), or a new tab. */
   function openStartTabs(openUrl) {
@@ -244,7 +245,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       if (!b) return;
       popup([
         { label: 'Open in new tab', click: () => openBookmark(b, 'tab') },
-        { label: 'Open in private tab', click: () => openBookmark(b, 'private') },
+        { label: 'Open in private window', click: () => openBookmark(b, 'private') },
         { type: 'separator' },
         { label: 'Edit…', click: () => browser.openInternal('bookmarks') },
         { label: 'Delete', click: () => bookmarks.remove(b.id) },

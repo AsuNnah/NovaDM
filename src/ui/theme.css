@@ -26,6 +26,17 @@
   }
 }
 
+/* Private windows and their pages: their own purple colourway, always dark (the class comes from
+   the page's preload when it was opened with ?private=1). Beats the user's accent colour too. */
+:root.private {
+  color-scheme: dark;
+  --bg: #120a1f; --bg2: #1d1230; --bg3: #26183d; --card: #170e27; --card2: #1d1230; --pop: #1d1230;
+  --line: rgba(205, 170, 255, .12); --ring: inset 0 0 0 1px rgba(205, 170, 255, .14);
+  --fg: #efe8fb; --fg2: #b1a3c9; --fg3: #7d6f96;
+  --hover: rgba(205, 170, 255, .09); --active: rgba(205, 170, 255, .16);
+  --accent: #a46bff !important; --accent2: #8a4cf0 !important;
+}
+
 /* Page titles in the display serif (Godly-style); cards and buttons on the shared corner sizes. */
 h1 { font-family: var(--font-display); font-weight: 400; font-size: 30px; letter-spacing: .2px; }
 .card, .list { border-radius: var(--r-lg); }

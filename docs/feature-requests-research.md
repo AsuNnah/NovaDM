@@ -73,8 +73,7 @@ Ordered by value for effort. S = small (a day or less), M = a few days, L = a we
 
 | Version | Features | Size |
 |---|---|---|
-| **1.4 Everyday use** (done) | New "Bolder" look; update notice; deceptive-site warning; Report a problem (personal data removed); warning on the menu button for missing add-ons; tab search (Ctrl+Shift+A); address bar focused in new tabs; type a site name + Tab to search it | S each |
-| **1.5 Private windows** (planned) | Private browsing in its own window, like Chrome / Edge / Brave (Ctrl+Shift+N): purple-tinted theme, a "Private" badge and its own private logo on the window and taskbar; private new tab page explaining what's kept; private search engine choice; everything deleted when the last private window closes | L (multi-window rework) |
+| **1.4 Everyday use** (done) | New "Bolder" look; private windows (own colours and icon); update notice; deceptive-site warning; Report a problem (personal data removed); warning on the menu button for missing add-ons; tab search (Ctrl+Shift+A); address bar focused in new tabs; type a site name + Tab to search it | S each |
 | Later: sign-in protection | "Forget sign-ins when NovaDM closes" for chosen sites (plan in docs/v1.5-plan.md on branch feat/1.5.0); device-bound sign-ins when Electron supports them (tested: not in Electron 44) | M |
 | **1.6 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
 | **1.7 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |
