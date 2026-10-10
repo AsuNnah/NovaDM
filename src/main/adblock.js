@@ -22,6 +22,12 @@ const PHISHING_REFRESH_MS = 24 * 3600 * 1000;
 const LIST_VERSION = 2; // bump when the list set changes, so old caches are rebuilt
 const REFRESH_MS = 4 * 24 * 3600 * 1000;
 
+/** A cached engine file and its age, read through one handle (no change between the two). */
+async function readCache(file) {
+  const fh = await fs.promises.open(file, 'r');
+  try { return { data: await fh.readFile(), mtimeMs: (await fh.stat()).mtimeMs }; } finally { await fh.close(); }
+}
+
 class AdBlocker extends EventEmitter {
   constructor(settings) {
     super();
@@ -42,9 +48,9 @@ class AdBlocker extends EventEmitter {
   /** Load the phishing lists (cached for a day). Failure leaves the check off until the next try. */
   async initPhishing() {
     try {
-      const st = await fs.promises.stat(this.phishPath);
-      this.phish = ElectronBlocker.deserialize(await fs.promises.readFile(this.phishPath));
-      if (Date.now() - st.mtimeMs < PHISHING_REFRESH_MS) return;
+      const c = await readCache(this.phishPath);
+      this.phish = ElectronBlocker.deserialize(c.data);
+      if (Date.now() - c.mtimeMs < PHISHING_REFRESH_MS) return;
     } catch {}
     try {
       const engine = await ElectronBlocker.fromLists(fetch, PHISHING_LISTS, { loadCosmeticFilters: false });
@@ -79,9 +85,9 @@ class AdBlocker extends EventEmitter {
   async init() {
     let cachedAt = 0;
     try {
-      const st = await fs.promises.stat(this.cachePath);
-      this.engine = ElectronBlocker.deserialize(await fs.promises.readFile(this.cachePath));
-      cachedAt = st.mtimeMs;
+      const c = await readCache(this.cachePath);
+      this.engine = ElectronBlocker.deserialize(c.data);
+      cachedAt = c.mtimeMs;
     } catch {
       this.engine = null;
     }

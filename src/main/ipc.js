@@ -367,7 +367,7 @@ function registerIpc(ctx) {
       const nh = t.wc.navigationHistory;
       for (let i = nh.getActiveIndex() - 1; i >= 0; i--) {
         const u = nh.getEntryAtIndex(i).url;
-        if (u !== a.url && !/^chrome-error:|[\/]ui[\/]error\.html/i.test(u)) return nh.goToIndex(i);
+        if (u !== a.url && !/^(?:chrome-error:|.*\/ui\/error\.html)/i.test(u)) return nh.goToIndex(i);
       }
       getManagers().browser.navigate(t.id, 'novadm://newtab');
     },

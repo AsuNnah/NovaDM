@@ -12,7 +12,8 @@ const { execFileSync } = require('child_process');
 const root = path.join(__dirname, '..');
 const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
 const PLACEHOLDER_USERS = /^(x|you|user|username|name|jdoe|public|default|runneradmin)$/i; // jdoe: test fixtures
-const OK_EMAIL = /noreply|@example\.(com|org|net)$|@anthropic\.com$/i;
+// support@github.com: Dependabot's sign-off on its update commits (a GitHub service address).
+const OK_EMAIL = /noreply|@example\.(com|org|net)$|@anthropic\.com$|^support@github\.com$/i;
 
 function findings(text, emails = true) {
   const out = [];
