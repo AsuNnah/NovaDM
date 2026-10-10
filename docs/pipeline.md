@@ -116,7 +116,8 @@ workaround in the CHANGELOG and `docs/security.md`.
 
 1. Merge the pull request into `main` once CI is green.
 2. Annotated tag: `git tag -a vX.Y.Z -m "<summary>"`, then `git push origin main vX.Y.Z`.
-3. CI builds the installer and the portable version, runs the build security checks and the
+3. The Release workflow (`release.yml`) runs the CI tests again, checks that the tag matches
+   `package.json`, builds the installer and the portable version, runs the build security checks and the
    privacy check, and creates a **draft** release with the CHANGELOG notes and SHA-256 sums. It
    also attaches `latest.yml` and the installer's `.blockmap`: installed copies update from them.
 4. Check the draft (notes, both files attached), then publish it on GitHub.
