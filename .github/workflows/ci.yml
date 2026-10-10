@@ -22,6 +22,10 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Electron 44 fetches its program on first use; do it once here, or test files that start
+      # Electron in parallel race to unpack it.
+      - name: Install Electron
+        run: node node_modules/electron/install.js
       - name: Unit tests
         run: npm test
       - name: Known vulnerabilities in dependencies
