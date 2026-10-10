@@ -14,7 +14,7 @@ test('shortcuts: Brave / Chrome set', () => {
     [key('I', { ctrl: true, shift: true }), 'devtools'], [key('F12'), 'devtools'], [key('u', { ctrl: true }), 'view-source'],
     [key('Delete', { ctrl: true, shift: true }), 'clear-data'], [key('Escape', { shift: true }), 'task-manager'], [key('/', { ctrl: true }), 'shortcut-list'],
     [key('d', { alt: true }), 'focus-address'], [key('F6'), 'focus-address'], [key('Home', { alt: true }), 'home'], [key('F11'), 'fullscreen'],
-    [key('D', { ctrl: true, shift: true }), 'bookmark-all'], [key('g', { ctrl: true }), 'find-next'], [key('F3', { shift: true }), 'find-prev'],
+    [key('D', { ctrl: true, shift: true }), 'bookmark-all'], [key('g', { ctrl: true }), 'find-next'], [key('A', { ctrl: true, shift: true }), 'tab-search'], [key('F3', { shift: true }), 'find-prev'],
   ];
   for (const [input, want] of cases) assert.strictEqual(shortcutFor(input), want, JSON.stringify(input));
   // Plain typing and editing keys stay with the page / text field.

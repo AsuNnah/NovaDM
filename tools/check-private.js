@@ -11,7 +11,7 @@ const { execFileSync } = require('child_process');
 
 const root = path.join(__dirname, '..');
 const git = (...a) => execFileSync('git', a, { cwd: root, encoding: 'utf8', maxBuffer: 1 << 28 });
-const PLACEHOLDER_USERS = /^(x|you|user|username|name|public|default|runneradmin)$/i;
+const PLACEHOLDER_USERS = /^(x|you|user|username|name|jdoe|public|default|runneradmin)$/i; // jdoe: test fixtures
 const OK_EMAIL = /noreply|@example\.(com|org|net)$|@anthropic\.com$/i;
 
 function findings(text, emails = true) {

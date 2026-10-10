@@ -366,3 +366,5 @@ async function initAria2() {
 }
 
 init();
+// novadm://settings?section=addons (from the add-on warning on the menu button)
+{ const sec = $(new URLSearchParams(location.search).get('section') || '-'); if (sec) setTimeout(() => sec.scrollIntoView(), 300); }

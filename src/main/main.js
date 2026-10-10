@@ -33,6 +33,8 @@ const { setupBrowsing } = require('./browsing');
 const { shortcutFor, LIST: SHORTCUT_LIST } = require('./shortcuts');
 const hardening = require('./hardening');
 const breach = require('./breach');
+const diagnostics = require('./diagnostics');
+diagnostics.install(app); // keeps the last errors for "Report a problem"
 const { isLocalHost } = require('./shields');
 // Must load before the app is ready (registers the crx:// scheme for extension icons).
 const { Extensions } = require('./extensions');
@@ -138,10 +140,12 @@ function createWindow() {
   chromeView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false } });
   chromeView.setBackgroundColor('#00000000');
   chromeView.webContents.loadFile(path.join(UI_DIR, 'chrome.html'));
+  diagnostics.watchConsole(chromeView.webContents, 'toolbar');
 
   overlayView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false, transparent: true } });
   overlayView.setBackgroundColor('#00000000');
   overlayView.webContents.loadFile(path.join(UI_DIR, 'panel.html'));
+  diagnostics.watchConsole(overlayView.webContents, 'panel');
   overlayView.setVisible(false);
 
   win.contentView.addChildView(chromeView);
@@ -193,6 +197,12 @@ function wireEvents() {
   browser.on('download-link', (tab, url) => addFlow.request(specFromUrl(url, { pageUrl: tab.url, incognito: tab.incognito }), { origin: 'page' }));
   browser.on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
+  // A new tab's page takes the keyboard when it has loaded, so the address bar is focused again then.
+  browser.on('blank-tab', (tab) => {
+    const focus = () => { if (browser.activeTab() === tab) { chromeView.webContents.focus(); sendUI('focus-address', { keep: true }); } };
+    focus();
+    if (tab.wc) tab.wc.once('did-finish-load', focus);
+  });
   browser.on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
   browser.on('tab-selected', (tab) => { if (extensions.ready && !tab.incognito) extensions.selectTab(tab.wc); });
   browser.on('permission-ask', (info, cb) => {
@@ -454,6 +464,7 @@ function handleShortcut(tab, action) {
     case 'view-source': return /^https?:/i.test(tab.url || '') && browser.createTab({ url: 'view-source:' + tab.url, openerPartition: tab.id });
     case 'devtools': return wc && wc.toggleDevTools(); // shortcut: Ctrl+Shift+J/C open DevTools too, not straight to Console / inspect mode
     case 'menu': setPanel(true); return sendUI('open-panel', { name: 'menu' });
+    case 'tab-search': setPanel(true); overlayView.webContents.focus(); return sendUI('open-panel', { name: 'tabsearch' });
     case 'task-manager': return showTaskManager();
     case 'shortcut-list': return showShortcutList();
     default:

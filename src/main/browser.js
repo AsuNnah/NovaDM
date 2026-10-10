@@ -138,6 +138,7 @@ class Browser extends EventEmitter {
     if (!background || (this.activeId == null && !lazy)) this.selectTab(id);
     else if (tab.view) tab.view.setVisible(false);
     this.emitTabs();
+    if (!background && url === NEWTAB) this.emit('blank-tab', tab); // type straight into the address bar
     return id;
   }
 

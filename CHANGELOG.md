@@ -6,6 +6,25 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-10
+
+### Added
+- **Report a problem** (menu): saves a text file with what's needed to find a bug (versions,
+  add-ons, settings, download errors, the last 500 warnings, errors and crashes) and opens it so
+  you can read it before sending it. Personal data is removed: web addresses keep only the site;
+  user folders, file names, user and PC names, e-mail addresses and tokens are replaced; settings
+  that can hold personal data only say whether they are set. Nothing is sent automatically.
+- **Warning on the menu button** while an add-on (yt-dlp, FFmpeg, aria2) isn't installed. The menu
+  says what each one is for, with *Install…* and *Don't remind me*.
+- **Tab search** (Ctrl+Shift+A): find an open tab by title or address.
+- **Tab to search:** type a site's name in the address bar (youtube, yt, wiki, github, maps, …),
+  press Tab, and what you type next is searched on that site. Backspace leaves.
+- New tabs put the cursor in the address bar instead of the page's search box.
+
+### Security
+- The channel used by NovaDM's toolbar and panels now answers only NovaDM's own pages. Before, it
+  relied on no web page ever getting its preload.
+
 ## [1.3.1] — 2026-10-10
 
 ### Security

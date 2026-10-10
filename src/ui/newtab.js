@@ -28,4 +28,3 @@ async function stats() {
 }
 stats();
 setInterval(stats, 4000);
-q.focus();

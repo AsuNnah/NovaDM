@@ -28,6 +28,9 @@ the SHA-256 of its files so you can check your download.
   Brave, Edge and Firefox), find in page, reader view, restore tabs on start
 - Chrome Web Store extensions
 - Brave's keyboard shortcuts (Ctrl+/ lists them), dark/light theme and accent colours
+- Tab search (Ctrl+Shift+A); type a site name in the address bar and press Tab to search that
+  site (YouTube, Wikipedia, GitHub, …)
+- Report a problem (menu): a bug report file with personal data removed, to read and send
 - Unloads tabs you haven't used for a while, to save memory
 
 **Privacy and safety**
@@ -40,6 +43,7 @@ the SHA-256 of its files so you can check your download.
 - Secure DNS (DNS over HTTPS), proxy support, Microsoft Defender scan of downloaded programs,
   Mark of the Web on downloads
 - Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
+- A warning on the menu button while an add-on you may need isn't installed
 
 **Downloads**
 - Up to 32 connections per file, more than the browser's limit of 6 per server, with the page's

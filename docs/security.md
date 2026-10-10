@@ -12,6 +12,7 @@ cover, and the test that checks it.
 | Encrypted NovaDM passwords | Proxy and site-login passwords that you give NovaDM (for downloads) are encrypted with Windows' data protection. | unit tests |
 | Leaked-password warning | When you sign in, NovaDM checks the password against Have I Been Pwned's list of breached passwords. Only the first 5 characters of the password's SHA-1 hash leave your PC (k-anonymity); the reply is padded so its size gives nothing away; no cookies are sent; results are kept in memory only. Settings → Privacy → "Warn about leaked passwords" turns it off. | `test/hardening.test.js`; `tools/selftest-security.js` (warning shown, only the 5-character prefix sent, padding on, no cookie, no lookup when off) |
 | Insecure sign-in warning | Warns when a password is sent over plain `http://` (except to your own PC). | `tools/selftest-security.js` |
+| Problem report without personal data | "Report a problem" saves a text file and opens it so you can read it first; nothing is sent. Web addresses keep only the site; user folders, file names, user and PC names, e-mail addresses and long tokens are replaced; settings that can hold personal data only say whether they are set. | `test/report.test.js`; `tools/selftest-v14.js` (an error containing your folder, user name, PC name and a login token comes out clean) |
 
 ## Tracking
 
@@ -40,11 +41,15 @@ Run them after `npm run dist`:
 node tools/check-build-security.js
 ```
 
+Inside the app, the channel NovaDM's toolbar and panels use answers only NovaDM's own pages: a web page is refused even in a view that has the same preload (`tools/selftest-v14.js`).
+
 ## Limits (honest)
 
 - Cookie encryption protects copied files and backups. Malware already running as your Windows
   user can ask Windows to decrypt them, as with any Chromium browser except Chrome's newest
-  "app-bound" encryption, which Electron does not have.
+  "app-bound" encryption, which Electron does not have. Planned for 1.5: device-bound sign-ins
+  (a stolen login cookie stops working on another PC) and "forget sign-ins when NovaDM closes"
+  for chosen sites.
 - There is no Google Safe Browsing phishing list (Electron does not include it). The ad blocker's
   lists block many malicious domains, but not all phishing pages.
 - The leaked-password check sees passwords typed into the page itself, not into embedded frames
