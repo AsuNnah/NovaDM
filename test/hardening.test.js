@@ -46,3 +46,18 @@ test('protection: levels, fingerprinting, per-site off', () => {
   toggleSite(settings, 'https://news.example/a');
   assert.ok(protectionFor(settings, 'https://news.example/a'));
 });
+
+test('leaked passwords: k-anonymity lookup, padding ignored, cached', async () => {
+  const breach = require('../src/main/breach');
+  const asked = [];
+  // SHA-1("password") = 5BAA61E4C9B93F3F0682250B6CF8331B7EE68FD8
+  const fetchText = async (url) => {
+    asked.push(url);
+    return '0018A45C4D1DEF81644B54AB7F969B88D65:1\r\n1E4C9B93F3F0682250B6CF8331B7EE68FD8:9545824\r\nFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:0';
+  };
+  assert.strictEqual(await breach.breachCount('password', fetchText), 9545824);
+  assert.deepStrictEqual(asked, [breach.api + '5BAA6']); // only the first 5 characters of the hash
+  assert.strictEqual(await breach.breachCount('password', fetchText), 9545824);
+  assert.strictEqual(asked.length, 1); // remembered for this run
+  assert.strictEqual(await breach.breachCount('a-long-unique-passphrase-9f2c', async () => 'FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF:0'), 0);
+});

@@ -139,6 +139,10 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <label class="sw"><input type="checkbox" id="deAmp"><i></i></label>
     </div>
     <div class="row">
+      <div class="lbl"><b>Warn about leaked passwords</b><span>When a site gets a password you type, NovaDM checks it against Have I Been Pwned's list of passwords from data breaches. Only the first 5 characters of a scrambled (hashed) form of it leave this PC, never the password. NovaDM also warns when a password is sent without HTTPS.</span></div>
+      <label class="sw"><input type="checkbox" id="breachCheck"><i></i></label>
+    </div>
+    <div class="row">
       <div class="lbl"><b>When NovaDM closes, clear</b><span>Cookies and site data sign you out of sites.</span>
         <div class="mini" style="margin-top:8px;gap:16px">
           <label class="chk"><input type="checkbox" id="clearHistoryOnExit"> History</label>

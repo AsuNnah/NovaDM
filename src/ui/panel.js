@@ -48,6 +48,25 @@ api.on('download-ask-update', (d) => updateDownloadAsk(d));
 api.on('links-ask', (d) => showLinksAsk(d));
 api.on('afterdone-ask', (d) => showAfterDone(d));
 api.on('torrent-files', (d) => showTorrentFiles(d));
+api.on('password-warning', (d) => showPasswordWarning(d));
+
+// ---- password warnings (breach.js) ----
+function showPasswordWarning(d) {
+  if (current && current !== 'password') return; // a question is open: don't cover it
+  current = 'password'; place('prompt');
+  content.innerHTML = '';
+  const title = d.count ? 'This password was found in a data breach' : 'Password sent without encryption';
+  const text = d.count
+    ? `The password you just used on <b>${esc(d.site)}</b> appears ${d.count.toLocaleString()} time${d.count === 1 ? '' : 's'} in leaked password lists, so attackers try it. Change it on this site and anywhere else you use it.`
+    : `<b>${esc(d.site)}</b> isn't using HTTPS, so the password you just entered was sent in readable form. Avoid signing in here on public Wi-Fi, and don't reuse this password.`;
+  content.append(el('div', 'hdr', `<div class="t">⚠ ${title}</div>`), el('div', 'q', text));
+  const acts = el('div', 'acts');
+  const ok = el('button', 'btn pri', 'OK');
+  ok.onclick = () => { current = null; api.call('panel.close'); };
+  acts.append(ok);
+  content.append(acts);
+  setTimeout(() => ok.focus(), 30);
+}
 api.on('omni-suggest', (d) => showSuggestions(d));
 api.on('omni-highlight', (d) => highlightSuggestion(d.index));
 api.on('omni-hide', () => { if (current === 'omni') { current = null; content.innerHTML = ''; api.call('panel.close'); } });

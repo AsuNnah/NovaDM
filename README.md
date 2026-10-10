@@ -39,6 +39,7 @@ the SHA-256 of its files so you can check your download.
   Safer / Safest security levels, with an off switch per site
 - Secure DNS (DNS over HTTPS), proxy support, Microsoft Defender scan of downloaded programs,
   Mark of the Web on downloads
+- Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
 
 **Downloads**
 - Up to 32 connections per file, more than the browser's limit of 6 per server, with the page's
@@ -87,6 +88,11 @@ On its own it only connects to download the ad-block lists (every 4 days) and to
 provider you choose; add-ons and the torrent tracker list are downloaded only when you use them.
 Private tabs leave no history or downloads list entries. Passwords for proxies and sites are
 encrypted with Windows' data protection.
+
+**Sign-ins.** Cookies (what keeps you logged in) are encrypted on disk. When you sign in, NovaDM
+warns if the password is in a known data breach (Have I Been Pwned; only the first 5 characters of
+the password's hash are sent, never the password) or is sent without HTTPS. The app is locked down
+so other programs can't run code through it. Details, tests and limits: [docs/security.md](docs/security.md).
 
 Windows Firewall may ask about NovaDM the first time a page uses WebRTC (Chromium then opens a
 network port); blocking it is fine. NovaDM itself opens no network ports.

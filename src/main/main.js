@@ -32,6 +32,8 @@ const { showContextMenu } = require('./contextmenu');
 const { setupBrowsing } = require('./browsing');
 const { shortcutFor, LIST: SHORTCUT_LIST } = require('./shortcuts');
 const hardening = require('./hardening');
+const breach = require('./breach');
+const { isLocalHost } = require('./shields');
 // Must load before the app is ready (registers the crx:// scheme for extension icons).
 const { Extensions } = require('./extensions');
 
@@ -77,7 +79,7 @@ const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
 let win, chromeView, overlayView;
 let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, browsing;
 const extensions = new Extensions();
-if (process.env.NOVADM_SELFTEST) global.__novadmExtensions = extensions; // test access only
+if (process.env.NOVADM_SELFTEST && !app.isPackaged) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
 
 function contentBounds() {
@@ -576,6 +578,18 @@ app.whenReady().then(async () => {
   });
   adblock.shields = browsing.shields;
   hardening.install(settings);
+  // A page sent a password: warn when it went over plain http, or when it is in a known breach.
+  ipcMain.on('novadm:password-sent', (e, d) => {
+    if (browser.tabIdForWc(e.sender.id) == null || !d || typeof d.password !== 'string') return;
+    let host = '';
+    try { host = new URL(e.sender.getURL()).hostname; } catch {}
+    const warn = (w) => { if (browser.activeTab() && browser.activeTab().wcId === e.sender.id) { setPanel(true); sendUI('password-warning', { site: host, ...w }); } };
+    if (!d.secure && host && !isLocalHost(host)) warn({ insecure: true });
+    if (settings.get('breachCheck') === false) return;
+    breach.breachCount(d.password, async (url) => (await net.fetchText(url, { session: electronSession.defaultSession, headers: { 'add-padding': 'true' }, timeoutMs: 15000 })).text)
+      .then((n) => { if (n > 0) warn({ count: n }); })
+      .catch(() => {}); // offline or service down: no warning
+  });
   adblock.protection = (url) => hardening.protectionFor(settings, url);
   transport = new Transport({ session: browser.normalSession, settings });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
@@ -803,8 +817,11 @@ app.whenReady().then(async () => {
   if (process.env.NOVADM_PANEL) {
     setTimeout(() => ipcHandlers['panel.open']({ name: process.env.NOVADM_PANEL }), Number(process.env.NOVADM_PANEL_DELAY) || 2500);
   }
+  // Screenshots and scripted tests only when running from source: in the installed app an
+  // environment variable must never be able to run code or capture pages.
+  const devRun = !app.isPackaged;
   // NOVADM_SHOT=<ms>: capture the UI so the build can be verified without a visible desktop.
-  if (process.env.NOVADM_SHOT) {
+  if (devRun && process.env.NOVADM_SHOT) {
     setTimeout(async () => {
       try {
         const os = require('os');
@@ -818,7 +835,7 @@ app.whenReady().then(async () => {
     }, Number(process.env.NOVADM_SHOT) || 4000);
   }
   // NOVADM_SELFTEST=<module path>: run a scripted test inside the real app.
-  if (process.env.NOVADM_SELFTEST) {
+  if (devRun && process.env.NOVADM_SELFTEST) {
     const t = require(path.resolve(process.env.NOVADM_SELFTEST));
     setTimeout(() => {
       Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, api, ytdlp, siteExt, handleLaunch, browsing, getWindow: () => win }))

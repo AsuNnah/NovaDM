@@ -54,7 +54,7 @@ class Extensions {
 
   // Ask before installing, listing what the extension may access.
   async confirmInstall(details, win) {
-    if (process.env.NOVADM_SELFTEST && process.env.NOVADM_TEST_AUTOINSTALL) return { action: 'allow' }; // tests only
+    if (!app.isPackaged && process.env.NOVADM_SELFTEST && process.env.NOVADM_TEST_AUTOINSTALL) return { action: 'allow' }; // tests only
     const m = details.manifest || {};
     const name = details.localizedName || m.name || details.id;
     const perms = [...(m.permissions || []), ...(m.host_permissions || [])].filter((p) => typeof p === 'string');

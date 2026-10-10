@@ -164,6 +164,28 @@ function onUserClick(e) {
 window.addEventListener('click', onUserClick, true);
 window.addEventListener('auxclick', onUserClick, true);
 
+// ---- passwords being sent (leaked-password warning, breach.js) ---------------------------------
+// When the user submits a form, clicks a button or presses Enter in a password field, each new
+// password on the page is handed to NovaDM once to be checked; nothing is kept here.
+const checkedPasswords = new Set();
+function passwordsSent(root) {
+  for (const f of (root && root.querySelectorAll ? root.querySelectorAll('input[type=password]') : [])) {
+    const v = f.value;
+    if (v && v.length >= 4 && !checkedPasswords.has(v)) {
+      checkedPasswords.add(v);
+      try { ipcRenderer.send('novadm:password-sent', { password: v, secure: location.protocol === 'https:' }); } catch {}
+    }
+  }
+}
+if (!INTERNAL) {
+  window.addEventListener('submit', (e) => { if (e.isTrusted) passwordsSent(e.target); }, true);
+  window.addEventListener('click', (e) => {
+    const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('button, input[type=submit], [role=button]') : null;
+    if (b) passwordsSent(b.form || b.closest('form') || document);
+  }, true);
+  window.addEventListener('keydown', (e) => { if (e.isTrusted && e.key === 'Enter' && e.target && e.target.type === 'password') passwordsSent(e.target.form || document); }, true);
+}
+
 // ---- boot ------------------------------------------------------------------------------------
 function boot() {
   injectEmeHook();

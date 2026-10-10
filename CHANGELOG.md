@@ -6,6 +6,26 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-10-10
+
+### Added
+- **Leaked-password warning.** When you sign in, NovaDM checks the password against Have I Been
+  Pwned's breached-password list and warns if it was found. Only the first 5 characters of the
+  password's SHA-1 hash are sent (k-anonymity), with padding and no cookies. Settings → Privacy →
+  "Warn about leaked passwords".
+- **Insecure sign-in warning** when a password is sent over plain `http://`.
+- `docs/security.md`: every protection, its test and its limits.
+- `tools/check-build-security.js`: checks the built app (fuses, code-injection attempts, tampered
+  app, encrypted cookies).
+
+### Security
+- Cookies are now encrypted on disk (Windows DPAPI). Before this they were stored in plain text.
+  Existing cookies are kept.
+- The app can no longer be used to run other code: Node.js mode, `NODE_OPTIONS` and `--inspect`
+  are off, the app code is integrity-checked and only loaded from its own archive.
+- Test hooks (`NOVADM_SELFTEST`, `NOVADM_SHOT`) only work when run from source.
+
+### License
 - NovaDM is licensed under the GNU GPL, version 3 or later (`LICENSE`). Before this it had no
   license. GPL-3.0 is required by electron-chrome-extensions, which NovaDM uses under its GPL-3.0
   option.
