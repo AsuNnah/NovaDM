@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { app, ipcMain, shell, clipboard, dialog } = require('electron');
+const { pathToFileURL } = require('url');
 const { siteOf, extractLinks, expandPattern } = require('./util');
 const grabber = require('./grabber');
 const { copyText } = require('./clipboard-watch');
@@ -11,13 +12,26 @@ const { parseCurl } = require('./curl');
 const { exportData, importData } = require('./backup');
 const { nextStart, normalizeQueues } = require('./scheduler');
 const { STORE_URL } = require('./extensions');
+const diagnostics = require('./diagnostics');
+const { siteFor } = require('./site-search');
+const updates = require('./updates');
+const { canAutoUpdate, createUpdater } = require('./updater');
+const net = require('./net');
 
 const GRAB_CATEGORY = { image: 'images', video: 'video', audio: 'music', document: 'documents', archive: 'archives', program: 'programs' };
 
 let ytdlpChoices = null;
+let update = null; // { version, url } when GitHub has a newer NovaDM; + { auto, phase, percent } when it updates itself
+
+// Add-ons shown with a warning on the menu button while missing (until installed or "Don't remind me").
+const ADDONS = [
+  { id: 'ytdlp', name: 'yt-dlp', why: '“Find with yt-dlp” for videos NovaDM can’t detect by itself' },
+  { id: 'ffmpeg', name: 'FFmpeg', why: 'Joining WebM / plain-MP4 picture and sound, saving sound only, repairing videos' },
+  { id: 'aria2', name: 'aria2', why: 'Torrents and magnet links' },
+];
 
 function registerIpc(ctx) {
-  const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission } = ctx;
+  const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission, inSenderCtx = (_s, fn) => fn() } = ctx;
 
   const handlers = {
     // ---- window ----
@@ -326,8 +340,81 @@ function registerIpc(ctx) {
     // ---- settings ----
     'settings.get': () => getManagers().settings.all(),
 
+    // ---- add-on reminders, "Report a problem", address bar site search ----
+    'addons.state': () => addonState(),
+    'addons.dismiss': (a) => {
+      const { settings } = getManagers();
+      if (ADDONS.some((x) => x.id === a.id)) settings.set({ addonRemindOff: [...new Set([...(settings.get('addonRemindOff') || []), a.id])] });
+      pushAddons();
+    },
+    'diagnostics.report': () => diagnostics.report({ app, ...getManagers() }),
+    'diagnostics.save': async () => {
+      const m = getManagers();
+      const text = await handlers['diagnostics.report']();
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+      const r = await dialog.showSaveDialog(m.win, { title: 'Save problem report', defaultPath: path.join(app.getPath('downloads'), `NovaDM-report-${stamp}.txt`), filters: [{ name: 'Text', extensions: ['txt'] }] });
+      if (r.canceled || !r.filePath) return { ok: false };
+      fs.writeFileSync(r.filePath, text, 'utf8');
+      shell.openPath(r.filePath); // opened so it can be read before it is shared
+      return { ok: true, path: r.filePath };
+    },
+    'omni.site': (a) => siteFor(a.q),
+    'update.open': () => { if (update) getManagers().browser.createTab({ url: update.url }); },
+    'update.install': () => { if (auto) auto.install(); },
+    'update.later': () => { if (update) getManagers().settings.set({ updateDismissed: update.version }); pushAddons(); },
+    // "Go back" on the deceptive-site warning: the last page before it (the blocked load left its own entries).
+    'phishing.back': (a) => {
+      const t = getManagers().browser.activeTab();
+      if (!t || !t.wc) return;
+      const nh = t.wc.navigationHistory;
+      for (let i = nh.getActiveIndex() - 1; i >= 0; i--) {
+        const u = nh.getEntryAtIndex(i).url;
+        if (u !== a.url && !/^(?:chrome-error:|.*\/ui\/error\.html)/i.test(u)) return nh.goToIndex(i);
+      }
+      getManagers().browser.navigate(t.id, 'novadm://newtab');
+    },
+    // "Continue anyway" on the deceptive-site warning (error.html): this site, until NovaDM closes.
+    'phishing.allow': (a) => {
+      const { adblock, browser } = getManagers();
+      if (!/^https?:\/\//i.test(String(a.url || ''))) return { ok: false };
+      adblock.allowPhishing(a.url);
+      const t = browser.activeTab();
+      if (t) browser.navigate(t.id, a.url);
+      return { ok: true };
+    },
+
     // ---- misc ----
   };
+
+  function addonState() {
+    const m = getManagers();
+    const off = m.settings.get('addonRemindOff') || [];
+    const has = { ytdlp: () => m.ytdlp.exe(), ffmpeg: () => m.ffmpeg.exe(), aria2: () => m.aria2.exe() || m.aria2.external };
+    const showUpdate = update && m.settings.get('updateDismissed') !== update.version;
+    return { missing: ADDONS.filter((a) => !off.includes(a.id) && !has[a.id]()), update: showUpdate ? update : null, current: app.getVersion() };
+  }
+  function pushAddons() { sendUI('addons', addonState()); }
+
+  // The installed NovaDM updates itself (updater.js); the portable version and runs from source get a
+  // notice. NOVADM_TEST_AUTOUPDATE: self-tests from source use the self-updater too.
+  const auto = canAutoUpdate() || (!app.isPackaged && process.env.NOVADM_TEST_AUTOUPDATE)
+    ? createUpdater({ onState: (s) => { update = { ...s, auto: true, url: 'https://github.com/AsuNnah/NovaDM/releases/latest' }; pushAddons(); } })
+    : null;
+  // Once a day (first time 30 s after start): is there a newer NovaDM on GitHub? Off in Settings.
+  const checkUpdates = () => {
+    if (getManagers().settings.get('updateCheck') === false) return;
+    if (auto) return auto.check();
+    const fetchText = async (url) => (await net.fetchText(url, { session: require('electron').session.defaultSession, headers: { accept: 'application/vnd.github+json' }, timeoutMs: 15000 })).text;
+    return updates.check(app.getVersion(), fetchText).then((u) => { update = u; pushAddons(); }).catch(() => {});
+  };
+  handlers['update.check'] = checkUpdates;
+  setTimeout(checkUpdates, 30000).unref();
+  setInterval(checkUpdates, 24 * 3600 * 1000).unref();
+  // The warning on the menu button follows add-on changes made from Settings too.
+  for (const k of Object.keys(handlers).filter((m) => /^(ffmpeg|ytdlp|torrents)\.(install|uninstall|choose)$/.test(m))) {
+    const f = handlers[k];
+    handlers[k] = async (a) => { try { return await f(a); } finally { pushAddons(); } };
+  }
 
   function shieldsState() {
     const { browser, adblock, settings } = getManagers();
@@ -344,10 +431,13 @@ function registerIpc(ctx) {
   function pushShields() { sendUI('shields', shieldsState()); }
   function pushDownloads() { sendUI('downloads', { list: getManagers().downloads.list(), summary: getManagers().downloads.activeSummary() }); }
 
-  ipcMain.handle('novadm:call', async (_e, method, args) => {
+  // Only NovaDM's own toolbar and panels, never a web page (even if one of those views navigated).
+  const UI_PREFIX = pathToFileURL(path.join(__dirname, '..', 'ui')).href.toLowerCase() + '/';
+  ipcMain.handle('novadm:call', async (e, method, args) => {
+    if (!((e.senderFrame && e.senderFrame.url) || '').toLowerCase().startsWith(UI_PREFIX)) throw new Error('not allowed');
     const fn = handlers[method];
     if (!fn) throw new Error('Unknown method ' + method);
-    return fn(args || {});
+    return inSenderCtx(e.sender, () => fn(args || {}));
   });
   return handlers;
 }

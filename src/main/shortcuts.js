@@ -22,7 +22,7 @@ function shortcutFor(input) {
     if (shift) {
       return {
         t: 'reopen-tab', n: 'new-private', w: 'close-window', r: 'hard-reload', d: 'bookmark-all', b: 'bookmarks-bar',
-        o: 'bookmarks', i: 'devtools', j: 'devtools', c: 'devtools', g: 'find-prev',
+        o: 'bookmarks', a: 'tab-search', i: 'devtools', j: 'devtools-console', c: 'devtools-inspect', g: 'find-prev',
       }[k] || null;
     }
     return {
@@ -51,8 +51,8 @@ function shortcutFor(input) {
 }
 
 const LIST = [
-  ['Tabs', 'Ctrl+T / Ctrl+N new tab · Ctrl+Shift+N private tab · Ctrl+W close · Ctrl+Shift+T reopen closed tab · Ctrl+Tab / Ctrl+PgDn next · Ctrl+Shift+Tab / Ctrl+PgUp previous · Ctrl+1…8 tab n · Ctrl+9 last tab · Ctrl+Shift+W close window'],
-  ['Address bar', 'Ctrl+L / Alt+D / F6 / Ctrl+K / Ctrl+E go to the address bar · Ctrl+Enter add www. and .com · Alt+Enter open in a new tab'],
+  ['Tabs', 'Ctrl+T / Ctrl+N new tab · Ctrl+Shift+N private window · Ctrl+W close · Ctrl+Shift+T reopen closed tab · Ctrl+Tab / Ctrl+PgDn next · Ctrl+Shift+Tab / Ctrl+PgUp previous · Ctrl+1…8 tab n · Ctrl+9 last tab · Ctrl+Shift+A search tabs · Ctrl+Shift+W close window'],
+  ['Address bar', 'Ctrl+L / Alt+D / F6 / Ctrl+K / Ctrl+E go to the address bar · Ctrl+Enter add www. and .com · Alt+Enter open in a new tab · type a site (youtube, wiki, github…) then Tab to search it'],
   ['Page', 'Alt+← / Alt+→ back / forward · F5 / Ctrl+R reload · Shift+F5 / Ctrl+Shift+R reload without cache · Esc stop · Alt+Home home page · F11 full screen · Ctrl+P print · Ctrl+S save page · Ctrl+O open a file · Ctrl + / − / 0 or Ctrl+wheel zoom'],
   ['Find', 'Ctrl+F find · F3 / Ctrl+G next · Shift+F3 / Ctrl+Shift+G previous'],
   ['Bookmarks and history', 'Ctrl+D bookmark · Ctrl+Shift+D bookmark all tabs · Ctrl+Shift+B bookmarks bar · Ctrl+Shift+O bookmarks · Ctrl+H history · Ctrl+J downloads · Ctrl+Shift+Delete clear browsing data'],

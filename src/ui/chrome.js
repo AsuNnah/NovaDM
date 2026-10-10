@@ -139,6 +139,27 @@ api.on('popups-blocked', (d) => {
 $('popup-pill').onclick = () => call('popup.review');
 api.on('media', (d) => setBadge('media-badge', d.count));
 api.on('downloads', (d) => setBadge('dl-badge', d.summary ? d.summary.active : 0, true));
+// Add-ons that aren't installed: a warning on the menu button (the menu lists them).
+function showAddons(d) {
+  const n = (d && d.missing || []).length;
+  const up = d && d.update;
+  $('menu-badge').classList.toggle('hidden', !n && !up);
+  $('menu-badge').classList.toggle('new', !!up);
+  $('menu-btn').title = ['Menu', up ? `NovaDM ${up.version} is available` : '', n ? `${d.missing.map((a) => a.name).join(', ')} not installed` : ''].filter(Boolean).join(' – ');
+}
+api.on('addons', showAddons);
+// "Update": restarts into the downloaded version; the portable version opens the menu (Download…).
+let updateReady = false;
+function showUpdate(d) {
+  const u = d && d.update;
+  updateReady = !!(u && u.auto && u.phase === 'ready');
+  $('update-pill').classList.toggle('hidden', !(updateReady || (u && !u.auto)));
+  $('update-pill').title = u ? `NovaDM ${u.version} ${updateReady ? 'is ready: click to restart and update' : 'is available'}` : '';
+}
+api.on('addons', showUpdate);
+call('addons.state').then(showUpdate).catch(() => {});
+$('update-pill').onclick = () => { if (updateReady) call('update.install'); else togglePanel('menu'); };
+call('addons.state').then(showAddons).catch(() => {});
 
 function setBadge(id, n, gray) {
   const b = $(id);
@@ -160,6 +181,21 @@ let sugg = [];
 let suggIndex = -1;
 let typed = '';
 let suggTimer = null;
+// Tab to search: "youtube" + Tab, then what you type is searched on that site (site-search.js).
+let site = null; // the site being searched
+let siteHint = null; // the site the typed text names (Tab picks it)
+function setSite(s) {
+  site = s;
+  $('site-chip').classList.toggle('hidden', !s);
+  $('site-chip').textContent = s ? `Search ${s.name}` : '';
+  urlEl.placeholder = s ? `Search ${s.name}` : 'Search or enter address';
+  showTabHint(null);
+}
+function showTabHint(s) {
+  siteHint = s;
+  $('tab-hint').classList.toggle('hidden', !s);
+  $('tab-hint').innerHTML = s ? `Press <kbd>Tab</kbd> to search ${s.name.replace(/[<&]/g, '')}` : '';
+}
 function hideSuggestions() { if (sugg.length) call('omni.hide'); sugg = []; suggIndex = -1; }
 function requestSuggestions() {
   clearTimeout(suggTimer);
@@ -176,14 +212,35 @@ function requestSuggestions() {
 urlEl.addEventListener('focus', () => { urlFocused = true; $('omnibox').classList.add('focus'); urlEl.select(); });
 urlEl.addEventListener('blur', () => {
   urlFocused = false;
+  setSite(null);
   $('omnibox').classList.remove('focus');
   const a = tabs.find((t) => t.id === activeId);
   if (a) urlEl.value = a.url || '';
   // Later than the overlay's mousedown, so a click on a suggestion still counts.
   setTimeout(hideSuggestions, 200);
 });
-urlEl.addEventListener('input', () => { typed = urlEl.value; requestSuggestions(); });
+urlEl.addEventListener('input', () => {
+  typed = urlEl.value;
+  if (site) return; // searching a site: no history suggestions
+  requestSuggestions();
+  const q = urlEl.value;
+  call('omni.site', { q }).then((s) => { if (urlEl.value === q && !site) showTabHint(s); }).catch(() => {});
+});
 urlEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab' && !e.shiftKey && !site && siteHint && urlEl.selectionStart === urlEl.value.length) {
+    e.preventDefault();
+    hideSuggestions();
+    setSite(siteHint);
+    urlEl.value = '';
+    return;
+  }
+  if (e.key === 'Backspace' && site && !urlEl.value) { e.preventDefault(); setSite(null); return; }
+  if (e.key === 'Enter' && site) {
+    const q = urlEl.value.trim();
+    if (q) { const url = site.url.replace('%s', encodeURIComponent(q)); if (e.altKey) call('tabs.new', { url }); else call('nav.go', { input: url }); }
+    urlEl.blur();
+    return;
+  }
   if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && sugg.length) {
     e.preventDefault();
     suggIndex = e.key === 'ArrowDown' ? Math.min(sugg.length - 1, suggIndex + 1) : Math.max(-1, suggIndex - 1);
@@ -217,7 +274,11 @@ $('menu-btn').onclick = () => togglePanel('menu');
 api.on('close-panel', () => { openPanel = null; });
 // Panels can also be opened from inside another panel (e.g. the menu).
 api.on('open-panel', (d) => { openPanel = d.name; });
-api.on('focus-address', () => { urlEl.focus(); urlEl.select(); });
+api.on('focus-address', (d) => {
+  if (d && d.keep && document.activeElement === urlEl && document.hasFocus()) return; // keep what's already typed
+  urlEl.focus();
+  urlEl.select();
+});
 
 function cssUrl(u) { return String(u).replace(/["\\]/g, ''); }
 function globeSvg() { return '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>'; }

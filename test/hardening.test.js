@@ -11,10 +11,10 @@ test('shortcuts: Brave / Chrome set', () => {
     [key('t', { ctrl: true }), 'new-tab'], [key('T', { ctrl: true, shift: true }), 'reopen-tab'], [key('N', { ctrl: true, shift: true }), 'new-private'],
     [key('3', { ctrl: true }), 'tab-3'], [key('9', { ctrl: true }), 'tab-last'], [key('PageDown', { ctrl: true }), 'next-tab'],
     [key('Tab', { ctrl: true, shift: true }), 'prev-tab'], [key('F5', { shift: true }), 'hard-reload'], [key('R', { ctrl: true, shift: true }), 'hard-reload'],
-    [key('I', { ctrl: true, shift: true }), 'devtools'], [key('F12'), 'devtools'], [key('u', { ctrl: true }), 'view-source'],
+    [key('I', { ctrl: true, shift: true }), 'devtools'], [key('J', { ctrl: true, shift: true }), 'devtools-console'], [key('C', { ctrl: true, shift: true }), 'devtools-inspect'], [key('F12'), 'devtools'], [key('u', { ctrl: true }), 'view-source'],
     [key('Delete', { ctrl: true, shift: true }), 'clear-data'], [key('Escape', { shift: true }), 'task-manager'], [key('/', { ctrl: true }), 'shortcut-list'],
     [key('d', { alt: true }), 'focus-address'], [key('F6'), 'focus-address'], [key('Home', { alt: true }), 'home'], [key('F11'), 'fullscreen'],
-    [key('D', { ctrl: true, shift: true }), 'bookmark-all'], [key('g', { ctrl: true }), 'find-next'], [key('F3', { shift: true }), 'find-prev'],
+    [key('D', { ctrl: true, shift: true }), 'bookmark-all'], [key('g', { ctrl: true }), 'find-next'], [key('A', { ctrl: true, shift: true }), 'tab-search'], [key('F3', { shift: true }), 'find-prev'],
   ];
   for (const [input, want] of cases) assert.strictEqual(shortcutFor(input), want, JSON.stringify(input));
   // Plain typing and editing keys stay with the page / text field.

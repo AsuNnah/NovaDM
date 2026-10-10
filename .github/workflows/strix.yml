@@ -1,0 +1,64 @@
+# Stage 6 of docs/pipeline.md: AI penetration test (Strix, github.com/usestrix/strix) of NovaDM's
+# source. Runs when a version tag is pushed (before the draft release is published) and on demand
+# (Actions → Strix → Run workflow). Each run uses AI model credits on the repository owner's account,
+# capped by max_budget_usd. Needs the repository secret LLM_API_KEY (an Anthropic API key); without
+# it the job skips with a warning. The model can be changed with the repository variable STRIX_LLM.
+name: Strix
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Scan depth'
+        type: choice
+        options: [quick, standard, deep]
+        default: standard
+      max_budget_usd:
+        description: 'Spending cap for this run (USD)'
+        default: '10'
+
+permissions:
+  contents: read
+
+jobs:
+  pentest:
+    runs-on: ubuntu-latest # has Docker, which Strix runs its sandbox in
+    timeout-minutes: 180
+    steps:
+      - name: Check for the AI key
+        id: key
+        env:
+          KEY: ${{ secrets.LLM_API_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then echo "ok=1" >> "$GITHUB_OUTPUT"
+          else echo "::warning::Strix skipped: add the repository secret LLM_API_KEY (Settings > Secrets and variables > Actions)"; fi
+      - uses: actions/checkout@v5
+        if: steps.key.outputs.ok
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        if: steps.key.outputs.ok
+        with:
+          python-version: '3.12'
+      - name: Install Strix (pinned version, from PyPI)
+        if: steps.key.outputs.ok
+        run: pip install strix-agent==1.6.2
+      - name: Run Strix
+        if: steps.key.outputs.ok
+        env:
+          STRIX_LLM: ${{ vars.STRIX_LLM || 'anthropic/claude-sonnet-5-5' }}
+          LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+          MODE: ${{ inputs.mode || 'standard' }}
+          BUDGET: ${{ inputs.max_budget_usd || '10' }}
+        # Fails (non-zero exit) when it finds vulnerabilities, so a release tag shows red.
+        run: strix -n -t ./ --scan-mode "$MODE" --scope-mode full --instruction-file .github/strix-instructions.md --max-budget-usd "$BUDGET"
+      - name: Keep the report
+        if: always() && steps.key.outputs.ok
+        uses: actions/upload-artifact@v4
+        with:
+          name: strix-report
+          path: strix_runs/
+          if-no-files-found: ignore
+          retention-days: 30

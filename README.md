@@ -24,10 +24,13 @@ the SHA-256 of its files so you can check your download.
 ## What it does
 
 **Browser**
-- Tabs, private tabs, history, bookmarks (with a bookmarks bar and import/export from Chrome,
+- Tabs, private windows (their own purple look and taskbar icon), history, bookmarks (with a bookmarks bar and import/export from Chrome,
   Brave, Edge and Firefox), find in page, reader view, restore tabs on start
 - Chrome Web Store extensions
 - Brave's keyboard shortcuts (Ctrl+/ lists them), dark/light theme and accent colours
+- Tab search (Ctrl+Shift+A); type a site name in the address bar and press Tab to search that
+  site (YouTube, Wikipedia, GitHub, …)
+- Report a problem (menu): a bug report file with personal data removed, to read and send
 - Unloads tabs you haven't used for a while, to save memory
 
 **Privacy and safety**
@@ -40,6 +43,8 @@ the SHA-256 of its files so you can check your download.
 - Secure DNS (DNS over HTTPS), proxy support, Microsoft Defender scan of downloaded programs,
   Mark of the Web on downloads
 - Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
+- A warning on the menu button while an add-on you may need isn't installed
+- Warning page for phishing and malware sites; updates itself like Chrome (Update button), the portable version shows a notice
 
 **Downloads**
 - Up to 32 connections per file, more than the browser's limit of 6 per server, with the page's
@@ -84,9 +89,12 @@ published checksum. You can also point NovaDM at your own copy.
 NovaDM has no telemetry, no accounts and no ads of its own. Everything it stores (settings,
 downloads list, history, bookmarks, cookies) stays in `%APPDATA%\NovaDM` on your PC.
 
-On its own it only connects to download the ad-block lists (every 4 days) and to the Secure DNS
-provider you choose; add-ons and the torrent tracker list are downloaded only when you use them.
-Private tabs leave no history or downloads list entries. Passwords for proxies and sites are
+On its own it only connects to download the ad-block lists (every 4 days) and the phishing lists
+(daily), to ask GitHub once a day for a newer NovaDM and download it (installed version; can be turned off), and to the
+Secure DNS provider you choose; add-ons and the torrent tracker list are downloaded only when you
+use them. The sites you visit are checked against the lists on your PC, never sent anywhere.
+Private windows leave no history or downloads list entries, and their cookies, site data and
+sign-ins are deleted when the private window closes. Passwords for proxies and sites are
 encrypted with Windows' data protection.
 
 **Sign-ins.** Cookies (what keeps you logged in) are encrypted on disk. When you sign in, NovaDM

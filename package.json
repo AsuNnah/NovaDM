@@ -1,7 +1,7 @@
 {
   "name": "novadm",
   "productName": "NovaDM",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
   "author": "NovaDM",
   "license": "GPL-3.0-or-later",
@@ -19,6 +19,7 @@
     "@mozilla/readability": "0.6.0",
     "electron-chrome-extensions": "4.9.0",
     "electron-chrome-web-store": "0.13.0",
+    "electron-updater": "6.8.9",
     "hls.js": "1.7.3",
     "mux.js": "6.3.0",
     "undici": "7.30.0"
@@ -88,6 +89,14 @@
         "name": "Torrent file",
         "description": "Torrent file",
         "role": "Viewer"
+      }
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AsuNnah",
+        "repo": "NovaDM",
+        "releaseType": "release"
       }
     ]
   }

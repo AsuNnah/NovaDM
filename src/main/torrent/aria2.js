@@ -1,8 +1,8 @@
 'use strict';
 // BitTorrent and magnet links through aria2 (the engine Motrix uses), run as a hidden helper:
 //  - installed on demand from the official release (github.com/aria2/aria2) over HTTPS, or the
-//    user's own aria2c.exe. aria2 publishes no checksums; once ARIA2.sha256 below is filled in from
-//    a checked copy, installs are compared against it (until then the HTTPS origin is the check)
+//    user's own aria2c.exe. aria2 publishes no checksums, so the zip's SHA-256 is pinned below and
+//    every install is compared against it
 //  - started with JSON-RPC on 127.0.0.1 only, a random port and a random secret; it exits with
 //    NovaDM (--stop-with-process)
 //  - DHT, peer exchange and local peer discovery on; an up-to-date public tracker list is added
@@ -18,8 +18,8 @@ const { EventEmitter } = require('events');
 const ARIA2 = {
   version: '1.37.0',
   url: 'https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0-win-64bit-build1.zip',
-  // SHA-256 of the official zip. Empty until it has been checked once against the real file.
-  sha256: '',
+  // SHA-256 of the official zip (2026-10-10: same as Scoop's aria2 manifest).
+  sha256: '67d015301eef0b612191212d564c5bb0a14b5b9c4796b76454276a4d28d9b288',
 };
 const TRACKERS_URL = 'https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_best.txt';
 const TRACKERS_MAX_AGE = 12 * 3600 * 1000;
@@ -73,7 +73,7 @@ class Aria2 extends EventEmitter {
         await this.download(ARIA2.url, zip, (p) => onProgress({ phase: 'downloading', ...p }));
         onProgress({ phase: 'verifying' });
         const sha = crypto.createHash('sha256').update(fs.readFileSync(zip)).digest('hex');
-        if (ARIA2.sha256 && sha !== ARIA2.sha256) throw new Error('The download did not match the expected checksum; nothing was installed');
+        if (sha !== ARIA2.sha256) throw new Error('The download did not match the expected checksum; nothing was installed');
         this.installedSha256 = sha; // shown in Settings, so it can be compared by hand
         onProgress({ phase: 'unpacking' });
         const out = path.join(tmp, 'x');

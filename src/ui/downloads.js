@@ -404,7 +404,7 @@ async function showProperties(id) {
     ${row(p.state === 'done' ? 'Date finished' : 'Last written', fmtDate(p.state === 'done' ? p.completedAt : p.modifiedAt))}
     ${extra.length ? row('Additional information', extra.map(esc).join('<br>')) : ''}
     ${p.state !== 'done' && !p.native ? row('Speed limit', `<input type="number" id="pLimit" min="0" step="100" value="${p.speedLimitKBps || 0}" style="width:90px"> KB/s for this download <button id="pLimitSet">Set</button> <span style="color:var(--fg3)">(0 = no limit)</span>`) : ''}
-    ${p.expectedHash ? row('Checksum check', `${esc(VERIFY_TEXT[p.verify] ? VERIFY_TEXT[p.verify].replace(/<[^>]+>/g, '') : 'When the download finishes')}<br><span class="hash">${esc(p.expectedHash)}</span>`) : ''}
+    ${p.expectedHash ? row('Checksum check', `${esc(VERIFY_TEXT[p.verify] ? new DOMParser().parseFromString(VERIFY_TEXT[p.verify], 'text/html').body.textContent : 'When the download finishes')}<br><span class="hash">${esc(p.expectedHash)}</span>`) : ''}
     ${p.infoHash ? row('Info hash', `<span class="hash">${esc(p.infoHash)}</span>`) : ''}
     ${p.btFiles && p.btFiles.length > 1 ? row('Files', p.btFiles.map((f, i) => `${!p.selectFiles || p.selectFiles.split(',').includes(String(i + 1)) ? '✓' : '·'} ${esc(f.path)} (${fmtSize(f.length)})`).join('<br>')) : ''}
     ${p.native ? row('Handled by', 'The browser (this kind of link cannot be fetched again, so it cannot resume after NovaDM closes)') : ''}

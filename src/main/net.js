@@ -55,7 +55,7 @@ class HttpError extends Error {
 function hostOfUrl(u) { try { return new URL(u).host.toLowerCase(); } catch { return ''; } }
 
 function normHeaders(raw) {
-  const out = {};
+  const out = Object.create(null); // a server's header names can't reach Object.prototype
   for (const [k, v] of Object.entries(raw || {})) out[k.toLowerCase()] = Array.isArray(v) ? v.join(', ') : String(v);
   return out;
 }

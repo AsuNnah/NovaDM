@@ -56,6 +56,32 @@ module.exports = async ({ app, browser, settings, overlayView }) => {
     result.insecure = { warned: /sent without encryption/.test(t2), names: /shop\.example/.test(t2) };
     await browser.normalSession.setProxy({ mode: 'system' });
 
+    // 2b. A sign-in box embedded from another site (localhost inside a 127.0.0.1 page): warned, naming the frame's site.
+    const port = site.address().port;
+    const host = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<title>Shop</title><iframe id="f" src="http://localhost:${port}/login" style="width:400px;height:200px;border:0"></iframe>`); });
+    await new Promise((r) => host.listen(0, '127.0.0.1', r));
+    await overlayView.webContents.executeJavaScript('document.getElementById("content").innerHTML = ""').catch(() => {});
+    browser.navigate(tab.id, `http://127.0.0.1:${host.address().port}/`);
+    await until(() => !tab.wc.isLoading() && tab.wc.mainFrame.frames.length && /Sign in/.test(String(tab.wc.mainFrame.frames[0].url) + '') === false);
+    await sleep(800);
+    const frame = tab.wc.mainFrame.frames[0];
+    // Real input through Chromium's input router (DevTools protocol): Electron's sendInputEvent does not
+    // reach frames of another site, and script focus can't move the keyboard into them.
+    const off = await tab.wc.executeJavaScript('(() => { const r = document.getElementById("f").getBoundingClientRect(); return { x: Math.round(r.left), y: Math.round(r.top) }; })()');
+    const at = (id) => frame.executeJavaScript(`(() => { const b = document.getElementById("${id}").getBoundingClientRect(); return { x: Math.round(b.left + 5), y: Math.round(b.top + 5) }; })()`);
+    const dbg = tab.wc.debugger;
+    dbg.attach('1.3');
+    const click = async (p) => { for (const type of ['mousePressed', 'mouseReleased']) await dbg.sendCommand('Input.dispatchMouseEvent', { type, x: off.x + p.x, y: off.y + p.y, button: 'left', clickCount: 1 }); };
+    await click(await at('p'));
+    await sleep(200);
+    await dbg.sendCommand('Input.insertText', { text: 'hunter2' });
+    await click(await at('go'));
+    dbg.detach();
+    await sleep(1200);
+    const t2b = await overlay();
+    result.embedded = { warned: /found in a data breach/.test(t2b), namesFrameSite: /localhost/.test(t2b), typed: await frame.executeJavaScript('document.getElementById("p").value.length'), submitted: await frame.executeJavaScript('document.title') };
+    host.close();
+
     // 3. Setting off: no lookup at all.
     settings.set({ breachCheck: false });
     const before = hibp.asked.length;

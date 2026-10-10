@@ -24,10 +24,16 @@ class Browser extends EventEmitter {
     this.adblock = adblock;
     this.popup = popup;
     this.tabs = new Map(); // tabId -> tab
-    this.order = [];
-    this.activeId = null;
-    this.bounds = { x: 0, y: 0, width: 800, height: 600 };
+    // Two windows: normal tabs and private tabs each have their own window, tab order, active tab,
+    // size and parent view. `cur` is the window being worked on (main.js switches it); methods that
+    // act on one tab switch to that tab's window themselves (see the end of this file).
+    const group = () => ({ order: [], activeId: null, bounds: { x: 0, y: 0, width: 800, height: 600 }, parentView: null, onRestack: null, closing: false });
+    this.groups = { normal: group(), private: group() };
+    this.cur = 'normal';
+    this.ensureWindow = null; // set by main: (kind) => opens the window for that kind of tab if needed
     this._seq = 0;
+    // WebRTC: local network addresses hidden; with a proxy, nothing bypasses it (setWebRTCPolicy).
+    this.webrtcPolicy = 'default_public_interface_only';
     // A plain Chrome name everywhere (pages, request headers): sites and bot checks refuse "Electron".
     app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
     this.normalSession = electronSession.fromPartition('persist:browser');
@@ -35,7 +41,6 @@ class Browser extends EventEmitter {
     this._sessionsReady = new Set();
     this.closed = []; // recently closed tabs (Ctrl+Shift+T)
     this._nonGet = new Map(); // url -> time: recent POST/PUT responses (their downloads can't be re-requested)
-    this.parentView = null; // set by main: the BaseWindow contentView to add tab views to
     // Messages from the detect preload in any tab (page meta, detected media, EME, nav).
     ipcMain.on('novadm:tab', (event, msg) => {
       const tabId = this.tabIdForWc(event.sender.id);
@@ -112,11 +117,41 @@ class Browser extends EventEmitter {
 
   setParentView(view) { this.parentView = view; }
 
+  // The current window's state (see `groups`).
+  get order() { return this.groups[this.cur].order; }
+  set order(v) { this.groups[this.cur].order = v; }
+  get activeId() { return this.groups[this.cur].activeId; }
+  set activeId(v) { this.groups[this.cur].activeId = v; }
+  get bounds() { return this.groups[this.cur].bounds; }
+  set bounds(v) { this.groups[this.cur].bounds = v; }
+  get parentView() { return this.groups[this.cur].parentView; }
+  set parentView(v) { this.groups[this.cur].parentView = v; }
+  get onRestack() { return this.groups[this.cur].onRestack; }
+  set onRestack(v) { this.groups[this.cur].onRestack = v; }
+
+  kindOf(tab) { return tab && tab.incognito ? 'private' : 'normal'; }
+  /** Run fn with `kind`'s window as the current one. */
+  inGroup(kind, fn) {
+    const prev = this.cur;
+    this.cur = kind;
+    try { return fn(); } finally {
+      this.cur = prev;
+      if (this.cur === 'private' && !this.groups.private.order.length) this.cur = 'normal'; // its last tab just closed
+    }
+  }
+  isActive(tab) { return this.groups[this.kindOf(tab)].activeId === tab.id; }
+
   /**
    * `lazy` (background tabs only): the tab is listed but its page loads when it is first selected
    * (restored tabs), like an unloaded tab.
    */
-  createTab({ url = NEWTAB, incognito = false, background = false, openerPartition, lazy = false, title = '' } = {}) {
+  createTab(opts = {}) {
+    const kind = opts.incognito ? 'private' : 'normal';
+    if (this.ensureWindow) this.ensureWindow(kind); // a private tab opens the private window
+    return this.inGroup(kind, () => this._createTab(opts));
+  }
+
+  _createTab({ url = NEWTAB, incognito = false, background = false, openerPartition, lazy = false, title = '' } = {}) {
     const id = ++this._seq;
     const tab = {
       id, view: null, wc: null, wcId: null, incognito, url: '', title: title || 'New tab', favicon: '',
@@ -138,7 +173,14 @@ class Browser extends EventEmitter {
     if (!background || (this.activeId == null && !lazy)) this.selectTab(id);
     else if (tab.view) tab.view.setVisible(false);
     this.emitTabs();
+    if (!background && url === NEWTAB) this.emit('blank-tab', tab); // type straight into the address bar
     return id;
+  }
+
+  /** 'disable_non_proxied_udp' while a proxy is in use: WebRTC would otherwise reveal the real address. */
+  setWebRTCPolicy(policy) {
+    this.webrtcPolicy = policy;
+    for (const t of this.tabs.values()) if (t.wc && !t.wc.isDestroyed()) t.wc.setWebRTCIPHandlingPolicy(policy);
   }
 
   /** The page view of a tab (new, or again after the tab was unloaded). */
@@ -149,11 +191,12 @@ class Browser extends EventEmitter {
       webPreferences: {
         session: ses, preload: DETECT_PRELOAD, contextIsolation: true, sandbox: true,
         nodeIntegration: false, backgroundThrottling: true, spellcheck: true,
+        nodeIntegrationInSubFrames: true, // preloads (not Node) in embedded frames too: shield-preload.js protects them
         enablePreferredSizeMode: false,
       },
     });
     view.setBackgroundColor('#ffffff');
-    view.webContents.setWebRTCIPHandlingPolicy('default_public_interface_only'); // calls work; local network addresses stay hidden
+    view.webContents.setWebRTCIPHandlingPolicy(this.webrtcPolicy);
     tab.view = view;
     tab.wc = view.webContents;
     tab.wcId = tab.wc.id;
@@ -204,7 +247,7 @@ class Browser extends EventEmitter {
   discardIdle(minutes, now = Date.now()) {
     const out = [];
     for (const tab of this.tabs.values()) {
-      if (tab.discarded || tab.id === this.activeId || !tab.wc || tab.wc.isDestroyed()) continue;
+      if (tab.discarded || this.isActive(tab) || !tab.wc || tab.wc.isDestroyed()) continue;
       if (now - (tab.hiddenAt || now) < minutes * 60000) continue;
       if (tab.loading || tab.wc.isCurrentlyAudible() || tab.keepLoaded) continue;
       if (this.discard(tab.id)) out.push(tab.id);
@@ -269,7 +312,8 @@ class Browser extends EventEmitter {
       if (plain) { tab.wc.loadURL(plain).catch(() => {}); return; }
       tab.failed = { url, code, desc };
       tab.loading = false;
-      wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '' } }).catch(() => {});
+      const phishing = code === -20 && !!this.adblock && this.adblock.phishBlocked.delete(url); // -20: blocked by NovaDM
+      wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '' } }).catch(() => {});
     });
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
       if (!isMain) return;
@@ -429,6 +473,7 @@ class Browser extends EventEmitter {
       const page = rest.split(/[?#]/)[0] || 'newtab';
       if (!INTERNAL_PAGES.has(page)) { tab.url = target; tab.wc.loadFile(path.join(__dirname, '..', 'ui', 'newtab.html')).catch(() => {}); return; }
       const query = Object.fromEntries(new URLSearchParams(rest.includes('?') ? rest.slice(rest.indexOf('?') + 1) : ''));
+      if (tab.incognito) query.private = '1'; // the page shows the private look (theme.css)
       tab.url = 'novadm://' + page; tab.title = INTERNAL_PAGES.get(page);
       tab.wc.loadFile(path.join(__dirname, '..', 'ui', `${page}.html`), { query }).catch(() => {});
     } else {
@@ -439,6 +484,10 @@ class Browser extends EventEmitter {
 
   /** Show an internal page (e.g. 'downloads'): reuse its tab if one is open, else open a new tab. */
   openInternal(page) {
+    return this.inGroup('normal', () => this._openInternal(page)); // NovaDM's pages open in the normal window
+  }
+
+  _openInternal(page) {
     const url = 'novadm://' + page;
     for (const id of this.order) {
       const t = this.tabs.get(id);
@@ -506,11 +555,12 @@ class Browser extends EventEmitter {
     }
     if (tab.view) { try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {} }
     if (tab.wc) { try { tab.wc.close(); } catch {} }
-    if (this.shuttingDown) { this.emitTabs(); return; } // window closing: no replacement tab
+    if (this.shuttingDown || this.groups[this.cur].closing) { this.emitTabs(); return; } // window closing: no replacement tab
     if (this.activeId === id) {
       const next = this.order[idx] || this.order[idx - 1] || null;
       this.activeId = null;
       if (next != null) this.selectTab(next);
+      else if (this.cur === 'private') { this.emitTabs(); this.emit('group-empty', 'private'); return; } // last private tab: the window closes
       else this.createTab({ url: NEWTAB });
     }
     this.emitTabs();
@@ -550,13 +600,23 @@ class Browser extends EventEmitter {
     };
   }
 
-  emitTabs() { this.emit('tabs', this.order.map((id) => this.serializeTab(this.tabs.get(id))).filter(Boolean), this.activeId); }
-  emitActive() { const t = this.activeTab(); if (t) this.emit('active', this.serializeTab(t)); }
+  emitTabs() { this.emit('tabs', this.order.map((id) => this.serializeTab(this.tabs.get(id))).filter(Boolean), this.activeId, this.cur); }
+  emitActive() { const t = this.activeTab(); if (t) this.emit('active', this.serializeTab(t), this.cur); }
 
   destroy() {
     for (const tab of this.tabs.values()) { if (tab.wc) { try { tab.wc.close(); } catch {} } }
-    this.tabs.clear(); this.order = [];
+    this.tabs.clear();
+    for (const g of Object.values(this.groups)) { g.order = []; g.activeId = null; }
   }
+}
+
+// Methods for one tab work in that tab's window (its order, active tab, size and parent view).
+for (const m of ['makeView', 'revive', 'discard', 'selectTab', 'closeTab', 'refreshTabState', 'serializeTab']) {
+  const f = Browser.prototype[m];
+  Browser.prototype[m] = function (x, ...rest) {
+    const tab = typeof x === 'object' && x ? x : this.tabs.get(x);
+    return tab ? this.inGroup(this.kindOf(tab), () => f.call(this, x, ...rest)) : f.call(this, x, ...rest);
+  };
 }
 
 function guessMime(m) {

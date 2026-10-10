@@ -23,8 +23,8 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   browser.shields = shields;
   browser.isBookmarked = (url) => !!url && bookmarks.has(url);
 
-  let findView = null;
-  let findOpen = false;
+  // The current window's find bar; each window has its own (main.js switches with useFind).
+  let find = { view: null, open: false };
   const readerPages = new Map(); // id -> { article, url }
   let readerSeq = 0;
 
@@ -38,11 +38,12 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
 
   // ---- restore tabs ----
   function saveSession() {
-    if (browser.shuttingDown || settings.get('restoreTabs') === false) return;
-    const list = browser.order.map((id) => browser.tabs.get(id)).filter((t) => t && !t.incognito && /^(https?|novadm):/i.test(t.url || ''));
-    tabSession.save(list, Math.max(0, list.findIndex((t) => t.id === browser.activeId)));
+    if (browser.shuttingDown || browser.groups.normal.closing || settings.get('restoreTabs') === false) return;
+    const { order, activeId } = browser.groups.normal; // private windows are never kept
+    const list = order.map((id) => browser.tabs.get(id)).filter((t) => t && !t.incognito && /^(https?|novadm):/i.test(t.url || ''));
+    tabSession.save(list, Math.max(0, list.findIndex((t) => t.id === activeId)));
   }
-  browser.on('tabs', saveSession);
+  browser.on('tabs', (_tabs, _active, kind) => { if (kind !== 'private') saveSession(); });
 
   /** First tabs at start-up: the saved ones (only the active one loads right away), or a new tab. */
   function openStartTabs(openUrl) {
@@ -61,34 +62,35 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   }, 60000).unref();
 
   // ---- find in page ----
+  /** A find bar for a window: { view, open }, made current with useFind. */
   function createFindView(parent) {
-    findView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false, transparent: true } });
-    findView.setBackgroundColor('#00000000');
-    findView.webContents.loadFile(path.join(UI_DIR, 'find.html'));
-    findView.setVisible(false);
-    parent.addChildView(findView);
-    findView.webContents.on('did-finish-load', () => findView.webContents.setZoomFactor(scale()));
-    return findView;
+    const view = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
+    view.setBackgroundColor('#00000000');
+    view.webContents.loadFile(path.join(UI_DIR, 'find.html'));
+    view.setVisible(false);
+    parent.addChildView(view);
+    view.webContents.on('did-finish-load', () => view.webContents.setZoomFactor(scale()));
+    return { view, open: false };
   }
-  function sendFind(name, data) { if (findView && !findView.webContents.isDestroyed()) findView.webContents.send('novadm:event', name, data); }
+  function sendFind(name, data) { if (find.view && !find.view.webContents.isDestroyed()) find.view.webContents.send('novadm:event', name, data); }
   function findBounds(content) {
     const s = scale();
     const w = Math.min(Math.round(FIND_W * s), content.width);
     return { x: content.x + content.width - w - Math.round(12 * s), y: content.y + Math.round(6 * s), width: w, height: Math.round(FIND_H * s) };
   }
   function openFind(text) {
-    if (!findView) return;
-    findOpen = true;
-    findView.setVisible(true);
+    if (!find.view) return;
+    find.open = true;
+    find.view.setVisible(true);
     relayout();
     restack();
-    findView.webContents.focus();
+    find.view.webContents.focus();
     sendFind('find-open', { text: text || '' });
   }
   function closeFind() {
-    if (!findOpen) return;
-    findOpen = false;
-    if (findView) findView.setVisible(false);
+    if (!find.open) return;
+    find.open = false;
+    if (find.view) find.view.setVisible(false);
     browser.stopFind();
     const t = browser.activeTab();
     if (t && t.wc) t.wc.focus();
@@ -244,7 +246,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       if (!b) return;
       popup([
         { label: 'Open in new tab', click: () => openBookmark(b, 'tab') },
-        { label: 'Open in private tab', click: () => openBookmark(b, 'private') },
+        { label: 'Open in private window', click: () => openBookmark(b, 'private') },
         { type: 'separator' },
         { label: 'Edit…', click: () => browser.openInternal('bookmarks') },
         { label: 'Delete', click: () => bookmarks.remove(b.id) },
@@ -287,8 +289,9 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     history, bookmarks, tabSession, shields, handlers,
     chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData,
     toggleActiveBookmark, openReader, bookmarkState,
-    get findView() { return findView; },
-    get findOpen() { return findOpen; },
+    get findView() { return find.view; },
+    get findOpen() { return find.open; },
+    useFind(f) { find = f; },
     scale,
   };
 }

@@ -254,10 +254,12 @@ class HlsDownload extends EventEmitter {
     for (const [url, hex] of Object.entries(m.keys || {})) {
       if (/^[0-9a-f]{32}$/i.test(hex)) this._keyCache.set(url, Buffer.from(hex, 'hex'));
     }
-    let size = -1;
-    try { size = fs.statSync(this.partPath).size; } catch { return false; }
-    if (size < m.writtenBytes) return false;
-    fs.truncateSync(this.partPath, m.writtenBytes);
+    let fd;
+    try { fd = fs.openSync(this.partPath, 'r+'); } catch { return false; }
+    if (fs.fstatSync(fd).size < m.writtenBytes) { fs.closeSync(fd); return false; }
+    // Cut to what was confirmed, then keep the same handle for appending (one file, no race).
+    fs.ftruncateSync(fd, m.writtenBytes);
+    fs.closeSync(fd);
     this._out = fs.openSync(this.partPath, 'a');
     this._nextWrite = this._nextFetch = this.doneSegments = m.nextWrite;
     this.writtenBytes = m.writtenBytes;
@@ -608,7 +610,7 @@ class HlsDownload extends EventEmitter {
 
   async backoff(attempt) { await this.sleep(this.backoffMs(attempt)); }
 
-  sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  sleep(ms) { return new Promise((r) => setTimeout(r, Math.max(0, Math.min(Number(ms) || 0, 120000)))); } // never longer than 2 min
 
   stop() {
     this._stopping = true;

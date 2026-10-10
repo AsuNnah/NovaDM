@@ -70,7 +70,11 @@ function defaults() {
     blockThirdPartyCookies: true, // Chromium's own switch, applied when NovaDM starts
     clearCookiesOnExit: false,
     clearCacheOnExit: false,
-    breachCheck: true, // warn when a password a page sends is in a known data breach (breach.js)
+    addonRemindOff: [], // add-ons whose missing-warning on the menu button was dismissed
+    breachCheck: true,
+    updateCheck: true, // ask GitHub once a day whether a newer NovaDM is out (updates.js)
+    updateDismissed: '', // the version whose notice was put off with "Later"
+    phishingCheck: true, // block pages on the phishing / badware lists (adblock.js), with "Continue anyway" // warn when a password a page sends is in a known data breach (breach.js)
     clearHistoryOnExit: false,
     httpsUpgrade: true, // open http:// links over HTTPS when the site supports it
     debounceLinks: true, // skip known tracking redirects (google.com/url?q=…)

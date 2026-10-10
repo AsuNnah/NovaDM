@@ -28,7 +28,7 @@ function buildContextMenuTemplate({ tab, params, browser, downloads, settings, e
   if (isHttp(params.linkURL)) {
     items.push(
       { label: 'Open link in new tab', click: () => browser.createTab({ url: params.linkURL, background: true, incognito: tab.incognito }) },
-      { label: 'Open link in private tab', click: () => browser.createTab({ url: params.linkURL, incognito: true }) },
+      { label: 'Open link in private window', click: () => browser.createTab({ url: params.linkURL, incognito: true }) },
       { label: 'Download link with NovaDM', click: () => download(params.linkURL) },
       { label: 'Copy link address', click: () => copyText(params.linkURL) },
     );

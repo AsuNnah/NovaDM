@@ -13,11 +13,11 @@ Research 2026-10-09 (after 1.2.0). Sources at the end.
 | Brave-style speed | Done 1.1 (Shields rules, unload tabs, reader view, benchmark) |
 | Live DASH recording | Done 1.1 |
 | Everyday browser basics (history, bookmarks, find, restore tabs, cookies, UI size) | Done 1.0 |
-| Brave shortcuts (Ctrl+F, Ctrl+Shift+I, …) | Done 1.2; Ctrl+Shift+J / C open DevTools but not straight to Console / inspect |
+| Brave shortcuts (Ctrl+F, Ctrl+Shift+I, …) | Done 1.2 (Ctrl+Shift+J / C open the Console / element picker since 1.4) |
 | Tor-style hardening for normal tabs, with measured cost | Done 1.2 (fingerprinting, WebRTC, Safer / Safest); **not possible in Electron**: Tor's font list, window-size steps, coarser timers; WebAssembly-only off not done |
 | On/off per site in the shields panel | Done 1.2 |
 | Tor in private browsing (Electron + tor.exe, then real Tor Browser windows with NovaDM look) | **On hold** (planned, size measured: +108 MB download, ≈+300 MB disk) |
-| 1DM leftovers: grabber for all links + crawl levels, page resources view, custom filter / hosts lists, allow-list page, cookie import, desktop/mobile UA switch, overlay / JS-link pop-up interception | **Not done** (planned as 1.5) |
+| 1DM leftovers: grabber for all links + crawl levels, page resources view, custom filter / hosts lists, allow-list page, cookie import, desktop/mobile UA switch, overlay / JS-link pop-up interception | **Not done** (planned as 1.7) |
 
 ## 2. What other projects' users ask for most, and whether NovaDM has it
 
@@ -60,7 +60,7 @@ Browsers (Brave community, Mozilla Connect top-voted, Vivaldi):
 | **Customizable shortcuts** | **No** (fixed list) |
 | **Mouse gestures** | **No** |
 | **Picture-in-picture button**, several at once | **No** button (pages can still use it) |
-| **Tab search** (Ctrl+Shift+A) | **No** |
+| **Tab search** (Ctrl+Shift+A) | Have (1.4) |
 | **Screenshot of a page** (visible / full page) | **No** |
 | **Password manager / autofill** | **No** (Electron has no Chromium password manager) |
 | **Translate pages** | **No** |
@@ -73,10 +73,12 @@ Ordered by value for effort. S = small (a day or less), M = a few days, L = a we
 
 | Version | Features | Size |
 |---|---|---|
-| **1.4 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
-| **1.5 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |
-| **1.6 Tabs** | Tab search (Ctrl+Shift+A); vertical tabs; tab groups; split view; picture-in-picture button; page screenshot; speed-dial tiles | S (search, PiP, screenshot) to L (split view) |
-| **1.7 Power users** | Customizable shortcuts; mouse gestures; aria2-compatible RPC (AriaNg works); RSS auto-downloads; profiles | M each |
+| **1.4 Everyday use** (done) | New "Bolder" look; private windows (own colours and icon); update notice; deceptive-site warning; Report a problem (personal data removed); warning on the menu button for missing add-ons; tab search (Ctrl+Shift+A); address bar focused in new tabs; type a site name + Tab to search it | S each |
+| Later: sign-in protection | "Forget sign-ins when NovaDM closes" for chosen sites (plan in docs/v1.5-plan.md on branch feat/1.5.0); device-bound sign-ins when Electron supports them (tested: not in Electron 44) | M |
+| **1.6 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
+| **1.7 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |
+| **1.8 Tabs** | Vertical tabs; tab groups; split view; picture-in-picture button; page screenshot; speed-dial tiles | S (search, PiP, screenshot) to L (split view) |
+| **1.9 Power users** | Customizable shortcuts; mouse gestures; aria2-compatible RPC (AriaNg works); RSS auto-downloads; profiles | M each |
 | Later / needs a decision | Sync (needs a server or a sync folder); password manager (security-critical); translate (needs a service); cloud hosts (Mega / Google Drive, site rules change often); remote web UI; BitTorrent v2 (aria2 lacks it); auto-update (needs code signing); Tor Browser windows (on hold) | L |
 
 ## Sources

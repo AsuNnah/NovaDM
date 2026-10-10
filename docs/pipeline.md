@@ -88,6 +88,7 @@ Fix the cause, not the symptom, then go back to stage 4. If a fix breaks somethi
 |---|---|---|
 | Known vulnerabilities in dependencies | `npm audit --omit=dev --audit-level=high` | local + CI |
 | Static analysis of the code | CodeQL (`security-extended`) | CI, weekly + every push |
+| AI penetration test (Strix: agents that try to break the app and prove it) | `.github/workflows/strix.yml`, scope in `.github/strix-instructions.md`; needs the `LLM_API_KEY` secret; capped by `max_budget_usd` | CI, on each version tag + on demand |
 | Built app: fuses, code-injection attempts, tampered app, encrypted cookies | `npm run dist` then `node tools/check-build-security.js` | local + CI on tags |
 | The stage-2 security questions | review the diff against them | local |
 | Sign-in protections still work | `tools/selftest-security.js` | local |
@@ -115,8 +116,10 @@ workaround in the CHANGELOG and `docs/security.md`.
 
 1. Merge the pull request into `main` once CI is green.
 2. Annotated tag: `git tag -a vX.Y.Z -m "<summary>"`, then `git push origin main vX.Y.Z`.
-3. CI builds the installer and the portable version, runs the build security checks and the
-   privacy check, and creates a **draft** release with the CHANGELOG notes and SHA-256 sums.
+3. The Release workflow (`release.yml`) runs the CI tests again, checks that the tag matches
+   `package.json`, builds the installer and the portable version, runs the build security checks and the
+   privacy check, and creates a **draft** release with the CHANGELOG notes and SHA-256 sums. It
+   also attaches `latest.yml` and the installer's `.blockmap`: installed copies update from them.
 4. Check the draft (notes, both files attached), then publish it on GitHub.
 
 **Gate:** the release is public and its download runs on a clean Windows user profile.

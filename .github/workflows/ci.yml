@@ -1,11 +1,12 @@
-# Stages 4 and 6 of docs/pipeline.md on every push and pull request; stages 8–9 on a version tag.
+# Stages 4 and 6 of docs/pipeline.md on every push to main and every pull request. Also called by
+# release.yml before a version is built.
 name: CI
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read
@@ -22,49 +23,13 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      # Electron 44 fetches its program on first use; do it once here, or test files that start
+      # Electron in parallel race to unpack it.
+      - name: Install Electron
+        run: node node_modules/electron/install.js
       - name: Unit tests
         run: npm test
       - name: Known vulnerabilities in dependencies
         run: npm audit --omit=dev --audit-level=high
       - name: No personal data
         run: node tools/check-private.js
-
-  release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: test
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - name: Build installer and portable
-        run: npm run dist -- --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-      - name: Security checks on the built app
-        run: node tools/check-build-security.js
-      - name: No personal data in the build
-        run: node tools/check-private.js --build
-      - name: Draft GitHub release (publish it by hand after review)
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          v="${GITHUB_REF_NAME#v}"
-          awk -v h="## [$v]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' CHANGELOG.md > notes.md
-          {
-            echo
-            echo "The files are not code-signed yet, so Windows SmartScreen may warn on first run (\"More info\" → \"Run anyway\")."
-            echo
-            echo "| File | SHA-256 |"
-            echo "|---|---|"
-            for f in "NovaDM-Setup-$v.exe" "NovaDM-Portable-$v.exe"; do echo "| $f | \`$(sha256sum "dist/$f" | cut -d' ' -f1)\` |"; done
-          } >> notes.md
-          gh release create "$GITHUB_REF_NAME" "dist/NovaDM-Setup-$v.exe" "dist/NovaDM-Portable-$v.exe" --draft --verify-tag --title "NovaDM $v" --notes-file notes.md

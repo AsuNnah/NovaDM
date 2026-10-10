@@ -7,12 +7,21 @@ const { ipcRenderer, contextBridge } = require('electron');
 const MEDIA_EXT = /\.(mp4|m4v|webm|mkv|mov|avi|wmv|flv|mpg|mpeg|3gp|ogv|mp3|m4a|aac|flac|wav|ogg|opus|wma|m3u8|mpd|ts)(\?|#|$)/i;
 const DOC_EXT = /\.(pdf|zip|rar|7z|gz|exe|msi|apk|iso|docx?|xlsx?|pptx?|epub|torrent)(\?|#|$)/i;
 
+// Preloads also run in embedded frames (for shield-preload.js); this one works for the top page only.
+const TOP = window.top === window;
 const INTERNAL = location.protocol === 'file:' && /[\\/]ui[\\/]\w+\.html$/.test(location.pathname);
 
 function abs(u) { try { return new URL(u, location.href).href; } catch { return ''; } }
 function send(channel, payload) { try { ipcRenderer.send('novadm:tab', { ch: channel, payload }); } catch {} }
 
 // NovaDM's own internal pages (new tab, etc.) get a tiny navigation + stats bridge.
+// NovaDM's pages in a private window: purple colourway (theme.css).
+function markPrivate() { // the preload runs before <html> exists: tag it as soon as it does
+  if (document.documentElement) return document.documentElement.classList.add('private');
+  const o = new MutationObserver(() => { if (document.documentElement) { document.documentElement.classList.add('private'); o.disconnect(); } });
+  o.observe(document, { childList: true });
+}
+if (INTERNAL && new URLSearchParams(location.search).has('private')) markPrivate();
 if (INTERNAL) {
   try {
     contextBridge.exposeInMainWorld('novadmInternal', {
@@ -161,29 +170,9 @@ function onUserClick(e) {
   if (e.type === 'click' && e.altKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); send('novadm:download-link', { href: a.href }); return; }
   send('novadm:link-click', { href: a.href, mods: !!(e.ctrlKey || e.metaKey || e.shiftKey || e.button === 1) });
 }
-window.addEventListener('click', onUserClick, true);
-window.addEventListener('auxclick', onUserClick, true);
-
-// ---- passwords being sent (leaked-password warning, breach.js) ---------------------------------
-// When the user submits a form, clicks a button or presses Enter in a password field, each new
-// password on the page is handed to NovaDM once to be checked; nothing is kept here.
-const checkedPasswords = new Set();
-function passwordsSent(root) {
-  for (const f of (root && root.querySelectorAll ? root.querySelectorAll('input[type=password]') : [])) {
-    const v = f.value;
-    if (v && v.length >= 4 && !checkedPasswords.has(v)) {
-      checkedPasswords.add(v);
-      try { ipcRenderer.send('novadm:password-sent', { password: v, secure: location.protocol === 'https:' }); } catch {}
-    }
-  }
-}
-if (!INTERNAL) {
-  window.addEventListener('submit', (e) => { if (e.isTrusted) passwordsSent(e.target); }, true);
-  window.addEventListener('click', (e) => {
-    const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('button, input[type=submit], [role=button]') : null;
-    if (b) passwordsSent(b.form || b.closest('form') || document);
-  }, true);
-  window.addEventListener('keydown', (e) => { if (e.isTrusted && e.key === 'Enter' && e.target && e.target.type === 'password') passwordsSent(e.target.form || document); }, true);
+if (TOP) {
+  window.addEventListener('click', onUserClick, true);
+  window.addEventListener('auxclick', onUserClick, true);
 }
 
 // ---- boot ------------------------------------------------------------------------------------
@@ -207,10 +196,10 @@ function boot() {
   setInterval(() => { if (document.title !== lastTitle) { lastTitle = document.title; send('novadm:page-meta', meta()); } }, 2000);
 }
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+if (!TOP) { /* embedded frame */ } else if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
 else boot();
 
 // EME (DRM) detection runs in the page's main world; relay its postMessage to the host.
-window.addEventListener('message', (e) => {
+if (TOP) window.addEventListener('message', (e) => {
   if (e.source === window && e.data && e.data.__novadmEme) send('novadm:eme', { keySystem: String(e.data.keySystem || '') });
 });

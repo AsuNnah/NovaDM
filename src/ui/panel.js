@@ -6,6 +6,7 @@ let current = null; // 'media' | 'downloads' | 'shields' | 'menu' | 'popup' | 'p
 let mediaData = { items: [], count: 0, eme: '' };
 let dlData = { list: [], summary: {} };
 let shieldsData = {};
+let addonsData = { missing: [] };
 
 // Position and size of each popover (under its toolbar button; grabber and prompts centered).
 const PLACE = {
@@ -16,6 +17,7 @@ const PLACE = {
   menu: { right: '12px', width: '240px' },
   prompt: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '420px' },
   dialog: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '480px', top: '40px' },
+  tabsearch: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '520px', top: '8px' },
 };
 function place(name) {
   pop.removeAttribute('style');
@@ -24,6 +26,8 @@ function place(name) {
   if (name === 'grabber') pop.classList.add('grab');
   if (name === 'prompt') pop.classList.add('prompt');
   if (name === 'dialog') pop.classList.add('prompt', 'dlg');
+  void pop.offsetWidth; // restart the entrance animation
+  pop.classList.add('in');
 }
 
 function close() { api.call('panel.close'); current = null; }
@@ -41,6 +45,8 @@ api.on('close-panel', () => { current = null; });
 api.on('media', (d) => { mediaData = d; if (current === 'media') render(); });
 api.on('downloads', (d) => { dlData = d; if (current === 'downloads') render(); });
 api.on('shields', (d) => { shieldsData = d; if (current === 'shields') render(); });
+api.on('addons', (d) => { addonsData = d; if (current === 'menu') render(); });
+api.call('addons.state').then((d) => { addonsData = d; }).catch(() => {});
 api.on('popup-ask', (d) => showPopupPrompt(d));
 api.on('permission-ask', (d) => showPermissionPrompt(d));
 api.on('download-ask', (d) => showDownloadAsk(d));
@@ -116,6 +122,7 @@ function render() {
   if (current === 'downloads') return renderDownloads();
   if (current === 'shields') return renderShields();
   if (current === 'menu') return renderMenu();
+  if (current === 'tabsearch') return renderTabSearch();
 }
 
 // ---- media ----
@@ -289,9 +296,47 @@ function renderShields() {
 // ---- menu ----
 function renderMenu() {
   content.innerHTML = '';
+  // Add-ons that aren't installed (the warning on the menu button).
+  if (addonsData.update) {
+    const u = addonsData.update;
+    // Self-updating (installed): downloading -> ready ("Restart to update"); otherwise a download link.
+    const [title, text] = u.auto && u.phase === 'ready' ? [`NovaDM ${esc(u.version)} is ready`, 'Restart NovaDM to finish updating, or it updates the next time it closes. Your settings, tabs and data are kept.']
+      : u.auto && u.phase === 'downloading' ? [`Downloading NovaDM ${esc(u.version)}… ${u.percent || 0}%`, 'It downloads in the background and is checked before it installs.']
+        : u.auto && u.phase === 'error' ? [`Couldn’t download NovaDM ${esc(u.version)}`, `${esc(u.error || '')} You can download it from GitHub instead.`]
+          : [`NovaDM ${esc(u.version)} is available`, `You have ${esc(addonsData.current || 'an older version')}. Download the new installer from GitHub; your settings and data are kept.`];
+    const box = el('div', 'addon-warn upd', `<div class="t">${title}</div><div class="w">${text}</div>`);
+    const links = el('div', 'links');
+    const ready = u.auto && u.phase === 'ready';
+    if (!(u.auto && u.phase === 'downloading')) {
+      const go = el('button', 'btn sm pri', ready ? 'Restart to update' : 'Download…');
+      go.onclick = () => { api.call(ready ? 'update.install' : 'update.open'); close(); };
+      links.append(go);
+    }
+    const later = el('button', 'btn sm', 'Later');
+    later.onclick = () => api.call('update.later');
+    links.append(later);
+    box.append(links);
+    content.append(box);
+  }
+  const missing = addonsData.missing || [];
+  if (missing.length) {
+    const box = el('div', 'addon-warn', '<div class="t">⚠ Add-ons not installed</div>');
+    for (const a of missing) {
+      const row = el('div', 'a', `<b>${esc(a.name)}</b> <span class="w">– ${esc(a.why)}</span>`);
+      const links = el('div', 'links');
+      const install = el('button', 'btn sm pri', 'Install…');
+      install.onclick = () => { api.call('tabs.new', { url: 'novadm://settings?section=addons' }); close(); };
+      const later = el('button', 'btn sm', 'Don’t remind me');
+      later.onclick = () => api.call('addons.dismiss', { id: a.id });
+      links.append(install, later);
+      row.append(links);
+      box.append(row);
+    }
+    content.append(box);
+  }
   const items = [
     ['New tab', 'tabs.new', {}],
-    ['New private tab', 'tabs.new', { incognito: true }],
+    ['New private window', 'tabs.new', { incognito: true }],
     ['Downloads', 'downloads.openPageTab', {}],
     ['History', 'tabs.new', { url: 'novadm://history' }],
     ['Bookmarks', 'tabs.new', { url: 'novadm://bookmarks' }],
@@ -301,12 +346,48 @@ function renderMenu() {
     ['Grab page content', '_panel', 'grabber'],
     ['Get extensions (Chrome Web Store)', 'extensions.openStore', {}],
     ['Settings', 'tabs.new', { url: 'novadm://settings' }],
+    ['Report a problem…', 'diagnostics.save', {}],
   ];
   for (const [label, method, arg] of items) {
     const mi = el('div', 'menuitem', esc(label));
     mi.onclick = () => { if (method === '_panel') { api.call('panel.open', { name: arg }); } else { api.call(method, arg); close(); } };
     content.append(mi);
   }
+}
+
+// ---- tab search (Ctrl+Shift+A) ----
+async function renderTabSearch() {
+  content.innerHTML = '';
+  const { tabs = [] } = await api.call('tabs.list');
+  const box = el('input');
+  box.placeholder = 'Search open tabs';
+  box.spellcheck = false;
+  box.style.cssText = 'width:100%;height:42px;padding:0 14px;border:none;border-bottom:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;font-size:14px;outline:none;';
+  const list = el('div', 'sugg ts');
+  list.style.cssText = 'max-height:60vh;overflow:auto;';
+  let shown = [];
+  let sel = 0;
+  const go = (t) => { api.call('tabs.select', { id: t.id }); close(); };
+  const draw = () => {
+    const words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
+    shown = tabs.filter((t) => words.every((w) => `${t.title || ''} ${t.url || ''}`.toLowerCase().includes(w)));
+    sel = Math.min(sel, Math.max(0, shown.length - 1));
+    list.innerHTML = '';
+    shown.forEach((t, i) => {
+      const row = el('div', 'srow' + (i === sel ? ' sel' : ''), `<div class="stx"><span class="stt">${esc(t.title || 'New tab')}</span><span class="surl">${esc(t.url || '')}</span></div>`);
+      row.onmousedown = () => go(t);
+      list.append(row);
+    });
+    if (!shown.length) list.append(el('div', 'note', 'No open tab matches.'));
+  };
+  box.oninput = () => { sel = 0; draw(); };
+  box.onkeydown = (e) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); sel = Math.max(0, Math.min(shown.length - 1, sel + (e.key === 'ArrowDown' ? 1 : -1))); draw(); }
+    else if (e.key === 'Enter' && shown[sel]) go(shown[sel]);
+  };
+  content.append(box, list);
+  draw();
+  box.focus();
 }
 
 // ---- content grabber ----

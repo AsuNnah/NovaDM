@@ -1,0 +1,5 @@
+# The shipped app is src/. tools/ and test/ are local test scripts and servers (throwaway profiles,
+# 127.0.0.1 only) that never ship, so they are not scanned.
+paths-ignore:
+  - tools
+  - test

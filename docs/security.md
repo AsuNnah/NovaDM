@@ -12,6 +12,11 @@ cover, and the test that checks it.
 | Encrypted NovaDM passwords | Proxy and site-login passwords that you give NovaDM (for downloads) are encrypted with Windows' data protection. | unit tests |
 | Leaked-password warning | When you sign in, NovaDM checks the password against Have I Been Pwned's list of breached passwords. Only the first 5 characters of the password's SHA-1 hash leave your PC (k-anonymity); the reply is padded so its size gives nothing away; no cookies are sent; results are kept in memory only. Settings → Privacy → "Warn about leaked passwords" turns it off. | `test/hardening.test.js`; `tools/selftest-security.js` (warning shown, only the 5-character prefix sent, padding on, no cookie, no lookup when off) |
 | Insecure sign-in warning | Warns when a password is sent over plain `http://` (except to your own PC). | `tools/selftest-security.js` |
+| Automatic updates | Installed NovaDM downloads new releases from this GitHub repository only, over HTTPS, and checks each file against the SHA-512 in the release's `latest.yml` before installing; a mismatch is refused. Draft releases are never offered. Not code-signed yet, so the trust is in the GitHub repository and its release process. | `tools/selftest-updater.js` (download, check, Update button; a mismatched file refused) |
+| Deceptive-site warning | Page loads are checked on this PC against the Phishing URL Blocklist (OpenPhish, PhishTank; updated twice a day, downloaded daily) and uBlock's Badware risks list, whatever the Shields setting. A match shows a warning with *Go back* and *Continue anyway* (that site, until NovaDM closes). | `tools/selftest-v14.js` (warning, Go back to the real previous page, Continue anyway, setting off) |
+| WebRTC through the proxy | While a proxy is in use (NovaDM's or Windows'), WebRTC may only use the proxy, so it can't reveal the real address. Without a proxy, local network addresses stay hidden. | `tools/selftest-v14.js` (policy with and without a proxy, also for new tabs) |
+| Private windows | A separate window whose tabs use an in-memory session; its cookies, site data, cache and sign-ins are deleted when the window (or its last tab) closes. Private tabs are never added to history, the saved downloads list or the tabs restored at start. | `tools/selftest-private.js` (cookie only in the private session, gone after closing; restore list keeps the normal tabs) |
+| Problem report without personal data | "Report a problem" saves a text file and opens it so you can read it first; nothing is sent. Web addresses keep only the site; user folders, file names, user and PC names, e-mail addresses and long tokens are replaced; settings that can hold personal data only say whether they are set. | `test/report.test.js`; `tools/selftest-v14.js` (an error containing your folder, user name, PC name and a login token comes out clean) |
 
 ## Tracking
 
@@ -40,13 +45,17 @@ Run them after `npm run dist`:
 node tools/check-build-security.js
 ```
 
+Fingerprinting protection and the leaked-password check also run in frames embedded from other sites (`tools/selftest-security.js`). Add-on downloads are verified: yt-dlp and FFmpeg against their published checksums, aria2 against a pinned SHA-256 (`test/addons.test.js`). Inside the app, the channel NovaDM's toolbar and panels use answers only NovaDM's own pages: a web page is refused even in a view that has the same preload (`tools/selftest-v14.js`).
+
 ## Limits (honest)
 
 - Cookie encryption protects copied files and backups. Malware already running as your Windows
   user can ask Windows to decrypt them, as with any Chromium browser except Chrome's newest
-  "app-bound" encryption, which Electron does not have.
-- There is no Google Safe Browsing phishing list (Electron does not include it). The ad blocker's
-  lists block many malicious domains, but not all phishing pages.
-- The leaked-password check sees passwords typed into the page itself, not into embedded frames
-  of other sites.
+  "app-bound" encryption, which Electron does not have. Device-bound sign-ins (DBSC) were tested
+  and are not available in Electron 44. Planned: "forget sign-ins when NovaDM closes" for chosen
+  sites.
+- There is no Google Safe Browsing (Electron does not include it). The phishing lists above catch
+  reported sites; a brand-new phishing page may not be on them yet.
+- The toolbar view is not sandboxed yet (its extension buttons need a preload that can't run
+  sandboxed); the menu, prompts and find bar are.
 - The installer is not code-signed yet, so Windows SmartScreen may warn on first run.

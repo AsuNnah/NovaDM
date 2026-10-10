@@ -9,14 +9,15 @@
 @media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#fff;--line:#d8dbe2;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
 *{box-sizing:border-box;}
 html,body{margin:0;height:100%;overflow:hidden;background:transparent;font:13px/1.4 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;color:var(--fg);}
-.bar{position:absolute;inset:4px;display:flex;align-items:center;gap:4px;padding:0 6px 0 12px;background:var(--bg);border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,.28);}
+.bar{position:absolute;inset:4px;display:flex;align-items:center;gap:4px;padding:0 6px 0 12px;background:var(--pop);border-radius:var(--r-lg);box-shadow:var(--ring),0 4px 16px rgba(0,0,0,.3);animation:nv-in var(--dur-quick) var(--ease-out);}
 input{flex:1;min-width:0;height:28px;border:none;outline:none;background:transparent;color:var(--fg);font:inherit;}
 .count{color:var(--fg3);font-size:12px;white-space:nowrap;min-width:46px;text-align:right;}
 .count.none{color:var(--danger);}
-button{width:28px;height:28px;border:none;border-radius:7px;background:transparent;color:var(--fg2);display:flex;align-items:center;justify-content:center;}
+button{width:28px;height:28px;border:none;border-radius:var(--r-sm);background:transparent;color:var(--fg2);display:flex;align-items:center;justify-content:center;}
 button:hover{background:color-mix(in srgb,var(--fg3) 22%,transparent);color:var(--fg);}
 .sep{width:1px;height:18px;background:var(--line);margin:0 2px;}
 </style>
+<link rel="stylesheet" href="theme.css" />
 </head>
 <body>
 <div class="bar">

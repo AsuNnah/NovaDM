@@ -1,0 +1,60 @@
+# Stages 8–9 of docs/pipeline.md: a version tag (vX.Y.Z) runs the CI tests again, builds the installer
+# and the portable version, checks the build and drafts the GitHub release (published by hand after
+# review). Only version tags start it, so pull requests don't list an empty "release" check.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Tag matches the version in package.json
+        shell: bash
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::Tag $GITHUB_REF_NAME but package.json says $v"; exit 1; }
+      - run: npm ci
+      - name: Build installer and portable
+        run: npm run dist -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Security checks on the built app
+        run: node tools/check-build-security.js
+      - name: No personal data in the build
+        run: node tools/check-private.js --build
+      - name: Draft GitHub release (publish it by hand after review)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          awk -v h="## [$v]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' CHANGELOG.md > notes.md
+          {
+            echo
+            echo "The files are not code-signed yet, so Windows SmartScreen may warn on first run (\"More info\" → \"Run anyway\")."
+            echo
+            echo "| File | SHA-256 |"
+            echo "|---|---|"
+            for f in "NovaDM-Setup-$v.exe" "NovaDM-Portable-$v.exe"; do echo "| $f | \`$(sha256sum "dist/$f" | cut -d' ' -f1)\` |"; done
+          } >> notes.md
+          # latest.yml and the blockmap let installed copies update themselves (electron-updater).
+          gh release create "$GITHUB_REF_NAME" "dist/NovaDM-Setup-$v.exe" "dist/NovaDM-Setup-$v.exe.blockmap" dist/latest.yml "dist/NovaDM-Portable-$v.exe" --draft --verify-tag --title "NovaDM $v" --notes-file notes.md

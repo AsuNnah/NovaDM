@@ -12,6 +12,49 @@ if (cfg && !captchaFrame && (cfg.fingerprinting !== 'off' || cfg.clickToPlay)) {
   try { contextBridge.executeInMainWorld({ func: protect, args: [cfg] }); } catch {}
 }
 
+// Passwords a page sends: main.js checks them against known data breaches (breach.js) and warns about
+// plain http://. Every frame, so sign-in boxes embedded from another site count too.
+const checkedPasswords = new Set();
+function passwordsSent(root) {
+  for (const f of (root && root.querySelectorAll ? root.querySelectorAll('input[type=password]') : [])) {
+    const v = f.value;
+    if (v && v.length >= 4 && !checkedPasswords.has(v)) {
+      checkedPasswords.add(v);
+      try { ipcRenderer.send('novadm:password-sent', { password: v, secure: location.protocol === 'https:' }); } catch {}
+    }
+  }
+}
+if (/^https?:$/.test(location.protocol)) {
+  window.addEventListener('submit', (e) => { if (e.isTrusted) passwordsSent(e.target); }, true);
+  window.addEventListener('click', (e) => {
+    const b = e.isTrusted && e.target && e.target.closest ? e.target.closest('button, input[type=submit], [role=button]') : null;
+    if (b) passwordsSent(b.form || b.closest('form') || document);
+  }, true);
+  window.addEventListener('keydown', (e) => { if (e.isTrusted && e.key === 'Enter' && e.target && e.target.type === 'password') passwordsSent(e.target.form || document); }, true);
+}
+
+// The Chrome Web Store asks browsers that aren't Chrome to "Switch to Chrome", although "Add to
+// NovaDM" works (electron-chrome-web-store): its popup and banner are hidden.
+if (location.hostname === 'chromewebstore.google.com') {
+  try { contextBridge.executeInMainWorld({ func: hideSwitchToChrome }); } catch {}
+}
+function hideSwitchToChrome() {
+  let queued = false;
+  const sweep = () => {
+    queued = false;
+    if (!document.body) return;
+    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) {
+      if (!/Switch to Chrome/.test(n.nodeValue) || !n.parentElement) continue;
+      // The popup is a dialog; the banner is the smallest box around the sentence.
+      let e = n.parentElement.closest('[role=dialog]');
+      if (!e) { e = n.parentElement; while (e.parentElement && e.parentElement !== document.body && (e.parentElement.innerText || '').length <= 100) e = e.parentElement; }
+      e.style.setProperty('display', 'none', 'important');
+    }
+  };
+  new MutationObserver(() => { if (!queued) { queued = true; requestAnimationFrame(sweep); } }).observe(document, { childList: true, subtree: true, characterData: true });
+}
+
 // Serialized into the page: no outside references.
 function protect(cfg) {
   const def = (proto, key, value) => { try { Object.defineProperty(proto, key, { get() { return value; }, configurable: true }); } catch {} };

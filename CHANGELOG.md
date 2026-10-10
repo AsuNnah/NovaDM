@@ -6,6 +6,86 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-10-10
+
+### New look
+- **Redesigned interface** ("Bolder"), based on research of godly.design, transitions.dev and
+  deck.gallery: a near-black background (and a matching light theme), pill-shaped tabs and
+  controls, an address bar with a soft focus ring, rounded panels with hairline borders, and page
+  titles in a serif display font. The new tab page shows a large clock and a greeting.
+- **Motion**: panels and the find bar fade in with a short lift (150 ms), badges pop in, hovers
+  ease in (80 ms). Only opacity and position animate; Windows' "reduce motion" setting turns it
+  off. Your accent colour and theme choice are kept.
+- Measured before / after (3 runs each, `tools/selftest-uiperf.js`): panel open 26 ms → 26 ms
+  (median); 60 fps with no dropped frames while switching tabs and opening panels, before and
+  after; toolbar and panel memory 186 → 189 MB; idle CPU 0.01 % → 0.01 %.
+
+### Added
+- **Private windows**, like Chrome, Edge and Brave: Ctrl+Shift+N (or the menu) opens a separate
+  private window instead of a private tab in the normal one. It has its own purple colourway, a
+  "Private" badge in the toolbar, and its own icon on the window and taskbar (the NovaDM arrow on
+  purple with a glasses badge), so it can't be mistaken for a normal window. Its new tab page says
+  what is and isn't kept. Links and new tabs from a private tab stay in it. Closing the private
+  window (or its last tab) deletes its cookies, site data, cache and sign-ins; the normal window and
+  the tabs it restores next time are untouched. Closing the main window keeps a private window
+  open (as in Chrome); opening a normal page from it brings a normal window back. Each window has
+  its own find bar. Tested in `tools/selftest-private.js`.
+- **Automatic updates**, like Chrome and Brave (installed NovaDM): once a day NovaDM asks GitHub
+  for the newest release, downloads it in the background and checks it against the SHA-512 in the
+  release's `latest.yml`; a file that doesn't match is refused. Then a green **Update** button
+  appears next to the menu: click it to restart into the new version (tabs come back), or it
+  installs the next time NovaDM closes. Shortcuts and settings are kept. The portable version
+  can't replace itself, so it shows *Download…* instead. Settings → Privacy can turn the check off.
+  From 1.3.x, install 1.4.0 once by hand; later versions arrive by themselves.
+- **Deceptive-site warning**: pages on the Phishing URL Blocklist (OpenPhish, PhishTank) or
+  uBlock's Badware risks list are stopped with a warning (*Go back* / *Continue anyway*), whatever
+  the Shields setting. The lists are downloaded once a day and checked on this PC; the sites you
+  visit are never sent anywhere. Cost: about 6 MB of memory and 0.2 ms per page load.
+- **Report a problem** (menu): saves a text file with what's needed to find a bug (versions,
+  add-ons, settings, download errors, the last 500 warnings, errors and crashes) and opens it so
+  you can read it before sending it. Personal data is removed: web addresses keep only the site;
+  user folders, file names, user and PC names, e-mail addresses and tokens are replaced; settings
+  that can hold personal data only say whether they are set. Nothing is sent automatically.
+- **Warning on the menu button** while an add-on (yt-dlp, FFmpeg, aria2) isn't installed. The menu
+  says what each one is for, with *Install…* and *Don't remind me*.
+- **Tab search** (Ctrl+Shift+A): find an open tab by title or address.
+- **Tab to search:** type a site's name in the address bar (youtube, yt, wiki, github, maps, …),
+  press Tab, and what you type next is searched on that site. Backspace leaves.
+- New tabs put the cursor in the address bar instead of the page's search box.
+
+### Fixed
+- **Chrome Web Store:** the "Switch to Chrome?" popup and banner no longer appear; the *Add to
+  NovaDM* button always worked (an old self-test looked for "Add to Chrome" and missed it).
+- **Ctrl+Shift+J** opens DevTools on the Console and **Ctrl+Shift+C** starts the element picker,
+  as in Chrome (both only opened DevTools before).
+
+### Security
+- **AI penetration test in the pipeline**: [Strix](https://github.com/usestrix/strix) 1.6.2 runs on
+  GitHub when a version tag is pushed and on demand, with a spending cap per run; its report is kept
+  with the run. It needs the repository secret `LLM_API_KEY` (an Anthropic key) and skips without it.
+- **WebRTC with a proxy**: while any proxy is in use (NovaDM's or Windows'), WebRTC may only go
+  through it, so video calls and scripts can't reveal your real address. Calls may not connect
+  through a proxy that can't carry them.
+- **Embedded frames are protected too**: fingerprinting protection and the leaked-password check
+  now also run inside frames embedded from other sites (sign-in boxes, ads, trackers). Before,
+  only the page itself was covered.
+- **aria2 download pinned**: the add-on's download must match a fixed SHA-256 (the same as Scoop's
+  manifest), or nothing is installed. yt-dlp and FFmpeg were already checked against their
+  published checksums.
+- **Sandboxed panels**: the menu, prompts and find bar now run in Chromium's sandbox. The toolbar
+  is not sandboxed yet (its extension buttons need a preload that can't run sandboxed).
+- The channel used by NovaDM's toolbar and panels now answers only NovaDM's own pages. Before, it
+  relied on no web page ever getting its preload.
+- Code scanning (CodeQL) findings in NovaDM's own code: resuming a video download checks and cuts
+  its part file through one open file (no race); a server's wait time is capped where the timer
+  starts too (2 minutes); a server's header names can't reach JavaScript's object prototype; the
+  checksum status text is made plain by the browser before it is shown. Downloading `http://`
+  links you give NovaDM, and your own DNS / webhook settings, are by design and marked so.
+- Code scanning (CodeQL) findings: screenshots of the developer test hook are written into the
+  test profile instead of the shared temp folder; the breach check's SHA-1 is required by Have I
+  Been Pwned's protocol (never stored) and marked as a false positive; test-only folders are no
+  longer scanned.
+
 ## [1.3.1] — 2026-10-10
 
 ### Security

@@ -62,7 +62,7 @@ module.exports = async ({ app, browser, chromeView }) => {
     await sleep(5000);
     result.store = await tab.wc.executeJavaScript(`(() => {
       const t = document.body.innerText;
-      return { addOrRemove: /Add to Chrome|Remove from Chrome/i.test(t), switchToChrome: /switch to chrome/i.test(t), title: document.title };
+      return { addOrRemove: /Add to (Chrome|NovaDM)|Remove from (Chrome|NovaDM)/i.test(t), switchToChrome: /switch to chrome/i.test(t), title: document.title };
     })()`);
     fs.writeFileSync(path.join(os.tmpdir(), 'novadm-ext-store.png'), (await tab.wc.capturePage()).toPNG());
   } catch (e) {

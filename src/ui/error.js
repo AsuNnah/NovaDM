@@ -17,7 +17,16 @@ function show(title, hint, tips) {
   for (const t of tips) { const li = document.createElement('li'); li.textContent = t; $('tips').appendChild(li); }
 }
 
-if (code <= -200 && code > -300) {
+const phishing = p.get('p') === '1';
+if (phishing) {
+  document.body.classList.add('danger');
+  show(`Deceptive site ahead: ${host}`,
+    'NovaDM stopped this page: the site is on a list of phishing and malware sites. It may try to steal your passwords or card details, or install harmful software.',
+    ['Go back, and don’t enter any passwords or personal details here.', 'If a message or e-mail sent you here, it was probably a scam.']);
+  $('code').textContent = 'Lists: Phishing URL Blocklist, uBlock Badware risks';
+  $('retry').textContent = 'Go back';
+  $('settings').textContent = 'Continue anyway';
+} else if (code <= -200 && code > -300) {
   // Certificate errors. A name mismatch on a site that works elsewhere usually means the
   // network's DNS sent NovaDM to a block page instead of the real site.
   show(`${host} didn't prove its identity`,
@@ -41,5 +50,12 @@ if (code <= -200 && code > -300) {
   show("This page can't be opened", 'Something went wrong while loading this page.', ['Try again.', 'Check the address.']);
 }
 
-$('retry').onclick = () => { if (window.novadmInternal && url) window.novadmInternal.navigate(url); };
-$('settings').onclick = () => { if (window.novadmInternal) window.novadmInternal.navigate('novadm://settings'); };
+$('retry').onclick = () => {
+  if (phishing) { if (window.novadmInternal) window.novadmInternal.call('phishing.back', { url }); return; }
+  if (window.novadmInternal && url) window.novadmInternal.navigate(url);
+};
+$('settings').onclick = () => {
+  if (!window.novadmInternal) return;
+  if (phishing) window.novadmInternal.call('phishing.allow', { url });
+  else window.novadmInternal.navigate('novadm://settings');
+};

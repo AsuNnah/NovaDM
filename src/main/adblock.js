@@ -15,8 +15,18 @@ const MUTATION_CH = '@ghostery/adblocker/is-mutation-observer-enabled';
 // EasyList + EasyPrivacy + uBlock Origin lists (Ghostery preset), plus OISD Big: a domain list that
 // covers pop-under / redirect ad networks (1DM ships OISD among its hosts sources too).
 const EXTRA_LISTS = ['https://big.oisd.nl/'];
+// Deceptive sites: checked on page loads themselves (the ad lists skip those), whatever the Shields
+// setting. Phishing URL Blocklist (OpenPhish, PhishTank; updated twice a day) and uBlock's Badware risks.
+const PHISHING_LISTS = ['https://malware-filter.gitlab.io/malware-filter/phishing-filter.txt', 'https://ublockorigin.github.io/uAssets/filters/badware.txt'];
+const PHISHING_REFRESH_MS = 24 * 3600 * 1000;
 const LIST_VERSION = 2; // bump when the list set changes, so old caches are rebuilt
 const REFRESH_MS = 4 * 24 * 3600 * 1000;
+
+/** A cached engine file and its age, read through one handle (no change between the two). */
+async function readCache(file) {
+  const fh = await fs.promises.open(file, 'r');
+  try { return { data: await fh.readFile(), mtimeMs: (await fh.stat()).mtimeMs }; } finally { await fh.close(); }
+}
 
 class AdBlocker extends EventEmitter {
   constructor(settings) {
@@ -29,7 +39,35 @@ class AdBlocker extends EventEmitter {
     this.cachePath = path.join(dir, `adblock-engine-v${LIST_VERSION}.bin`);
     try { fs.rmSync(path.join(dir, 'adblock-engine.bin'), { force: true }); } catch {} // pre-v2 cache
     this._preloadId = null;
+    this.phish = null; // engine for PHISHING_LISTS
+    this.phishPath = path.join(dir, 'phishing-v1.bin');
+    this.phishBlocked = new Set(); // page loads just stopped (browser.js shows the warning)
+    this.phishAllowed = new Set(); // sites the user chose to open anyway, until NovaDM closes
   }
+
+  /** Load the phishing lists (cached for a day). Failure leaves the check off until the next try. */
+  async initPhishing() {
+    try {
+      const c = await readCache(this.phishPath);
+      this.phish = ElectronBlocker.deserialize(c.data);
+      if (Date.now() - c.mtimeMs < PHISHING_REFRESH_MS) return;
+    } catch {}
+    try {
+      const engine = await ElectronBlocker.fromLists(fetch, PHISHING_LISTS, { loadCosmeticFilters: false });
+      await fs.promises.writeFile(this.phishPath, engine.serialize());
+      this.phish = engine;
+    } catch (err) {
+      console.error('phishing lists: could not load', err.message);
+    }
+  }
+
+  /** A page load (main frame) to a listed site the user hasn't allowed. */
+  isPhishing(details) {
+    if (!this.phish || this.settings.get('phishingCheck') === false || this.phishAllowed.has(siteOf(details.url))) return false;
+    return !!this.phish.match(fromElectronDetails(details)).match;
+  }
+
+  allowPhishing(url) { this.phishAllowed.add(siteOf(url)); }
 
   // Download all lists and build a fresh engine. Falls back to the preset if an extra list fails.
   async build() {
@@ -47,9 +85,9 @@ class AdBlocker extends EventEmitter {
   async init() {
     let cachedAt = 0;
     try {
-      const st = await fs.promises.stat(this.cachePath);
-      this.engine = ElectronBlocker.deserialize(await fs.promises.readFile(this.cachePath));
-      cachedAt = st.mtimeMs;
+      const c = await readCache(this.cachePath);
+      this.engine = ElectronBlocker.deserialize(c.data);
+      cachedAt = c.mtimeMs;
     } catch {
       this.engine = null;
     }
@@ -120,6 +158,7 @@ class AdBlocker extends EventEmitter {
 
     session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
       const isMain = details.resourceType === 'mainFrame';
+      if (isMain && this.isPhishing(details)) { this.phishBlocked.add(details.url); return callback({ cancel: true }); }
       if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents) {
         const to = this.shields.rewrite(details.url, { isMain });
         if (to && to !== details.url) return callback({ redirectURL: to });

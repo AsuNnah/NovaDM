@@ -1,0 +1,64 @@
+/* NovaDM's look ("Bolder", 1.4): colours, corners and motion shared by every NovaDM page.
+   Linked after each page's own <style>, so these values win; the accent colour the user picks is
+   added on top by main.js (accentCss). Motion follows transitions.dev: named properties only
+   (no "transition: all"), opacity / transform for movement, and none with "reduce motion". */
+:root {
+  color-scheme: dark;
+  --bg: #08090b; --bg2: #141519; --bg3: #1c1d22; --card: #111215; --card2: #17181c; --pop: #141519;
+  --line: rgba(255, 255, 255, .08);
+  --ring: inset 0 0 0 1px rgba(255, 255, 255, .08);
+  --fg: #ececee; --fg2: #9a9ca5; --fg3: #6e7079;
+  --hover: rgba(255, 255, 255, .07); --active: rgba(255, 255, 255, .12);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
+  --r-sm: 8px; --r: 10px; --r-lg: 16px;
+  --font-display: Georgia, 'Times New Roman', serif;
+  --dur-micro: 80ms; --dur-quick: 150ms; --dur-fast: 250ms;
+  --ease-out: cubic-bezier(.22, 1, .36, 1); --ease-bounce: cubic-bezier(.34, 1.36, .64, 1);
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg: #f5f5f7; --bg2: #ebebef; --bg3: #fff; --card: #fff; --card2: #f1f1f4; --pop: #fff;
+    --line: rgba(0, 0, 0, .09); --ring: inset 0 0 0 1px rgba(0, 0, 0, .09);
+    --fg: #111214; --fg2: #55575f; --fg3: #8a8c94;
+    --hover: rgba(0, 0, 0, .05); --active: rgba(0, 0, 0, .08);
+    --shadow-pop: 0 12px 32px rgba(0, 0, 0, .14), 0 2px 6px rgba(0, 0, 0, .08);
+  }
+}
+
+/* Private windows and their pages: their own purple colourway, always dark (the class comes from
+   the page's preload when it was opened with ?private=1). Beats the user's accent colour too. */
+:root.private {
+  color-scheme: dark;
+  --bg: #120a1f; --bg2: #1d1230; --bg3: #26183d; --card: #170e27; --card2: #1d1230; --pop: #1d1230;
+  --line: rgba(205, 170, 255, .12); --ring: inset 0 0 0 1px rgba(205, 170, 255, .14);
+  --fg: #efe8fb; --fg2: #b1a3c9; --fg3: #7d6f96;
+  --hover: rgba(205, 170, 255, .09); --active: rgba(205, 170, 255, .16);
+  --accent: #a46bff !important; --accent2: #8a4cf0 !important;
+}
+
+/* Page titles in the display serif (Godly-style); cards and buttons on the shared corner sizes. */
+h1 { font-family: var(--font-display); font-weight: 400; font-size: 30px; letter-spacing: .2px; }
+.card, .list { border-radius: var(--r-lg); }
+button { border-radius: var(--r); }
+
+/* Shared controls on NovaDM's pages. */
+button, .btn, .ic, .iconbtn, .menuitem, .row, .tab, .bm, .obtn, a {
+  transition: background-color var(--dur-micro) ease-out, color var(--dur-micro) ease-out, box-shadow var(--dur-micro) ease-out;
+}
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+/* Inputs inside a pill that draws its own focus ring (address bar, new tab search, find bar). */
+#url:focus-visible, .search input:focus-visible, .bar input:focus-visible { box-shadow: none; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: var(--active); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* Entrances: a short fade and lift (panels, prompts, menus). */
+/* translate / scale, not transform: centred panels keep their own transform: translateX(-50%). */
+@keyframes nv-in { from { opacity: 0; translate: 0 -4px; scale: .985; } to { opacity: 1; translate: none; scale: none; } }
+@keyframes nv-pop { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes nv-fade { from { opacity: 0; } to { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
+}
