@@ -17,7 +17,7 @@ Research 2026-10-09 (after 1.2.0). Sources at the end.
 | Tor-style hardening for normal tabs, with measured cost | Done 1.2 (fingerprinting, WebRTC, Safer / Safest); **not possible in Electron**: Tor's font list, window-size steps, coarser timers; WebAssembly-only off not done |
 | On/off per site in the shields panel | Done 1.2 |
 | Tor in private browsing (Electron + tor.exe, then real Tor Browser windows with NovaDM look) | **On hold** (planned, size measured: +108 MB download, ≈+300 MB disk) |
-| 1DM leftovers: grabber for all links + crawl levels, page resources view, custom filter / hosts lists, allow-list page, cookie import, desktop/mobile UA switch, overlay / JS-link pop-up interception | **Not done** (planned as 1.4) |
+| 1DM leftovers: grabber for all links + crawl levels, page resources view, custom filter / hosts lists, allow-list page, cookie import, desktop/mobile UA switch, overlay / JS-link pop-up interception | **Not done** (planned as 1.5) |
 
 ## 2. What other projects' users ask for most, and whether NovaDM has it
 
@@ -73,10 +73,10 @@ Ordered by value for effort. S = small (a day or less), M = a few days, L = a we
 
 | Version | Features | Size |
 |---|---|---|
-| **1.3 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
-| **1.4 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |
-| **1.5 Tabs** | Tab search (Ctrl+Shift+A); vertical tabs; tab groups; split view; picture-in-picture button; page screenshot; speed-dial tiles | S (search, PiP, screenshot) to L (split view) |
-| **1.6 Power users** | Customizable shortcuts; mouse gestures; aria2-compatible RPC (AriaNg works); RSS auto-downloads; profiles | M each |
+| **1.4 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
+| **1.5 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |
+| **1.6 Tabs** | Tab search (Ctrl+Shift+A); vertical tabs; tab groups; split view; picture-in-picture button; page screenshot; speed-dial tiles | S (search, PiP, screenshot) to L (split view) |
+| **1.7 Power users** | Customizable shortcuts; mouse gestures; aria2-compatible RPC (AriaNg works); RSS auto-downloads; profiles | M each |
 | Later / needs a decision | Sync (needs a server or a sync folder); password manager (security-critical); translate (needs a service); cloud hosts (Mega / Google Drive, site rules change often); remote web UI; BitTorrent v2 (aria2 lacks it); auto-update (needs code signing); Tor Browser windows (on hold) | L |
 
 ## Sources

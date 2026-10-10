@@ -16,3 +16,6 @@ desktop.ini
 .vs/
 .vscode/
 graphify-out/
+
+# Personal strings for tools/check-private.js (never published)
+.private-patterns
