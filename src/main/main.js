@@ -133,7 +133,7 @@ function showWindow() {
 function createWindow() {
   win = new BaseWindow({
     width: 1280, height: 820, minWidth: 680, minHeight: 480, frame: false,
-    backgroundColor: '#1b1d22', title: 'NovaDM', show: !startHidden,
+    backgroundColor: '#08090b', title: 'NovaDM', show: !startHidden,
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
   });
 

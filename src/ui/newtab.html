@@ -9,25 +9,25 @@
 @media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
 *{box-sizing:border-box;}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:14px/1.5 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
-.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:26px;}
-.logo{font-size:34px;font-weight:600;letter-spacing:-.5px;}
-.logo span{color:var(--accent);}
+.wrap{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;gap:22px;animation:nv-fade var(--dur-fast) var(--ease-out);}
 form{width:min(620px,92%);}
-.search{display:flex;align-items:center;gap:10px;height:52px;padding:0 18px;background:var(--card);border:1px solid var(--line);border-radius:999px;}
-.search:focus-within{border-color:var(--accent);}
+.search{display:flex;align-items:center;gap:10px;height:52px;padding:0 20px;background:color-mix(in srgb,var(--fg) 5%,transparent);box-shadow:var(--ring);border-radius:999px;transition:box-shadow var(--dur-quick) var(--ease-out),background-color var(--dur-quick) var(--ease-out);}
+.search:focus-within{background:var(--bg2);box-shadow:0 0 0 1.5px var(--accent),0 0 0 6px color-mix(in srgb,var(--accent) 16%,transparent);}
 .search input{flex:1;border:none;outline:none;background:transparent;color:var(--fg);font-size:16px;}
 .search svg{color:var(--fg3);flex:none;}
-.clock{font-size:52px;font-weight:300;letter-spacing:1px;}
-.stats{display:flex;gap:28px;color:var(--fg2);font-size:13px;}
+.clock{font-family:var(--font-display);font-size:76px;font-weight:400;line-height:1;letter-spacing:1px;}
+.greet{font-family:var(--font-display);font-size:24px;color:var(--fg2);margin-top:-8px;}
+.stats{display:flex;gap:32px;color:var(--fg2);font-size:13px;margin-top:6px;}
 .stats b{display:block;font-size:22px;font-weight:600;color:var(--fg);}
 .stat{text-align:center;}
 .hint{color:var(--fg3);font-size:12.5px;}
 </style>
+<link rel="stylesheet" href="theme.css" />
 </head>
 <body>
   <div class="wrap">
     <div class="clock" id="clock">--:--</div>
-    <div class="logo">Nova<span>DM</span></div>
+    <div class="greet" id="greet"></div>
     <form id="f">
       <div class="search">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>

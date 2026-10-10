@@ -13,6 +13,8 @@ function tick() {
   const hh = String(d.getHours()).padStart(2, '0');
   const mm = String(d.getMinutes()).padStart(2, '0');
   document.getElementById('clock').textContent = `${hh}:${mm}`;
+  const h = d.getHours();
+  document.getElementById('greet').textContent = h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 tick();
 setInterval(tick, 10000);

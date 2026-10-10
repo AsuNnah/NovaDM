@@ -26,6 +26,8 @@ function place(name) {
   if (name === 'grabber') pop.classList.add('grab');
   if (name === 'prompt') pop.classList.add('prompt');
   if (name === 'dialog') pop.classList.add('prompt', 'dlg');
+  void pop.offsetWidth; // restart the entrance animation
+  pop.classList.add('in');
 }
 
 function close() { api.call('panel.close'); current = null; }

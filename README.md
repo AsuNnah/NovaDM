@@ -44,6 +44,7 @@ the SHA-256 of its files so you can check your download.
   Mark of the Web on downloads
 - Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
 - A warning on the menu button while an add-on you may need isn't installed
+- Warning page for phishing and malware sites; a notice when a new NovaDM version is out
 
 **Downloads**
 - Up to 32 connections per file, more than the browser's limit of 6 per server, with the page's
@@ -88,8 +89,10 @@ published checksum. You can also point NovaDM at your own copy.
 NovaDM has no telemetry, no accounts and no ads of its own. Everything it stores (settings,
 downloads list, history, bookmarks, cookies) stays in `%APPDATA%\NovaDM` on your PC.
 
-On its own it only connects to download the ad-block lists (every 4 days) and to the Secure DNS
-provider you choose; add-ons and the torrent tracker list are downloaded only when you use them.
+On its own it only connects to download the ad-block lists (every 4 days) and the phishing lists
+(daily), to ask GitHub once a day whether a newer NovaDM is out (can be turned off), and to the
+Secure DNS provider you choose; add-ons and the torrent tracker list are downloaded only when you
+use them. The sites you visit are checked against the lists on your PC, never sent anywhere.
 Private tabs leave no history or downloads list entries. Passwords for proxies and sites are
 encrypted with Windows' data protection.
 

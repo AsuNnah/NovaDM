@@ -8,7 +8,26 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [1.4.0] — 2026-10-10
 
+### New look
+- **Redesigned interface** ("Bolder"), based on research of godly.design, transitions.dev and
+  deck.gallery: a near-black background (and a matching light theme), pill-shaped tabs and
+  controls, an address bar with a soft focus ring, rounded panels with hairline borders, and page
+  titles in a serif display font. The new tab page shows a large clock and a greeting.
+- **Motion**: panels and the find bar fade in with a short lift (150 ms), badges pop in, hovers
+  ease in (80 ms). Only opacity and position animate; Windows' "reduce motion" setting turns it
+  off. Your accent colour and theme choice are kept.
+- Measured before / after (3 runs each, `tools/selftest-uiperf.js`): panel open 26 ms → 26 ms
+  (median); 60 fps with no dropped frames while switching tabs and opening panels, before and
+  after; toolbar and panel memory 186 → 189 MB; idle CPU 0.01 % → 0.01 %.
+
 ### Added
+- **Update notice**: once a day NovaDM asks GitHub which release is the newest. A newer version
+  shows on the menu button (green) and in the menu, with *Download…* and *Later*. Nothing is
+  downloaded or installed by itself. Settings → Privacy can turn the check off.
+- **Deceptive-site warning**: pages on the Phishing URL Blocklist (OpenPhish, PhishTank) or
+  uBlock's Badware risks list are stopped with a warning (*Go back* / *Continue anyway*), whatever
+  the Shields setting. The lists are downloaded once a day and checked on this PC; the sites you
+  visit are never sent anywhere. Cost: about 6 MB of memory and 0.2 ms per page load.
 - **Report a problem** (menu): saves a text file with what's needed to find a bug (versions,
   add-ons, settings, download errors, the last 500 warnings, errors and crashes) and opens it so
   you can read it before sending it. Personal data is removed: web addresses keep only the site;
@@ -28,6 +47,17 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   as in Chrome (both only opened DevTools before).
 
 ### Security
+- **WebRTC with a proxy**: while any proxy is in use (NovaDM's or Windows'), WebRTC may only go
+  through it, so video calls and scripts can't reveal your real address. Calls may not connect
+  through a proxy that can't carry them.
+- **Embedded frames are protected too**: fingerprinting protection and the leaked-password check
+  now also run inside frames embedded from other sites (sign-in boxes, ads, trackers). Before,
+  only the page itself was covered.
+- **aria2 download pinned**: the add-on's download must match a fixed SHA-256 (the same as Scoop's
+  manifest), or nothing is installed. yt-dlp and FFmpeg were already checked against their
+  published checksums.
+- **Sandboxed panels**: the menu, prompts and find bar now run in Chromium's sandbox. The toolbar
+  is not sandboxed yet (its extension buttons need a preload that can't run sandboxed).
 - The channel used by NovaDM's toolbar and panels now answers only NovaDM's own pages. Before, it
   relied on no web page ever getting its preload.
 - Code scanning (CodeQL) findings: screenshots of the developer test hook are written into the
