@@ -6,6 +6,23 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-10-10
+
+### Security
+- The zip reader that unpacks add-ons from the Chrome Web Store (adm-zip, used by
+  electron-chrome-web-store) is updated to 0.6.1. Older versions had 8 known problems (5 high),
+  including a zip that could fill memory and crash NovaDM, and extraction that could follow links
+  and overwrite other files. Found by the new dependency audit.
+
+### Added
+- **Production pipeline** (`docs/pipeline.md`): every change goes through intake and sizing,
+  brainstorm, plan, build, test, patch, security test, security patch, release and maintenance,
+  with a gate at each stage.
+- GitHub checks on every push and pull request: unit tests, dependency audit, privacy check,
+  CodeQL code scanning (also weekly), and Dependabot update requests. A version tag builds both
+  exes on GitHub, re-runs the build security checks and drafts the release.
+- `tools/check-private.js`: checks files, commits, tags and the built app for personal data.
+
 ## [1.3.0] — 2026-10-10
 
 ### Added

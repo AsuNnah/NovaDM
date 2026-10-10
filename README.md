@@ -147,6 +147,12 @@ build/             installer customisation
 
 What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
+## How changes are made
+
+Every feature and fix goes through the same pipeline: intake and sizing, brainstorm, plan, build,
+test, security test, release and maintenance, with automatic checks on GitHub (tests, dependency
+audit, CodeQL, build security checks, privacy check). See [docs/pipeline.md](docs/pipeline.md).
+
 ## License
 
 NovaDM is free software: you can redistribute it and/or modify it under the terms of the

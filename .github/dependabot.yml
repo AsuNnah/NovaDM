@@ -1,0 +1,15 @@
+# Stage 10 of docs/pipeline.md: pull requests for dependency updates (Electron security fixes
+# arrive this way). Each one goes through CI before it is merged.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
