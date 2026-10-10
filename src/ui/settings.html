@@ -143,6 +143,14 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <label class="sw"><input type="checkbox" id="breachCheck"><i></i></label>
     </div>
     <div class="row">
+      <div class="lbl"><b>Warn about deceptive sites</b><span>Stops pages on lists of phishing and malware sites (Phishing URL Blocklist, uBlock Badware risks), with a choice to continue anyway. The lists are downloaded once a day; the sites you visit are checked on this PC and never sent anywhere. Works even with Shields down.</span></div>
+      <label class="sw"><input type="checkbox" id="phishingCheck"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>Tell me when a new version is out</b><span>Once a day NovaDM asks GitHub which NovaDM release is the newest (nothing else is sent). A new version shows on the menu button; nothing is downloaded or installed by itself.</span></div>
+      <label class="sw"><input type="checkbox" id="updateCheck"><i></i></label>
+    </div>
+    <div class="row">
       <div class="lbl"><b>When NovaDM closes, clear</b><span>Cookies and site data sign you out of sites.</span>
         <div class="mini" style="margin-top:8px;gap:16px">
           <label class="chk"><input type="checkbox" id="clearHistoryOnExit"> History</label>

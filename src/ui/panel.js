@@ -295,6 +295,18 @@ function renderShields() {
 function renderMenu() {
   content.innerHTML = '';
   // Add-ons that aren't installed (the warning on the menu button).
+  if (addonsData.update) {
+    const u = addonsData.update;
+    const box = el('div', 'addon-warn upd', `<div class="t">NovaDM ${esc(u.version)} is available</div><div class="w">You have ${esc(addonsData.current || 'an older version')}. Download the new installer from GitHub; your settings and data are kept.</div>`);
+    const links = el('div', 'links');
+    const get = el('button', 'btn sm pri', 'Download…');
+    get.onclick = () => { api.call('update.open'); close(); };
+    const later = el('button', 'btn sm', 'Later');
+    later.onclick = () => api.call('update.later');
+    links.append(get, later);
+    box.append(links);
+    content.append(box);
+  }
   const missing = addonsData.missing || [];
   if (missing.length) {
     const box = el('div', 'addon-warn', '<div class="t">⚠ Add-ons not installed</div>');

@@ -11,7 +11,7 @@ const OUT = path.join(os.tmpdir(), 'novadm-selftest-v14.json');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const until = async (fn, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = await fn(); if (v) return v; await sleep(100); } return null; };
 
-module.exports = async ({ app, browser, settings, ipc, chromeView, overlayView, getWindow }) => {
+module.exports = async ({ app, browser, settings, ipc, chromeView, overlayView, getWindow, adblock }) => {
   const result = {};
   const ui = (js) => chromeView.webContents.executeJavaScript(js);
   const typeIn = (wc, text) => { for (const ch of text) wc.sendInputEvent({ type: 'char', keyCode: ch }); };
@@ -111,6 +111,63 @@ module.exports = async ({ app, browser, settings, ipc, chromeView, overlayView, 
     await sleep(1000);
     fs.writeFileSync(path.join(os.tmpdir(), 'novadm-devtools-inspect.png'), (await dt.capturePage()).toPNG());
     page.closeDevTools();
+
+    // 8. Deceptive sites: a listed site is stopped with a warning; "Continue anyway" opens it; off = no check.
+    const { ElectronBlocker } = require(require.resolve('@ghostery/adblocker-electron', { paths: [path.join(__dirname, '..')] }));
+    adblock.phish = ElectronBlocker.parse('||phish-test.example^');
+    const ptab = browser.activeTab();
+    const pageText = () => ptab.wc.executeJavaScript('document.body.innerText').catch(() => '');
+    browser.navigate(ptab.id, base + 'Safe');
+    await until(() => /Safe page/.test(ptab.wc.getTitle()));
+    browser.navigate(ptab.id, 'http://phish-test.example/login');
+    await until(async () => /Deceptive site ahead/.test(await pageText()), 5000);
+    result.phishing = { warned: /Deceptive site ahead/.test(await pageText()), addressShown: ptab.url };
+    await ptab.wc.executeJavaScript("document.getElementById('retry').click()"); // Go back
+    await until(() => /Safe page/.test(ptab.wc.getTitle()), 4000);
+    result.phishing.backTo = ptab.wc.getTitle();
+    browser.navigate(ptab.id, 'http://phish-test.example/login');
+    await until(async () => /Deceptive site ahead/.test(await pageText()), 5000);
+    await ptab.wc.executeJavaScript("document.getElementById('settings').click()"); // Continue anyway
+    await sleep(2500);
+    result.phishing.continued = !/Deceptive site ahead/.test(await pageText()) && adblock.phishAllowed.size === 1;
+    adblock.phishAllowed.clear();
+    settings.set({ phishingCheck: false });
+    browser.navigate(ptab.id, 'http://phish-test.example/again');
+    await sleep(2500);
+    result.phishing.offNoWarning = !/Deceptive site ahead/.test(await pageText());
+    settings.set({ phishingCheck: true });
+
+    // 9. Update notice: a newer release on GitHub (stand-in) shows on the menu button and in the menu.
+    const updates = require('../src/main/updates');
+    const realCheck = updates.check;
+    updates.check = async () => ({ version: '9.9.9', url: 'https://github.com/AsuNnah/NovaDM/releases/latest' });
+    await ipc['update.check']();
+    await sleep(300);
+    ipc['panel.open']({ name: 'menu' });
+    await sleep(400);
+    result.update = {
+      badge: await ui("!document.getElementById('menu-badge').classList.contains('hidden') && document.getElementById('menu-badge').classList.contains('new')"),
+      menu: (await overlayView.webContents.executeJavaScript("document.getElementById('content').innerText")).split(/\n/).filter((l) => /available|You have/.test(l)),
+    };
+    fs.writeFileSync(path.join(os.tmpdir(), 'novadm-menu-update.png'), (await overlayView.webContents.capturePage()).toPNG());
+    ipc['update.later']();
+    await sleep(300);
+    result.update.afterLater = ipc['addons.state']().update;
+    ipc['panel.close']();
+    updates.check = realCheck;
+
+    // 10. WebRTC with a proxy: Chromium may only use the proxy (no direct UDP that shows the real address).
+    const rtcTab = browser.activeTab();
+    result.webrtc = { policy: rtcTab.wc.getWebRTCIPHandlingPolicy() };
+    settings.set({ proxyMode: 'manual', proxyType: 'http', proxyServer: '127.0.0.1:9', proxyBypass: '<-loopback>' });
+    await sleep(1500);
+    result.webrtc.withProxy = rtcTab.wc.getWebRTCIPHandlingPolicy();
+    const newTabId = ipc['tabs.new']({ url: base + 'Later' });
+    await sleep(500);
+    result.webrtc.newTabWithProxy = browser.tabs.get(newTabId).wc.getWebRTCIPHandlingPolicy();
+    settings.set({ proxyMode: 'system' });
+    await sleep(1000);
+    result.webrtc.after = rtcTab.wc.getWebRTCIPHandlingPolicy();
     site.close();
   } catch (e) {
     result.fatal = String(e && e.stack || e);

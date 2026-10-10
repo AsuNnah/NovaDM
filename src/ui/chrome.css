@@ -46,6 +46,7 @@ body { font: 13px/1.4 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; co
 .badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px; background: var(--accent2); color: #fff; font-size: 10px; display: flex; align-items: center; justify-content: center; font-weight: 600; }
 .badge.gray { background: var(--fg3); }
 .badge.warn { background: #e8a33d; color: #1b1d22; }
+.badge.warn.new { background: var(--ok); }
 
 /* Chrome extension buttons (electron-chrome-extensions web component). */
 browser-action-list { display: flex; align-items: center; gap: 2px; flex: none; }

@@ -142,8 +142,10 @@ api.on('downloads', (d) => setBadge('dl-badge', d.summary ? d.summary.active : 0
 // Add-ons that aren't installed: a warning on the menu button (the menu lists them).
 function showAddons(d) {
   const n = (d && d.missing || []).length;
-  $('menu-badge').classList.toggle('hidden', !n);
-  $('menu-btn').title = n ? `Menu – ${d.missing.map((a) => a.name).join(', ')} not installed` : 'Menu';
+  const up = d && d.update;
+  $('menu-badge').classList.toggle('hidden', !n && !up);
+  $('menu-badge').classList.toggle('new', !!up);
+  $('menu-btn').title = ['Menu', up ? `NovaDM ${up.version} is available` : '', n ? `${d.missing.map((a) => a.name).join(', ')} not installed` : ''].filter(Boolean).join(' – ');
 }
 api.on('addons', showAddons);
 call('addons.state').then(showAddons).catch(() => {});

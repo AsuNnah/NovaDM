@@ -28,6 +28,8 @@ class Browser extends EventEmitter {
     this.activeId = null;
     this.bounds = { x: 0, y: 0, width: 800, height: 600 };
     this._seq = 0;
+    // WebRTC: local network addresses hidden; with a proxy, nothing bypasses it (setWebRTCPolicy).
+    this.webrtcPolicy = 'default_public_interface_only';
     // A plain Chrome name everywhere (pages, request headers): sites and bot checks refuse "Electron".
     app.userAgentFallback = cleanUserAgent(app.userAgentFallback);
     this.normalSession = electronSession.fromPartition('persist:browser');
@@ -142,6 +144,12 @@ class Browser extends EventEmitter {
     return id;
   }
 
+  /** 'disable_non_proxied_udp' while a proxy is in use: WebRTC would otherwise reveal the real address. */
+  setWebRTCPolicy(policy) {
+    this.webrtcPolicy = policy;
+    for (const t of this.tabs.values()) if (t.wc && !t.wc.isDestroyed()) t.wc.setWebRTCIPHandlingPolicy(policy);
+  }
+
   /** The page view of a tab (new, or again after the tab was unloaded). */
   makeView(tab) {
     const ses = tab.incognito ? this.incognitoSession : this.normalSession;
@@ -150,11 +158,12 @@ class Browser extends EventEmitter {
       webPreferences: {
         session: ses, preload: DETECT_PRELOAD, contextIsolation: true, sandbox: true,
         nodeIntegration: false, backgroundThrottling: true, spellcheck: true,
+        nodeIntegrationInSubFrames: true, // preloads (not Node) in embedded frames too: shield-preload.js protects them
         enablePreferredSizeMode: false,
       },
     });
     view.setBackgroundColor('#ffffff');
-    view.webContents.setWebRTCIPHandlingPolicy('default_public_interface_only'); // calls work; local network addresses stay hidden
+    view.webContents.setWebRTCIPHandlingPolicy(this.webrtcPolicy);
     tab.view = view;
     tab.wc = view.webContents;
     tab.wcId = tab.wc.id;
@@ -270,7 +279,8 @@ class Browser extends EventEmitter {
       if (plain) { tab.wc.loadURL(plain).catch(() => {}); return; }
       tab.failed = { url, code, desc };
       tab.loading = false;
-      wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '' } }).catch(() => {});
+      const phishing = code === -20 && !!this.adblock && this.adblock.phishBlocked.delete(url); // -20: blocked by NovaDM
+      wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '' } }).catch(() => {});
     });
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
       if (!isMain) return;

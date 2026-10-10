@@ -137,12 +137,14 @@ function createWindow() {
     icon: path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
   });
 
+  // shortcut: not sandboxed, because its preload loads the extension buttons (electron-chrome-extensions/browser-action),
+  // which a sandboxed preload can't require; bundle that into one preload file to sandbox it too.
   chromeView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false } });
   chromeView.setBackgroundColor('#00000000');
   chromeView.webContents.loadFile(path.join(UI_DIR, 'chrome.html'));
   diagnostics.watchConsole(chromeView.webContents, 'toolbar');
 
-  overlayView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false, transparent: true } });
+  overlayView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
   overlayView.setBackgroundColor('#00000000');
   overlayView.webContents.loadFile(path.join(UI_DIR, 'panel.html'));
   diagnostics.watchConsole(overlayView.webContents, 'panel');
@@ -603,7 +605,7 @@ app.whenReady().then(async () => {
   ipcMain.on('novadm:password-sent', (e, d) => {
     if (browser.tabIdForWc(e.sender.id) == null || !d || typeof d.password !== 'string') return;
     let host = '';
-    try { host = new URL(e.sender.getURL()).hostname; } catch {}
+    try { host = new URL((e.senderFrame && e.senderFrame.url) || e.sender.getURL()).hostname; } catch {} // the frame's site (sign-in boxes can be embedded)
     const warn = (w) => { if (browser.activeTab() && browser.activeTab().wcId === e.sender.id) { setPanel(true); sendUI('password-warning', { site: host, ...w }); } };
     if (!d.secure && host && !isLocalHost(host)) warn({ insecure: true });
     if (settings.get('breachCheck') === false) return;
@@ -660,9 +662,14 @@ app.whenReady().then(async () => {
 
   // Proxy for pages and downloads (system settings unless the user chose otherwise).
   const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession];
-  applyProxy(settings, proxySessions());
+  // With any proxy (NovaDM's or Windows'), WebRTC may only use it: no direct connections that show the real address.
+  const proxyWebRTC = async () => {
+    const via = await browser.normalSession.resolveProxy('https://www.example.com/').catch(() => 'DIRECT');
+    browser.setWebRTCPolicy(via.trim().toUpperCase() === 'DIRECT' ? 'default_public_interface_only' : 'disable_non_proxied_udp');
+  };
+  applyProxy(settings, proxySessions()).then(proxyWebRTC);
   settings.on('change', (c) => {
-    if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => transport.close());
+    if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => { transport.close(); return proxyWebRTC(); });
   });
   net.setProxyCredentials(() => proxyCredentials(settings));
   net.setSiteCredentials((host) => siteCredentials(host));
@@ -774,6 +781,8 @@ app.whenReady().then(async () => {
   Object.assign(ipcHandlers, browsing.handlers);
 
   // Ad-block lists load in the background; attach to sessions once ready.
+  adblock.initPhishing();
+  setInterval(() => adblock.initPhishing(), 6 * 3600 * 1000).unref(); // the lists change daily
   adblock.init().then(() => {
     adblock.attach(browser.normalSession);
     adblock.attach(browser.incognitoSession);
@@ -822,7 +831,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return ipcHandlers[method](args || {});
   });
   // Live updates for open Downloads pages.

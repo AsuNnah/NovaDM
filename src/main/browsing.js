@@ -62,7 +62,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
 
   // ---- find in page ----
   function createFindView(parent) {
-    findView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false, transparent: true } });
+    findView = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
     findView.setBackgroundColor('#00000000');
     findView.webContents.loadFile(path.join(UI_DIR, 'find.html'));
     findView.setVisible(false);

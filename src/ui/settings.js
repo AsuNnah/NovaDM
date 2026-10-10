@@ -3,7 +3,7 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract', 'showBookmarksBar', 'restoreTabs', 'blockThirdPartyCookies', 'httpsUpgrade', 'debounceLinks', 'stripTrackingParams', 'deAmp', 'clearHistoryOnExit', 'clearCookiesOnExit', 'clearCacheOnExit', 'breachCheck'];
+const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract', 'showBookmarksBar', 'restoreTabs', 'blockThirdPartyCookies', 'httpsUpgrade', 'debounceLinks', 'stripTrackingParams', 'deAmp', 'clearHistoryOnExit', 'clearCookiesOnExit', 'clearCacheOnExit', 'breachCheck', 'phishingCheck', 'updateCheck'];
 const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser', 'afterArgs', 'webhookUrl'];
 const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7], apiPort: [1024, 65535] };
 const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads', 'theme', 'accent', 'uiScale', 'discardTabsAfter', 'fingerprinting', 'securityLevel'];

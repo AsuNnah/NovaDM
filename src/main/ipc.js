@@ -14,10 +14,13 @@ const { nextStart, normalizeQueues } = require('./scheduler');
 const { STORE_URL } = require('./extensions');
 const diagnostics = require('./diagnostics');
 const { siteFor } = require('./site-search');
+const updates = require('./updates');
+const net = require('./net');
 
 const GRAB_CATEGORY = { image: 'images', video: 'video', audio: 'music', document: 'documents', archive: 'archives', program: 'programs' };
 
 let ytdlpChoices = null;
+let update = null; // { version, url } when GitHub has a newer NovaDM
 
 // Add-ons shown with a warning on the menu button while missing (until installed or "Don't remind me").
 const ADDONS = [
@@ -355,6 +358,28 @@ function registerIpc(ctx) {
       return { ok: true, path: r.filePath };
     },
     'omni.site': (a) => siteFor(a.q),
+    'update.open': () => { if (update) getManagers().browser.createTab({ url: update.url }); },
+    'update.later': () => { if (update) getManagers().settings.set({ updateDismissed: update.version }); pushAddons(); },
+    // "Go back" on the deceptive-site warning: the last page before it (the blocked load left its own entries).
+    'phishing.back': (a) => {
+      const t = getManagers().browser.activeTab();
+      if (!t || !t.wc) return;
+      const nh = t.wc.navigationHistory;
+      for (let i = nh.getActiveIndex() - 1; i >= 0; i--) {
+        const u = nh.getEntryAtIndex(i).url;
+        if (u !== a.url && !/^chrome-error:|[\/]ui[\/]error\.html/i.test(u)) return nh.goToIndex(i);
+      }
+      getManagers().browser.navigate(t.id, 'novadm://newtab');
+    },
+    // "Continue anyway" on the deceptive-site warning (error.html): this site, until NovaDM closes.
+    'phishing.allow': (a) => {
+      const { adblock, browser } = getManagers();
+      if (!/^https?:\/\//i.test(String(a.url || ''))) return { ok: false };
+      adblock.allowPhishing(a.url);
+      const t = browser.activeTab();
+      if (t) browser.navigate(t.id, a.url);
+      return { ok: true };
+    },
 
     // ---- misc ----
   };
@@ -363,9 +388,20 @@ function registerIpc(ctx) {
     const m = getManagers();
     const off = m.settings.get('addonRemindOff') || [];
     const has = { ytdlp: () => m.ytdlp.exe(), ffmpeg: () => m.ffmpeg.exe(), aria2: () => m.aria2.exe() || m.aria2.external };
-    return { missing: ADDONS.filter((a) => !off.includes(a.id) && !has[a.id]()) };
+    const showUpdate = update && m.settings.get('updateDismissed') !== update.version;
+    return { missing: ADDONS.filter((a) => !off.includes(a.id) && !has[a.id]()), update: showUpdate ? update : null, current: app.getVersion() };
   }
   function pushAddons() { sendUI('addons', addonState()); }
+
+  // Once a day (first time 30 s after start): is there a newer NovaDM on GitHub? Off in Settings.
+  const checkUpdates = () => {
+    if (getManagers().settings.get('updateCheck') === false) return;
+    const fetchText = async (url) => (await net.fetchText(url, { session: require('electron').session.defaultSession, headers: { accept: 'application/vnd.github+json' }, timeoutMs: 15000 })).text;
+    return updates.check(app.getVersion(), fetchText).then((u) => { update = u; pushAddons(); }).catch(() => {});
+  };
+  handlers['update.check'] = checkUpdates;
+  setTimeout(checkUpdates, 30000).unref();
+  setInterval(checkUpdates, 24 * 3600 * 1000).unref();
   // The warning on the menu button follows add-on changes made from Settings too.
   for (const k of Object.keys(handlers).filter((m) => /^(ffmpeg|ytdlp|torrents)\.(install|uninstall|choose)$/.test(m))) {
     const f = handlers[k];
