@@ -15,12 +15,13 @@ const { STORE_URL } = require('./extensions');
 const diagnostics = require('./diagnostics');
 const { siteFor } = require('./site-search');
 const updates = require('./updates');
+const { canAutoUpdate, createUpdater } = require('./updater');
 const net = require('./net');
 
 const GRAB_CATEGORY = { image: 'images', video: 'video', audio: 'music', document: 'documents', archive: 'archives', program: 'programs' };
 
 let ytdlpChoices = null;
-let update = null; // { version, url } when GitHub has a newer NovaDM
+let update = null; // { version, url } when GitHub has a newer NovaDM; + { auto, phase, percent } when it updates itself
 
 // Add-ons shown with a warning on the menu button while missing (until installed or "Don't remind me").
 const ADDONS = [
@@ -359,6 +360,7 @@ function registerIpc(ctx) {
     },
     'omni.site': (a) => siteFor(a.q),
     'update.open': () => { if (update) getManagers().browser.createTab({ url: update.url }); },
+    'update.install': () => { if (auto) auto.install(); },
     'update.later': () => { if (update) getManagers().settings.set({ updateDismissed: update.version }); pushAddons(); },
     // "Go back" on the deceptive-site warning: the last page before it (the blocked load left its own entries).
     'phishing.back': (a) => {
@@ -393,9 +395,15 @@ function registerIpc(ctx) {
   }
   function pushAddons() { sendUI('addons', addonState()); }
 
+  // The installed NovaDM updates itself (updater.js); the portable version and runs from source get a
+  // notice. NOVADM_TEST_AUTOUPDATE: self-tests from source use the self-updater too.
+  const auto = canAutoUpdate() || (!app.isPackaged && process.env.NOVADM_TEST_AUTOUPDATE)
+    ? createUpdater({ onState: (s) => { update = { ...s, auto: true, url: 'https://github.com/AsuNnah/NovaDM/releases/latest' }; pushAddons(); } })
+    : null;
   // Once a day (first time 30 s after start): is there a newer NovaDM on GitHub? Off in Settings.
   const checkUpdates = () => {
     if (getManagers().settings.get('updateCheck') === false) return;
+    if (auto) return auto.check();
     const fetchText = async (url) => (await net.fetchText(url, { session: require('electron').session.defaultSession, headers: { accept: 'application/vnd.github+json' }, timeoutMs: 15000 })).text;
     return updates.check(app.getVersion(), fetchText).then((u) => { update = u; pushAddons(); }).catch(() => {});
   };

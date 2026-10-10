@@ -30,9 +30,13 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   the tabs it restores next time are untouched. Closing the main window keeps a private window
   open (as in Chrome); opening a normal page from it brings a normal window back. Each window has
   its own find bar. Tested in `tools/selftest-private.js`.
-- **Update notice**: once a day NovaDM asks GitHub which release is the newest. A newer version
-  shows on the menu button (green) and in the menu, with *Download…* and *Later*. Nothing is
-  downloaded or installed by itself. Settings → Privacy can turn the check off.
+- **Automatic updates**, like Chrome and Brave (installed NovaDM): once a day NovaDM asks GitHub
+  for the newest release, downloads it in the background and checks it against the SHA-512 in the
+  release's `latest.yml`; a file that doesn't match is refused. Then a green **Update** button
+  appears next to the menu: click it to restart into the new version (tabs come back), or it
+  installs the next time NovaDM closes. Shortcuts and settings are kept. The portable version
+  can't replace itself, so it shows *Download…* instead. Settings → Privacy can turn the check off.
+  From 1.3.x, install 1.4.0 once by hand; later versions arrive by themselves.
 - **Deceptive-site warning**: pages on the Phishing URL Blocklist (OpenPhish, PhishTank) or
   uBlock's Badware risks list are stopped with a warning (*Go back* / *Continue anyway*), whatever
   the Shields setting. The lists are downloaded once a day and checked on this PC; the sites you

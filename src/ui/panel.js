@@ -299,13 +299,22 @@ function renderMenu() {
   // Add-ons that aren't installed (the warning on the menu button).
   if (addonsData.update) {
     const u = addonsData.update;
-    const box = el('div', 'addon-warn upd', `<div class="t">NovaDM ${esc(u.version)} is available</div><div class="w">You have ${esc(addonsData.current || 'an older version')}. Download the new installer from GitHub; your settings and data are kept.</div>`);
+    // Self-updating (installed): downloading -> ready ("Restart to update"); otherwise a download link.
+    const [title, text] = u.auto && u.phase === 'ready' ? [`NovaDM ${esc(u.version)} is ready`, 'Restart NovaDM to finish updating, or it updates the next time it closes. Your settings, tabs and data are kept.']
+      : u.auto && u.phase === 'downloading' ? [`Downloading NovaDM ${esc(u.version)}… ${u.percent || 0}%`, 'It downloads in the background and is checked before it installs.']
+        : u.auto && u.phase === 'error' ? [`Couldn’t download NovaDM ${esc(u.version)}`, `${esc(u.error || '')} You can download it from GitHub instead.`]
+          : [`NovaDM ${esc(u.version)} is available`, `You have ${esc(addonsData.current || 'an older version')}. Download the new installer from GitHub; your settings and data are kept.`];
+    const box = el('div', 'addon-warn upd', `<div class="t">${title}</div><div class="w">${text}</div>`);
     const links = el('div', 'links');
-    const get = el('button', 'btn sm pri', 'Download…');
-    get.onclick = () => { api.call('update.open'); close(); };
+    const ready = u.auto && u.phase === 'ready';
+    if (!(u.auto && u.phase === 'downloading')) {
+      const go = el('button', 'btn sm pri', ready ? 'Restart to update' : 'Download…');
+      go.onclick = () => { api.call(ready ? 'update.install' : 'update.open'); close(); };
+      links.append(go);
+    }
     const later = el('button', 'btn sm', 'Later');
     later.onclick = () => api.call('update.later');
-    links.append(get, later);
+    links.append(later);
     box.append(links);
     content.append(box);
   }

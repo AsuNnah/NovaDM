@@ -47,6 +47,9 @@ body { font: 13px/1.4 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; co
 .badge.gray { background: var(--fg3); }
 .badge.warn { background: #e8a33d; color: #1b1d22; }
 .badge.warn.new { background: var(--ok); }
+/* Chrome-style "Update" button next to the menu once a new version is ready (or, portable: available). */
+.update-pill { -webkit-app-region: no-drag; display: flex; align-items: center; height: 28px; padding: 0 12px; margin-right: 2px; border-radius: 999px; background: color-mix(in srgb, var(--ok) 20%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 45%, transparent); color: var(--ok); font-size: 12.5px; font-weight: 600; flex: none; cursor: default; animation: nv-pop var(--dur-fast) var(--ease-bounce); }
+.update-pill:hover { background: color-mix(in srgb, var(--ok) 30%, transparent); }
 .badge:not(.hidden) { animation: nv-pop var(--dur-fast) var(--ease-bounce); }
 
 /* Chrome extension buttons (electron-chrome-extensions web component). */

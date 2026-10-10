@@ -148,6 +148,17 @@ function showAddons(d) {
   $('menu-btn').title = ['Menu', up ? `NovaDM ${up.version} is available` : '', n ? `${d.missing.map((a) => a.name).join(', ')} not installed` : ''].filter(Boolean).join(' – ');
 }
 api.on('addons', showAddons);
+// "Update": restarts into the downloaded version; the portable version opens the menu (Download…).
+let updateReady = false;
+function showUpdate(d) {
+  const u = d && d.update;
+  updateReady = !!(u && u.auto && u.phase === 'ready');
+  $('update-pill').classList.toggle('hidden', !(updateReady || (u && !u.auto)));
+  $('update-pill').title = u ? `NovaDM ${u.version} ${updateReady ? 'is ready: click to restart and update' : 'is available'}` : '';
+}
+api.on('addons', showUpdate);
+call('addons.state').then(showUpdate).catch(() => {});
+$('update-pill').onclick = () => { if (updateReady) call('update.install'); else togglePanel('menu'); };
 call('addons.state').then(showAddons).catch(() => {});
 
 function setBadge(id, n, gray) {
