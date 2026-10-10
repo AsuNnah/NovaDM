@@ -60,6 +60,9 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   as in Chrome (both only opened DevTools before).
 
 ### Security
+- **AI penetration test in the pipeline**: [Strix](https://github.com/usestrix/strix) 1.6.2 runs on
+  GitHub when a version tag is pushed and on demand, with a spending cap per run; its report is kept
+  with the run. It needs the repository secret `LLM_API_KEY` (an Anthropic key) and skips without it.
 - **WebRTC with a proxy**: while any proxy is in use (NovaDM's or Windows'), WebRTC may only go
   through it, so video calls and scripts can't reveal your real address. Calls may not connect
   through a proxy that can't carry them.

@@ -88,6 +88,7 @@ Fix the cause, not the symptom, then go back to stage 4. If a fix breaks somethi
 |---|---|---|
 | Known vulnerabilities in dependencies | `npm audit --omit=dev --audit-level=high` | local + CI |
 | Static analysis of the code | CodeQL (`security-extended`) | CI, weekly + every push |
+| AI penetration test (Strix: agents that try to break the app and prove it) | `.github/workflows/strix.yml`, scope in `.github/strix-instructions.md`; needs the `LLM_API_KEY` secret; capped by `max_budget_usd` | CI, on each version tag + on demand |
 | Built app: fuses, code-injection attempts, tampered app, encrypted cookies | `npm run dist` then `node tools/check-build-security.js` | local + CI on tags |
 | The stage-2 security questions | review the diff against them | local |
 | Sign-in protections still work | `tools/selftest-security.js` | local |
