@@ -13,7 +13,7 @@ Research 2026-10-09 (after 1.2.0). Sources at the end.
 | Brave-style speed | Done 1.1 (Shields rules, unload tabs, reader view, benchmark) |
 | Live DASH recording | Done 1.1 |
 | Everyday browser basics (history, bookmarks, find, restore tabs, cookies, UI size) | Done 1.0 |
-| Brave shortcuts (Ctrl+F, Ctrl+Shift+I, …) | Done 1.2; Ctrl+Shift+J / C open DevTools but not straight to Console / inspect |
+| Brave shortcuts (Ctrl+F, Ctrl+Shift+I, …) | Done 1.2 (Ctrl+Shift+J / C open the Console / element picker since 1.4) |
 | Tor-style hardening for normal tabs, with measured cost | Done 1.2 (fingerprinting, WebRTC, Safer / Safest); **not possible in Electron**: Tor's font list, window-size steps, coarser timers; WebAssembly-only off not done |
 | On/off per site in the shields panel | Done 1.2 |
 | Tor in private browsing (Electron + tor.exe, then real Tor Browser windows with NovaDM look) | **On hold** (planned, size measured: +108 MB download, ≈+300 MB disk) |

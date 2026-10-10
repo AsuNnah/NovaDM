@@ -22,7 +22,7 @@ function shortcutFor(input) {
     if (shift) {
       return {
         t: 'reopen-tab', n: 'new-private', w: 'close-window', r: 'hard-reload', d: 'bookmark-all', b: 'bookmarks-bar',
-        o: 'bookmarks', a: 'tab-search', i: 'devtools', j: 'devtools', c: 'devtools', g: 'find-prev',
+        o: 'bookmarks', a: 'tab-search', i: 'devtools', j: 'devtools-console', c: 'devtools-inspect', g: 'find-prev',
       }[k] || null;
     }
     return {

@@ -462,7 +462,9 @@ function handleShortcut(tab, action) {
     case 'save-page': return wc && /^https?:/i.test(wc.getURL()) && wc.downloadURL(wc.getURL()); // to NovaDM's downloader
     case 'open-file': return openFileInTab();
     case 'view-source': return /^https?:/i.test(tab.url || '') && browser.createTab({ url: 'view-source:' + tab.url, openerPartition: tab.id });
-    case 'devtools': return wc && wc.toggleDevTools(); // shortcut: Ctrl+Shift+J/C open DevTools too, not straight to Console / inspect mode
+    case 'devtools': return wc && wc.toggleDevTools();
+    case 'devtools-console': return wc && devTools(wc, 'DevToolsAPI.showPanel("console")');
+    case 'devtools-inspect': return wc && devTools(wc, 'DevToolsAPI.enterInspectElementMode()');
     case 'menu': setPanel(true); return sendUI('open-panel', { name: 'menu' });
     case 'tab-search': setPanel(true); overlayView.webContents.focus(); return sendUI('open-panel', { name: 'tabsearch' });
     case 'task-manager': return showTaskManager();
@@ -471,6 +473,14 @@ function handleShortcut(tab, action) {
       if (/^tab-[1-8]$/.test(action)) return pick(Number(action.slice(4)) - 1);
       if (action.startsWith('zoom') && wc) return browser.zoom(tab, action);
   }
+}
+
+// Ctrl+Shift+J / C: open DevTools (if closed), then the Console or the element picker, as in Chrome.
+function devTools(wc, command) {
+  const run = () => { if (wc.devToolsWebContents) wc.devToolsWebContents.executeJavaScript(command).catch(() => {}); };
+  if (wc.isDevToolsOpened()) return run();
+  wc.once('devtools-opened', () => setTimeout(run, 300)); // the DevTools page needs a moment to start
+  wc.openDevTools();
 }
 
 async function openFileInTab() {
@@ -831,17 +841,17 @@ app.whenReady().then(async () => {
   // Screenshots and scripted tests only when running from source: in the installed app an
   // environment variable must never be able to run code or capture pages.
   const devRun = !app.isPackaged;
-  // NOVADM_SHOT=<ms>: capture the UI so the build can be verified without a visible desktop.
+  // NOVADM_SHOT=<ms>: capture the UI (PNGs in the profile folder) to check it without a visible desktop.
   if (devRun && process.env.NOVADM_SHOT) {
     setTimeout(async () => {
       try {
-        const os = require('os');
+        const dir = app.getPath('userData'); // the run's own profile, not the shared temp folder
         const c = await chromeView.webContents.capturePage();
-        fs.writeFileSync(path.join(os.tmpdir(), 'novadm-chrome.png'), c.toPNG());
+        fs.writeFileSync(path.join(dir, 'novadm-chrome.png'), c.toPNG());
         const t = browser.activeTab();
-        if (t) { const p = await t.wc.capturePage(); fs.writeFileSync(path.join(os.tmpdir(), 'novadm-tab.png'), p.toPNG()); }
-        if (process.env.NOVADM_PANEL) { const o = await overlayView.webContents.capturePage(); fs.writeFileSync(path.join(os.tmpdir(), 'novadm-overlay.png'), o.toPNG()); }
-        fs.writeFileSync(path.join(os.tmpdir(), 'novadm-shot-done'), 'ok');
+        if (t) { const p = await t.wc.capturePage(); fs.writeFileSync(path.join(dir, 'novadm-tab.png'), p.toPNG()); }
+        if (process.env.NOVADM_PANEL) { const o = await overlayView.webContents.capturePage(); fs.writeFileSync(path.join(dir, 'novadm-overlay.png'), o.toPNG()); }
+        fs.writeFileSync(path.join(dir, 'novadm-shot-done'), 'ok');
       } catch (e) { console.error('shot failed', e); }
     }, Number(process.env.NOVADM_SHOT) || 4000);
   }

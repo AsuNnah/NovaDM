@@ -17,7 +17,7 @@ module.exports = async ({ app, browser, settings, ipc, chromeView, overlayView, 
   const typeIn = (wc, text) => { for (const ch of text) wc.sendInputEvent({ type: 'char', keyCode: ch }); };
   const key = (wc, keyCode, modifiers = []) => { for (const type of ['keyDown', 'keyUp']) wc.sendInputEvent({ type, keyCode, modifiers }); };
   try {
-    const site = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<title>${decodeURIComponent(req.url.slice(1))} page</title>x`); });
+    const site = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end(`<title>${decodeURIComponent(req.url.slice(1)).replace(/[^A-Za-z]/g, "")} page</title>x`); });
     await new Promise((r) => site.listen(0, '127.0.0.1', r));
     const base = `http://127.0.0.1:${site.address().port}/`;
 
@@ -95,6 +95,22 @@ module.exports = async ({ app, browser, settings, ipc, chromeView, overlayView, 
     await probe.webContents.loadFile(path.join(__dirname, '..', 'src', 'ui', 'find.html'));
     result.uiChannel = { fromWebPage: fromWeb, fromNovaDmPage: await ask() };
     probe.webContents.close();
+
+    // 7. Ctrl+Shift+J opens DevTools on the Console; Ctrl+Shift+C starts the element picker.
+    const page = browser.activeTab().wc;
+    key(page, 'J', ['control', 'shift']);
+    await until(() => page.isDevToolsOpened() && page.devToolsWebContents, 6000);
+    await sleep(2500);
+    const dt = page.devToolsWebContents;
+    result.devtools = {
+      opened: page.isDevToolsOpened(),
+      api: await dt.executeJavaScript("typeof DevToolsAPI.showPanel + ' ' + typeof DevToolsAPI.enterInspectElementMode").catch((e) => String(e)),
+    };
+    fs.writeFileSync(path.join(os.tmpdir(), 'novadm-devtools-console.png'), (await dt.capturePage()).toPNG());
+    key(page, 'C', ['control', 'shift']);
+    await sleep(1000);
+    fs.writeFileSync(path.join(os.tmpdir(), 'novadm-devtools-inspect.png'), (await dt.capturePage()).toPNG());
+    page.closeDevTools();
     site.close();
   } catch (e) {
     result.fatal = String(e && e.stack || e);

@@ -21,9 +21,19 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   press Tab, and what you type next is searched on that site. Backspace leaves.
 - New tabs put the cursor in the address bar instead of the page's search box.
 
+### Fixed
+- **Chrome Web Store:** the "Switch to Chrome?" popup and banner no longer appear; the *Add to
+  NovaDM* button always worked (an old self-test looked for "Add to Chrome" and missed it).
+- **Ctrl+Shift+J** opens DevTools on the Console and **Ctrl+Shift+C** starts the element picker,
+  as in Chrome (both only opened DevTools before).
+
 ### Security
 - The channel used by NovaDM's toolbar and panels now answers only NovaDM's own pages. Before, it
   relied on no web page ever getting its preload.
+- Code scanning (CodeQL) findings: screenshots of the developer test hook are written into the
+  test profile instead of the shared temp folder; the breach check's SHA-1 is required by Have I
+  Been Pwned's protocol (never stored) and marked as a false positive; test-only folders are no
+  longer scanned.
 
 ## [1.3.1] — 2026-10-10
 
