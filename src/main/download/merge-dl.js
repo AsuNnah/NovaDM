@@ -421,10 +421,11 @@ class MergeDownload extends EventEmitter {
     } catch { return false; }
     if (!m || m.v !== 1 || m.kind !== 'merge' || !Array.isArray(defs) || defs.length !== m.next.length) return false;
     if (m.mode === 'files') return this.resumeFiles(m, defs);
-    let size = -1;
-    try { size = fs.statSync(this.partPath).size; } catch { return false; }
-    if (size < m.written) return false;
-    fs.truncateSync(this.partPath, m.written);
+    let fd;
+    try { fd = fs.openSync(this.partPath, 'r+'); } catch { return false; }
+    if (fs.fstatSync(fd).size < m.written) { fs.closeSync(fd); return false; }
+    fs.ftruncateSync(fd, m.written); // checked and cut through one handle (no race)
+    fs.closeSync(fd);
     this.tracks = defs.map((d, i) => ({
       ...d, container: m.containers[i], init: Buffer.from(m.inits[i], 'base64'), nextFetch: m.next[i], nextWrite: m.next[i], ready: new Map(),
       tx: m.containers[i] === 'ts' ? new TrackTransmuxer(d.kind, Buffer.from(m.inits[i], 'base64')) : null,

@@ -682,7 +682,7 @@ class HttpDownload extends EventEmitter {
 
   backoffMs(attempt) { return Math.min(this.retryDelayMs * Math.pow(1.6, attempt), 30000); }
 
-  sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  sleep(ms) { return new Promise((r) => setTimeout(r, Math.max(0, Math.min(Number(ms) || 0, 120000)))); } // never longer than 2 min
 
   emitUpdate(force = false) {
     const now = Date.now();

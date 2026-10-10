@@ -96,6 +96,7 @@ function useCtx(kind) {
   curKind = kind;
   ({ win, chromeView, overlayView, panelOpen } = c);
   if (browser) browser.cur = kind;
+  if (browsing && c.find) browsing.useFind(c.find);
 }
 function inCtx(kind, fn) {
   if (!wins[kind] || kind === curKind) return fn();
@@ -161,6 +162,7 @@ function setPanel(open) {
 }
 
 function showWindow() {
+  if (app.isReady() && !wins.normal && wins.private) createWindow('normal'); // only a private window was open
   const w = wins.normal && wins.normal.win;
   if (!app.isReady() || !w) return;
   if (w.isMinimized()) w.restore();
@@ -168,7 +170,7 @@ function showWindow() {
   w.focus();
 }
 
-function createWindow(kind = 'normal') {
+function createWindow(kind = 'normal', { restore = true } = {}) {
   const priv = kind === 'private';
   const icon = path.join(__dirname, '..', '..', 'assets', priv ? 'icon-private.ico' : 'icon.ico');
   const w = new BaseWindow({
@@ -206,33 +208,51 @@ function createWindow(kind = 'normal') {
       inCtx(kind, () => handleShortcut(browser.activeTab(), action));
     });
   }
+  // Its own find bar (Ctrl+F).
+  const find = browsing.createFindView(w.contentView);
+  wins[kind].find = find;
+  find.view.webContents.on('before-input-event', (e, input) => {
+    const action = shortcutFor(input);
+    if (!action || action === 'stop' || action.startsWith('zoom')) return;
+    e.preventDefault();
+    inCtx(kind, () => handleShortcut(browser.activeTab(), action));
+  });
   useCtx(kind);
-  if (!browsing.findView) browsing.createFindView(w.contentView);
 
   browser.setParentView(w.contentView);
   browser.onRestack = () => inCtx(kind, restack);
 
   layout();
   w.on('resize', () => inCtx(kind, layout));
-  w.on('focus', () => {
-    if (curKind !== kind && browsing.findOpen) browsing.closeFind(); // the find bar belongs to the other window
-    useCtx(kind);
-  });
+  w.on('focus', () => useCtx(kind));
   // Open links that must leave the app (none by default) in the OS browser.
   cv.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
 
   if (priv) { w.on('closed', closePrivateWindow); return; }
   w.on('close', (e) => {
     // Downloads running: keep going in the tray instead of quitting (Settings → Background).
-    if (background && background.keepRunningOnClose()) { e.preventDefault(); background.hideToTray(); return; }
-    browser.shuttingDown = true;
-    if (wins.private) wins.private.win.close();
+    if (!wins.private && background && background.keepRunningOnClose()) { e.preventDefault(); background.hideToTray(); return; }
+    if (!wins.private) browser.shuttingDown = true;
   });
-  w.on('closed', () => { browser.shuttingDown = true; delete wins.normal; win = null; });
+  w.on('closed', () => {
+    // A private window stays open, as in Chrome: only the normal tabs close (NovaDM quits with the last window).
+    if (wins.private) { closeWindowTabs('normal', wins.normal); useCtx('private'); return; }
+    browser.shuttingDown = true; delete wins.normal; win = null;
+  });
 
   // The tabs from last time (Settings → Restore tabs), or a new tab. NOVADM_OPEN (debug) opens a
   // given address instead.
-  browsing.openStartTabs(process.env.NOVADM_OPEN || '');
+  if (restore) browsing.openStartTabs(process.env.NOVADM_OPEN || '');
+}
+
+// A window closed while the other stays open: its tabs, toolbar, panels and find bar go.
+function closeWindowTabs(kind, c) {
+  const g = browser.groups[kind];
+  g.closing = true;
+  browser.inGroup(kind, () => { for (const id of [...g.order]) browser.closeTab(id); });
+  Object.assign(g, { closing: false, parentView: null, onRestack: null, activeId: null });
+  for (const v of [c.chromeView, c.overlayView, c.find.view]) { viewKind.delete(v.webContents.id); try { v.webContents.close(); } catch {} }
+  delete wins[kind];
 }
 
 // The private window closed (or its last tab did): its tabs close and everything the private
@@ -240,14 +260,8 @@ function createWindow(kind = 'normal') {
 function closePrivateWindow() {
   const c = wins.private;
   if (!c) return;
-  const g = browser.groups.private;
-  g.closing = true;
-  browser.inGroup('private', () => { for (const id of [...g.order]) browser.closeTab(id); });
-  Object.assign(g, { closing: false, parentView: null, onRestack: null, activeId: null });
-  for (const v of [c.chromeView, c.overlayView]) { viewKind.delete(v.webContents.id); try { v.webContents.close(); } catch {} }
-  delete wins.private;
+  closeWindowTabs('private', c);
   useCtx('normal');
-  if (win && browsing.findView) { win.contentView.addChildView(browsing.findView); browsing.findView.setVisible(false); }
   const ses = browser.incognitoSession;
   Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache()]).catch(() => {});
 }
@@ -821,17 +835,12 @@ app.whenReady().then(async () => {
   });
 
   // A private tab (Ctrl+Shift+N, a link from a private tab) opens the private window.
-  browser.ensureWindow = (kind) => { if (kind === 'private' && !wins.private && wins.normal) createWindow('private'); };
+  // A normal tab with only a private window open (the Downloads page, a link) opens a normal window again.
+  browser.ensureWindow = (kind) => { if (!wins[kind] && (wins.normal || wins.private)) createWindow(kind, { restore: false }); };
   createWindow();
   wireEvents();
-  browsing.findView.webContents.on('before-input-event', (e, input) => {
-    const action = shortcutFor(input);
-    if (!action || action === 'stop' || action.startsWith('zoom')) return;
-    e.preventDefault();
-    handleShortcut(browser.activeTab(), action);
-  });
   settings.on('change', (c) => {
-    if ('uiScale' in c) browsing.applyScale([...Object.values(wins).flatMap((w) => [w.chromeView, w.overlayView]), browsing.findView]);
+    if ('uiScale' in c) browsing.applyScale(Object.values(wins).flatMap((w) => [w.chromeView, w.overlayView, w.find.view]));
     if ('showBookmarksBar' in c) { layout(); sendUI('bookmarks', browsing.bookmarkState()); }
   });
   // Appearance: theme now, accent once NovaDM's own views have loaded, and on every change.

@@ -27,7 +27,9 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   purple with a glasses badge), so it can't be mistaken for a normal window. Its new tab page says
   what is and isn't kept. Links and new tabs from a private tab stay in it. Closing the private
   window (or its last tab) deletes its cookies, site data, cache and sign-ins; the normal window and
-  the tabs it restores next time are untouched. Tested in `tools/selftest-private.js`.
+  the tabs it restores next time are untouched. Closing the main window keeps a private window
+  open (as in Chrome); opening a normal page from it brings a normal window back. Each window has
+  its own find bar. Tested in `tools/selftest-private.js`.
 - **Update notice**: once a day NovaDM asks GitHub which release is the newest. A newer version
   shows on the menu button (green) and in the menu, with *Download…* and *Later*. Nothing is
   downloaded or installed by itself. Settings → Privacy can turn the check off.
@@ -67,6 +69,11 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   is not sandboxed yet (its extension buttons need a preload that can't run sandboxed).
 - The channel used by NovaDM's toolbar and panels now answers only NovaDM's own pages. Before, it
   relied on no web page ever getting its preload.
+- Code scanning (CodeQL) findings in NovaDM's own code: resuming a video download checks and cuts
+  its part file through one open file (no race); a server's wait time is capped where the timer
+  starts too (2 minutes); a server's header names can't reach JavaScript's object prototype; the
+  checksum status text is made plain by the browser before it is shown. Downloading `http://`
+  links you give NovaDM, and your own DNS / webhook settings, are by design and marked so.
 - Code scanning (CodeQL) findings: screenshots of the developer test hook are written into the
   test profile instead of the shared temp folder; the breach check's SHA-1 is required by Have I
   Been Pwned's protocol (never stored) and marked as a false positive; test-only folders are no

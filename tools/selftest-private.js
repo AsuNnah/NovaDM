@@ -70,6 +70,27 @@ module.exports = async ({ app, browser, ipc, browsing }) => {
     privWin().close();
     await until(() => !privWin(), 4000);
     result.closedByWindow = { windows: BaseWindow.getAllWindows().length, privateTabs: browser.groups.private.order.length, normalStillWorks: !!browser.activeTab() };
+
+    // 6. Each window has its own find bar.
+    ipc['tabs.new']({ incognito: true });
+    await until(() => privWin(), 4000);
+    await sleep(800);
+    const findViews = (w) => w.contentView.children.filter((v) => /[\\/]ui[\\/]find\.html/.test(v.webContents.getURL())).length;
+    const mainWin = BaseWindow.getAllWindows().find((w) => !/Private/.test(w.getTitle()));
+    result.findBars = { main: findViews(mainWin), private: findViews(privWin()) };
+
+    // 7. Closing the main window keeps the private window (as in Chrome); the saved tabs stay.
+    const saved = browsing.tabSession.load().tabs.length;
+    mainWin.close();
+    await until(() => BaseWindow.getAllWindows().length === 1, 4000);
+    await sleep(500);
+    result.mainClosed = { windows: BaseWindow.getAllWindows().length, privateStillOpen: !!privWin(), privateTabs: browser.groups.private.order.length, normalTabs: browser.groups.normal.order.length, savedTabsKept: browsing.tabSession.load().tabs.length === saved };
+    // The Downloads page from the private window brings a normal window back.
+    ipc['downloads.openPageTab']();
+    await until(() => BaseWindow.getAllWindows().length === 2, 4000);
+    await sleep(800);
+    const back = BaseWindow.getAllWindows().find((w) => !/Private/.test(w.getTitle()));
+    result.normalBack = { windows: BaseWindow.getAllWindows().length, normalTabs: browser.groups.normal.order.length, page: browser.groups.normal.activeId != null && browser.tabs.get(browser.groups.normal.activeId).url, findBar: back ? findViews(back) : 0 };
     site.close();
   } catch (e) {
     result.fatal = String(e && e.stack || e);
