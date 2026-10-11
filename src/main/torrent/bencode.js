@@ -71,6 +71,7 @@ function torrentInfo(buf) {
   const t = decode(buf);
   if (!t || !t.info || !t.__spans.info) throw new Error('Not a valid torrent file: no info');
   const [a, b] = t.__spans.info;
+  // nosemgrep: ajinabraham.njsscan.crypto.crypto_node.node_sha1 -- the BitTorrent info-hash is SHA-1 by the protocol
   const infoHash = crypto.createHash('sha1').update(buf.subarray(a, b)).digest('hex');
   const info = t.info;
   const name = (info['name.utf-8'] || info.name || Buffer.from('torrent')).toString('utf8');

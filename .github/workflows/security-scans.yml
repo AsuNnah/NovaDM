@@ -29,8 +29,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # Checks left out, after review (docs/security.md):
+      #  CSP_GLOBAL_CHECK: a "review your CSP" note; every UI page has a strict one (default-src 'none', script-src 'self').
+      #  CUSTOM_ARGUMENTS_JS_CHECK: the Chromium switches are hardening on purpose (third-party cookies off, no JIT in Safer/Safest).
       - name: Electronegativity (pinned version)
-        run: npx --yes @doyensec/electronegativity@1.10.3 --input src --relative --electron-version 44.7.0 --output electronegativity.sarif
+        run: npx --yes @doyensec/electronegativity@1.10.3 --input src --relative --electron-version 44.7.0 --exclude-checks CSP_GLOBAL_CHECK,CUSTOM_ARGUMENTS_JS_CHECK --output electronegativity.sarif
       - name: Send the results to code scanning
         if: always() && hashFiles('electronegativity.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
@@ -51,8 +54,11 @@ jobs:
       - name: Install Semgrep (pinned version)
         run: pip install semgrep==1.177.0
       # Only the code that ships (src, the browser extension); tools/ and test/ are local test scripts.
+      # regex_dos is left out: it flags every regex that sees outside text, also simple anchored ones;
+      # CodeQL's ReDoS queries (security-extended) check real catastrophic backtracking.
+      # Other false positives are marked in the code with `nosemgrep: <rule> -- <reason>`.
       - name: Semgrep
-        run: semgrep scan --config p/javascript --config p/nodejsscan --metrics=off --sarif --output semgrep.sarif src browser-extension
+        run: semgrep scan --config p/javascript --config p/nodejsscan --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --metrics=off --sarif --output semgrep.sarif src browser-extension
       - name: Send the results to code scanning
         if: always() && hashFiles('semgrep.sarif') != ''
         uses: github/codeql-action/upload-sarif@v4
@@ -68,6 +74,7 @@ jobs:
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.6.0
     with:
       scan-args: |-
+        --config=osv-scanner.toml
         --lockfile=package-lock.json
       fail-on-vuln: false # reported in the Security tab; Dependabot opens the fix
 

@@ -6,6 +6,14 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+### Security
+- Links opened from NovaDM's own toolbar go to the default program only when they are web or mail
+  links (`http`, `https`, `mailto`); other kinds of address can start programs. Found by the new
+  scanners; low risk, since the toolbar shows only NovaDM's own content.
+- Download and media ids come from `crypto` instead of `Math.random` (they were never secret).
+- New: `SECURITY.md` (how to report a problem privately) and free security scanners on every change
+  (Electronegativity, Semgrep, OSV-Scanner, OpenSSF Scorecard); results in the Security tab.
+
 ## [1.5.0] — 2026-10-11
 
 ### Added

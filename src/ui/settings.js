@@ -62,6 +62,7 @@ function render() {
   $('proxyBypassRow').hidden = pm !== 'manual';
   $('proxyPacRow').hidden = pm !== 'pac';
   $('proxyAuthRow').hidden = pm !== 'manual' && pm !== 'pac';
+  // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_password -- the text box's placeholder, not a password
   $('proxyPass').placeholder = current.proxyHasPassword ? 'Password saved' : 'Password';
   $('afterProgramShow').textContent = current.afterProgram || 'None';
   renderRules();

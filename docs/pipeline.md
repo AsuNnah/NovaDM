@@ -87,14 +87,24 @@ Fix the cause, not the symptom, then go back to stage 4. If a fix breaks somethi
 | What | Command | Where |
 |---|---|---|
 | Known vulnerabilities in dependencies | `npm audit --omit=dev --audit-level=high` | local + CI |
+| Known vulnerabilities, second database | OSV-Scanner on `package-lock.json` (`security-scans.yml`) | CI, every push + weekly |
 | Static analysis of the code | CodeQL (`security-extended`) | CI, weekly + every push |
-| AI penetration test (Strix: agents that try to break the app and prove it) | `.github/workflows/strix.yml`, scope in `.github/strix-instructions.md`; needs the `LLM_API_KEY` secret; capped by `max_budget_usd` | CI, on each version tag + on demand |
+| Second static analysis, different rules | Semgrep Community Edition, `p/javascript` + `p/nodejsscan` (`security-scans.yml`) | CI, every push + weekly |
+| Electron misconfigurations | Electronegativity (`security-scans.yml`) | CI, every push + weekly |
+| How the repository is protected | OpenSSF Scorecard (`security-scans.yml`) | CI, main + weekly |
+| Secrets committed by mistake | GitHub secret scanning + push protection (repository setting) | GitHub, every push |
+| Vulnerable dependencies, with fix PRs | Dependabot alerts + security updates (repository setting) | GitHub, continuous |
+| AI penetration test (Strix: agents that try to break the app and prove it), optional | `.github/workflows/strix.yml`, scope in `.github/strix-instructions.md`; needs the `LLM_API_KEY` secret; capped by `max_budget_usd`. A free AI key runs out of quota (HTTP 429) on a full scan: the free scanners above are the ones relied on | CI, on each version tag + on demand |
 | Built app: fuses, code-injection attempts, tampered app, encrypted cookies | `npm run dist` then `node tools/check-build-security.js` | local + CI on tags |
 | The stage-2 security questions | review the diff against them | local |
 | Sign-in protections still work | `tools/selftest-security.js` | local |
 
+All scanner findings land in the repository's Security tab (code scanning). The required checks
+for merging stay `test` and `analyze`; findings from the other scanners are triaged like CodeQL's:
+fix them, or dismiss them in GitHub with a written reason.
+
 **Gate:** no high or critical finding left open. See [security.md](security.md) for what each
-protection covers.
+protection covers, and [SECURITY.md](../SECURITY.md) for how people report problems privately.
 
 ## 7. Security patch
 
@@ -122,13 +132,21 @@ workaround in the CHANGELOG and `docs/security.md`.
    also attaches `latest.yml` and the installer's `.blockmap`: installed copies update from them.
 4. Check the draft (notes, both files attached), then publish it on GitHub.
 
+**Two versions merged together** (for example a later pull request merged before an earlier one
+it was built on): each version is still released on its own. Tag the last commit of the earlier
+version (its `package.json` has that version, and it is in main's history) and the merge commit
+for the later one; publish the earlier one first, then the later one as *latest*.
+
 **Gate:** the release is public and its download runs on a clean Windows user profile.
 
 ## 10. Maintain
 
 - **Dependabot** opens pull requests for dependency updates weekly (Electron security fixes come
   this way). Each one goes through CI; Electron major updates go through stage 4 in full.
-- **CodeQL** re-checks the code weekly with new rules.
+- **CodeQL** and the **free scanners** (`security-scans.yml`) re-check the code weekly with new rules
+  and advisories.
+- **Security reports** arrive privately (GitHub private vulnerability reporting, see `SECURITY.md`);
+  they start at stage 0 as hotfixes.
 - GitHub issues, and every new idea, go back to stage 0.
 - Rolling back: every version has a tag and a release, so `git checkout vX.Y.Z` or the older
   installer gives you the previous version.

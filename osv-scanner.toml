@@ -1,0 +1,11 @@
+# OSV-Scanner exceptions (security-scans.yml). Each one says why and expires, so it is looked at again.
+
+[[IgnoredVulns]]
+id = "GHSA-hp3w-g68c-fv3c" # CVE-2026-97058, sprintf-js <= 1.1.3: slow with a huge precision in a format string
+ignoreUntil = 2027-01-11T00:00:00Z
+reason = "Build-time only (electron-builder > @electron/get > global-agent > roarr), not in the app; its format strings are fixed; no fixed version exists yet"
+
+[[IgnoredVulns]]
+id = "CVE-2026-97058"
+ignoreUntil = 2027-01-11T00:00:00Z
+reason = "Same advisory as GHSA-hp3w-g68c-fv3c"

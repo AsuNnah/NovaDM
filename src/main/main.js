@@ -226,7 +226,8 @@ function createWindow(kind = 'normal', { restore = true } = {}) {
   w.on('resize', () => inCtx(kind, layout));
   w.on('focus', () => useCtx(kind));
   // Open links that must leave the app (none by default) in the OS browser.
-  cv.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  // Only web and mail links go to the default program: other schemes (file:, ms-*: …) can start programs.
+  cv.webContents.setWindowOpenHandler(({ url }) => { if (/^(https?|mailto):/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
 
   if (priv) { w.on('closed', closePrivateWindow); return; }
   w.on('close', (e) => {
