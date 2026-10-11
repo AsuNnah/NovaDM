@@ -267,14 +267,14 @@ function dlRow(d) {
 function renderShields() {
   content.innerHTML = '';
   const s = shieldsData;
-  content.append(el('div', 'hdr', '<div class="t">Shields</div>'));
+  content.append(el('div', 'hdr', '<div class="t">Guard</div>'));
   const wrap = el('div'); wrap.style.padding = '12px 14px';
   const site = el('div'); site.style.cssText = 'color:var(--fg2);font-size:12px;margin-bottom:6px;'; site.textContent = s.site || 'this page';
   const big = el('div'); big.style.cssText = 'font-size:26px;font-weight:600;'; big.textContent = s.count || 0;
   const sub = el('div'); sub.style.cssText = 'color:var(--fg3);font-size:12px;margin-bottom:14px;'; sub.textContent = 'items blocked on this page';
   wrap.append(site, big, sub);
   const toggle = el('button', 'btn'); toggle.style.width = '100%';
-  toggle.textContent = s.siteEnabled ? 'Shields are UP for this site' : 'Shields are DOWN for this site';
+  toggle.textContent = s.siteEnabled ? 'Guard is ON for this site' : 'Guard is OFF for this site';
   if (s.siteEnabled) toggle.classList.add('pri');
   toggle.onclick = () => api.call('shields.toggleSite');
   wrap.append(toggle);

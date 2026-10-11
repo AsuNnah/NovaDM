@@ -27,6 +27,8 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ### Improved
 - **The menu has icons**, is grouped like Chrome's and Brave's, and shows each item's shortcut.
+- **Shields is now called Guard** (toolbar button, panel and settings): NovaDM's own name for its
+  ad, tracker and fingerprinting protection.
 
 ### Documentation and licensing
 - The installed app includes NovaDM's license (`LICENSE.NovaDM.txt` next to `NovaDM.exe`), beside
