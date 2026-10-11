@@ -56,6 +56,9 @@ Fingerprinting protection and the leaked-password check also run in frames embed
   sites.
 - There is no Google Safe Browsing (Electron does not include it). The phishing lists above catch
   reported sites; a brand-new phishing page may not be on them yet.
+- Local HTML files you open yourself (Ctrl+O) get Electron's usual extra `file://` access (the
+  stricter setting broke NovaDM's own pages in 1.3.0–1.4.0). Planned: NovaDM's pages on their own
+  `app://` address, then the stricter setting again.
 - The toolbar view is not sandboxed yet (its extension buttons need a preload that can't run
   sandboxed); the menu, prompts and find bar are.
 - The installer is not code-signed yet, so Windows SmartScreen may warn on first run.

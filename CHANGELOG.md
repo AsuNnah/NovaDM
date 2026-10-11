@@ -6,6 +6,22 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.4.1] — 2026-10-11
+
+### Fixed
+- **The installed NovaDM showed an empty black toolbar and a white page** (1.3.0–1.4.0 installer
+  and portable builds; running from source was fine). A security switch added in 1.3.0
+  (`GrantFileProtocolExtraPrivileges` off) stopped NovaDM's own pages (toolbar, panels, new tab,
+  find bar) from loading out of the app package. It is back to Electron's default. Installed 1.4.0
+  updates itself to 1.4.1 when NovaDM closes; 1.3.x needs the new installer once.
+- The release checks (`tools/check-build-security.js`) now also start the built app and fail if
+  any of NovaDM's own pages doesn't load; the check fails on the 1.4.0 build and passes on 1.4.1.
+
+### Security
+- With that switch at its default, a local HTML file you open yourself (Ctrl+O) gets Electron's
+  usual extra file access; web pages are not affected. Planned: serve NovaDM's pages from their own
+  `app://` address so the switch can be turned off again.
+
 ## [1.4.0] — 2026-10-10
 
 ### New look
