@@ -3,8 +3,11 @@
 // restoring tabs, address-bar suggestions, reader view, unloading idle tabs, the size of NovaDM's
 // own screens, Shields rules and "clear when NovaDM closes".
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { WebContentsView, Menu, dialog, nativeImage } = require('electron');
+const { app, WebContentsView, Menu, dialog, nativeImage } = require('electron');
+const diagnostics = require('./diagnostics');
+const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeeping');
 const { History, Bookmarks, TabSession } = require('./library');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
@@ -63,6 +66,23 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     const minutes = Number(settings.get('discardTabsAfter')) || 0;
     if (minutes > 0) browser.discardIdle(minutes);
   }, 60000).unref();
+
+  // ---- memory overload protection: unload background tabs while memory is short ----
+  const memoryCheck = () => {
+    if (settings.get('memorySaver') === false) return [];
+    const mem = { freeBytes: os.freemem(), totalBytes: os.totalmem(), appBytes: appMemoryBytes(app.getAppMetrics()) };
+    if (!underPressure(mem)) return [];
+    const ids = browser.discardForMemory(3); // a few at a time, so it never empties every window at once
+    if (ids.length) diagnostics.add('note', [`memory low (${Math.round((mem.freeBytes / mem.totalBytes) * 100)}% of the PC free, NovaDM ${Math.round(mem.appBytes / 1048576)} MB): unloaded ${ids.length} background tab(s)`]);
+    return ids;
+  };
+  setInterval(memoryCheck, 15000).unref();
+
+  // ---- leftovers from a crash (temp folders, Chromium's half-written files) ----
+  setTimeout(() => {
+    const removed = cleanLeftovers({ userDataDir });
+    if (removed.length) diagnostics.add('note', [`removed ${removed.length} leftover temp file(s) or folder(s)`]);
+  }, 20000).unref();
 
   // ---- find in page ----
   /** A find bar for a window: { view, open }, made current with useFind. */
@@ -350,7 +370,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   return {
     history, bookmarks, tabSession, shields, handlers,
     chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData,
-    toggleActiveBookmark, openReader, bookmarkState,
+    toggleActiveBookmark, openReader, bookmarkState, memoryCheck,
     get findView() { return find.view; },
     get findOpen() { return find.open; },
     useFind(f) { find = f; },

@@ -417,7 +417,10 @@ async function styleUi(wc) {
   if (!wc || wc.isDestroyed()) return;
   const old = uiCssKeys.get(wc.id);
   if (old) { try { await wc.removeInsertedCSS(old); } catch {} }
-  try { uiCssKeys.set(wc.id, await wc.insertCSS(accentCss())); } catch {}
+  try {
+    if (!uiCssKeys.has(wc.id)) { const id = wc.id; wc.once('destroyed', () => uiCssKeys.delete(id)); }
+    uiCssKeys.set(wc.id, await wc.insertCSS(accentCss()));
+  } catch {}
 }
 function applyAppearance() {
   nativeTheme.themeSource = ['dark', 'light'].includes(settings.get('theme')) ? settings.get('theme') : 'system';

@@ -274,6 +274,19 @@ class Browser extends EventEmitter {
     return out;
   }
 
+  /**
+   * Memory overload protection: unload up to `max` background tabs, the longest unused first.
+   * Never the open tab of a window, a tab playing sound or loading, or one marked to stay loaded.
+   */
+  discardForMemory(max = 3) {
+    const candidates = [...this.tabs.values()]
+      .filter((t) => !t.discarded && !this.isActive(t) && t.wc && !t.wc.isDestroyed() && !t.loading && !t.keepLoaded && !t.wc.isCurrentlyAudible())
+      .sort((a, b) => (a.hiddenAt || 0) - (b.hiddenAt || 0));
+    const out = [];
+    for (const t of candidates) { if (out.length >= max) break; if (this.discard(t.id)) out.push(t.id); }
+    return out;
+  }
+
   wireTab(tab) {
     const wc = tab.wc;
     const update = () => this.refreshTabState(tab);

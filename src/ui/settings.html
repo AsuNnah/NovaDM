@@ -93,6 +93,10 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <div class="lbl"><b>Unload inactive tabs</b><span>Frees the memory and CPU of tabs you haven't looked at for a while. They stay in the tab strip and load again when clicked, back where you were. Tabs playing sound are kept.</span></div>
       <select id="discardTabsAfter"><option value="0">Never</option><option value="15">After 15 minutes</option><option value="30">After 30 minutes</option><option value="60">After 1 hour</option><option value="120">After 2 hours</option></select>
     </div>
+    <div class="row">
+      <div class="lbl"><b>Unload tabs when memory is low</b><span>When Windows is short of memory, or NovaDM uses a large share of it, background tabs are unloaded at once, the longest unused first. The tab you're on, tabs playing sound and tabs still loading are kept.</span></div>
+      <label class="sw"><input type="checkbox" id="memorySaver"><i></i></label>
+    </div>
   </div>
 
   <h2>Privacy and security</h2>

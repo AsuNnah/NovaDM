@@ -31,8 +31,9 @@ class JsonStore {
       // The last save couldn't replace the file: its temp file holds the newest data.
       this.data = tmp.data;
       this.flush();
-    } else if (!main.error) {
-      this.data = main.data;
+    } else {
+      if (!main.error) this.data = main.data;
+      try { fs.unlinkSync(file + '.tmp'); } catch {} // an older or broken leftover, not needed
     }
   }
 

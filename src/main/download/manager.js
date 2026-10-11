@@ -53,6 +53,8 @@ class DownloadManager extends EventEmitter {
 
   load() {
     for (const rec of this.store.data.items || []) {
+      // A video rewrite (optimizeVideo) cut short by closing NovaDM: the video itself is complete.
+      if (rec.state === 'done' && rec.savePath) { try { fs.rmSync(rec.savePath + '.faststart.part', { force: true }); } catch {} }
       // A conversion that was running when NovaDM closed didn't finish.
       if (rec.kind === 'convert' && rec.state !== 'done') { rec.state = 'error'; rec.error = 'Interrupted when NovaDM closed'; }
       // Downloads that were running or waiting when the app closed come back paused (and are

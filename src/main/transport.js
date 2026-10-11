@@ -6,6 +6,7 @@
 //             cookies copied from the browsing session, the page's replayed headers, Secure DNS through
 //             session.resolveHost(), the session's proxy (HTTP proxies), and Windows' certificate store.
 // Both return the same connection shape as net.open(): { res, status, headers, finalUrl, abort }.
+const { capSize } = require('./housekeeping');
 const tls = require('tls');
 const { Readable } = require('stream');
 const net = require('./net');
@@ -52,7 +53,7 @@ class Transport {
   }
 
   blockDirect(url, reason) {
-    try { this.directBlocked.set(new URL(url).hostname, reason); } catch {}
+    try { this.directBlocked.set(new URL(url).hostname, reason); capSize(this.directBlocked); } catch {}
   }
 
   /**
