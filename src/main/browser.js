@@ -43,6 +43,16 @@ class Browser extends EventEmitter {
     this.incognitoSession = electronSession.fromPartition('novadm-incognito');
     this._sessionsReady = new Set();
     this.closed = []; // recently closed tabs (Ctrl+Shift+T)
+    // Certificate errors, as in Chrome: the warning page's "Proceed (unsafe)" trusts that site with
+    // that exact certificate until NovaDM closes (private windows apart). A changed certificate warns again.
+    this.certSeen = new Map(); // 'n|host' or 'p|host' -> fingerprint of the certificate it showed last
+    this.certAllowed = new Set(); // 'n|host|fingerprint'
+    app.on('certificate-error', (event, wc, url, _error, cert, callback) => {
+      const key = certKey(wc.session === this.incognitoSession, url);
+      if (key && cert && this.certAllowed.has(`${key}|${cert.fingerprint}`)) { event.preventDefault(); callback(true); return; }
+      if (key && cert) this.certSeen.set(key, cert.fingerprint);
+      callback(false);
+    });
     this._nonGet = new Map(); // url -> time: recent POST/PUT responses (their downloads can't be re-requested)
     // Messages from the detect preload in any tab (page meta, detected media, EME, nav).
     ipcMain.on('novadm:tab', (event, msg) => {
@@ -172,7 +182,7 @@ class Browser extends EventEmitter {
     this.tidyOrder();
     if (lazy && background) {
       tab.url = normalizeUrl(url, this.settings);
-      tab.secure = tab.url.startsWith('https:');
+      tab.secure = tab.url.startsWith('https:') && !this.certBypassed(tab, tab.url);
       tab.discarded = true;
     } else {
       this.makeView(tab);
@@ -299,7 +309,7 @@ class Browser extends EventEmitter {
       // The error page keeps showing the address that failed, so Reload/Enter retries it.
       tab.url = internal === 'novadm://error' && tab.failed ? tab.failed.url : (internal || url);
       if (internal !== 'novadm://error') tab.failed = null;
-      tab.secure = url.startsWith('https:');
+      tab.secure = url.startsWith('https:') && !this.certBypassed(tab, url); // no lock after "Proceed (unsafe)"
       tab.readable = false;
       if (tab.ampFrom && url !== tab.ampFrom) {
         // Arrived on the real page: drop the AMP page from the back list so Back doesn't bounce.
@@ -618,6 +628,19 @@ class Browser extends EventEmitter {
     };
   }
 
+  /** "Proceed (unsafe)": trust the certificate the site showed last; false when there is none. */
+  allowCert(tab, url) {
+    const key = certKey(tab.incognito, url);
+    const fp = key && this.certSeen.get(key);
+    if (!fp) return false;
+    this.certAllowed.add(`${key}|${fp}`);
+    return true;
+  }
+  certBypassed(tab, url) {
+    const key = certKey(tab.incognito, url);
+    return !!key && [...this.certAllowed].some((x) => x.startsWith(key + '|'));
+  }
+
   // ---- pinned tabs, tab groups and the tab menu (order rules: tab-groups.js) ----
   tidyOrder() { this.order = normalizeOrder(this.order, (x) => this.tabs.get(x)); }
   isFolded(tab) { const g = tab && tab.groupId != null && this.tabGroups.get(tab.groupId); return !!(g && g.collapsed); }
@@ -792,6 +815,10 @@ function guessMime(m) {
   const ext = (/\.([a-z0-9]{1,5})(\?|#|$)/i.exec(m.url) || [])[1];
   const map = { m3u8: 'application/vnd.apple.mpegurl', mpd: 'application/dash+xml', mp4: 'video/mp4', webm: 'video/webm', mkv: 'video/x-matroska', mp3: 'audio/mpeg', m4a: 'audio/mp4', vtt: 'text/vtt', srt: 'application/x-subrip' };
   return map[(ext || '').toLowerCase()] || (m.kind === 'audio' ? 'audio/mpeg' : m.kind === 'video' ? 'video/mp4' : 'application/octet-stream');
+}
+
+function certKey(incognito, url) {
+  try { return `${incognito ? 'p' : 'n'}|${new URL(url).host.toLowerCase()}`; } catch { return ''; }
 }
 
 function originOf(u) { try { return new URL(u).origin; } catch { return u || ''; } }

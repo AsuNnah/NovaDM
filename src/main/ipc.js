@@ -407,6 +407,14 @@ function registerIpc(ctx) {
       }
       getManagers().browser.navigate(t.id, 'novadm://newtab');
     },
+    // "Proceed to <site> (unsafe)" on the certificate warning (error.html): that certificate, until NovaDM closes.
+    'cert.proceed': (a) => {
+      const { browser } = getManagers();
+      const t = browser.activeTab();
+      if (!t || !/^https:\/\//i.test(String(a.url || '')) || !browser.allowCert(t, a.url)) return { ok: false };
+      browser.navigate(t.id, a.url);
+      return { ok: true };
+    },
     // "Continue anyway" on the deceptive-site warning (error.html): this site, until NovaDM closes.
     'phishing.allow': (a) => {
       const { adblock, browser } = getManagers();
