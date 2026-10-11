@@ -563,9 +563,19 @@ function handleShortcut(tab, action) {
     case 'forward': return browser.forward(tab.id);
     case 'home': return browser.navigate(tab.id, settings.get('homepage') || 'novadm://newtab');
     case 'next-tab': case 'prev-tab': {
+      // Tabs in folded groups are skipped (as in Chrome), unless every other tab is folded.
       const n = browser.order.length;
-      return pick((browser.order.indexOf(tab.id) + (action === 'next-tab' ? 1 : n - 1)) % n);
+      const at = browser.order.indexOf(tab.id);
+      for (let s = 1; s < n; s++) {
+        const i = (at + (action === 'next-tab' ? s : n - s)) % n;
+        if (!browser.isFolded(browser.tabs.get(browser.order[i]))) return pick(i);
+      }
+      return pick((at + (action === 'next-tab' ? 1 : n - 1)) % n);
     }
+    case 'move-tab-left': case 'move-tab-right': return browser.stepTab(tab.id, action === 'move-tab-left' ? -1 : 1);
+    case 'group-new': return browser.emit('group-edit', browser.addToGroup(tab.id), browser.kindOf(tab));
+    case 'group-remove': return browser.removeFromGroup(tab.id);
+    case 'group-fold': { const g = tab.groupId != null && browser.groups[browser.kindOf(tab)].tabGroups.get(tab.groupId); return g && browser.updateGroup(g.id, { collapsed: !g.collapsed }); }
     case 'tab-last': return pick(browser.order.length - 1);
     case 'fullscreen': return win && win.setFullScreen(!win.isFullScreen());
     case 'print': return wc && wc.print();

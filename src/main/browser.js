@@ -7,7 +7,7 @@ const { EventEmitter } = require('events');
 const { app, WebContentsView, session: electronSession, ipcMain } = require('electron');
 const net = require('./net');
 const { shortcutFor } = require('./shortcuts');
-const { normalizeOrder, nextColor, cleanGroup, COLOR_HEX } = require('./tab-groups');
+const { normalizeOrder, nextColor, cleanGroup, stepTab, COLOR_HEX } = require('./tab-groups');
 
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
 const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
@@ -664,10 +664,10 @@ class Browser extends EventEmitter {
     if (!tab || tab.groupId == null) return;
     const gid = tab.groupId;
     tab.groupId = null;
-    this.order.splice(this.order.indexOf(id), 1);
+    const at = this.order.indexOf(id);
+    this.order.splice(at, 1);
     const last = this.order.map((x) => this.tabs.get(x).groupId).lastIndexOf(gid);
-    if (last >= 0) this.order.splice(last + 1, 0, id);
-    else this.order.splice(this.order.length, 0, id);
+    this.order.splice(last >= 0 ? last + 1 : at, 0, id); // the group's only tab stays where it is
     this.groupsChanged();
   }
 
@@ -679,6 +679,27 @@ class Browser extends EventEmitter {
     this.order.splice(Math.max(0, Math.min(Number(index) || 0, this.order.length)), 0, id);
     if (!tab.pinned) tab.groupId = gid != null && this.tabGroups.has(gid) ? gid : null;
     this.groupsChanged();
+  }
+
+  /** Keyboard move (Ctrl+Shift+PgUp / PgDn), see stepTab. */
+  stepTab(id, dir) {
+    const r = stepTab(this.order, (x) => this.tabs.get(x), (gid) => !!(this.tabGroups.get(gid) || {}).collapsed, id, dir);
+    if (!r) return;
+    this.order = r.order;
+    this.tabs.get(id).groupId = r.groupId;
+    this.groupsChanged();
+  }
+
+  /** Drag a group's chip: its tabs move together to `index` (in the order without them). */
+  moveGroup(gid, index) {
+    this.inGroup(this.groupKind(gid), () => {
+      const members = this.order.filter((x) => this.tabs.get(x).groupId === gid);
+      if (!members.length) return;
+      const rest = this.order.filter((x) => !members.includes(x));
+      rest.splice(Math.max(0, Math.min(Number(index) || 0, rest.length)), 0, ...members);
+      this.order = rest;
+      this.groupsChanged();
+    });
   }
 
   /** Rename, recolour, fold or unfold a group. Folding moves away from a tab inside it. */
@@ -759,7 +780,7 @@ class Browser extends EventEmitter {
 
 // Methods for one tab work in that tab's window (its order, active tab, size and parent view).
 for (const m of ['makeView', 'revive', 'discard', 'selectTab', 'closeTab', 'refreshTabState', 'serializeTab',
-  'setPinned', 'addToGroup', 'removeFromGroup', 'moveTab', 'duplicateTab', 'closeOthers', 'toggleMute']) {
+  'setPinned', 'addToGroup', 'removeFromGroup', 'moveTab', 'stepTab', 'duplicateTab', 'closeOthers', 'toggleMute']) {
   const f = Browser.prototype[m];
   Browser.prototype[m] = function (x, ...rest) {
     const tab = typeof x === 'object' && x ? x : this.tabs.get(x);

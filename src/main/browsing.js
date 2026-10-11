@@ -280,8 +280,8 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
         { type: 'separator' },
         others.length
           ? { label: 'Add tab to group', submenu: [{ label: 'New group', click: newGroup }, { type: 'separator' }, ...others.map((g) => ({ label: groupName(g), icon: swatch(g.color), click: () => browser.addToGroup(t.id, g.id) }))] }
-          : { label: 'Add tab to new group', click: newGroup },
-        ...(t.groupId != null ? [{ label: 'Remove from group', click: () => browser.removeFromGroup(t.id) }] : []),
+          : { label: 'Add tab to new group', accelerator: 'CmdOrCtrl+Shift+K', registerAccelerator: false, click: newGroup },
+        ...(t.groupId != null ? [{ label: 'Remove from group', accelerator: 'CmdOrCtrl+Shift+U', registerAccelerator: false, click: () => browser.removeFromGroup(t.id) }] : []),
         { type: 'separator' },
         { label: 'Reload', accelerator: 'CmdOrCtrl+R', registerAccelerator: false, click: () => browser.reload(t.id) },
         { label: 'Duplicate', click: () => browser.duplicateTab(t.id) },
@@ -303,7 +303,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       popup([
         { label: 'Rename…', click: () => browser.emit('group-edit', g.id, kind) },
         { label: 'Colour', submenu: COLORS.map((c) => ({ label: c[0].toUpperCase() + c.slice(1), icon: swatch(c), type: 'radio', checked: g.color === c, click: () => browser.updateGroup(g.id, { color: c }) })) },
-        { label: g.collapsed ? 'Expand' : 'Collapse', click: () => browser.updateGroup(g.id, { collapsed: !g.collapsed }) },
+        { label: g.collapsed ? 'Expand' : 'Collapse', accelerator: 'CmdOrCtrl+Shift+L', registerAccelerator: false, click: () => browser.updateGroup(g.id, { collapsed: !g.collapsed }) },
         { type: 'separator' },
         { label: 'New tab in group', click: () => browser.createTab({ incognito: kind === 'private', openerPartition: last }) },
         { label: 'Ungroup', click: () => browser.ungroup(g.id) },
@@ -313,6 +313,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'tabs.groupUpdate': (a) => browser.updateGroup(String(a.id), { ...(a.title != null ? { title: String(a.title) } : {}), ...(a.collapsed != null ? { collapsed: !!a.collapsed } : {}) }),
     'tabs.move': (a) => browser.moveTab(Number(a.id), Number(a.index), a.groupId != null ? String(a.groupId) : null),
     'tabs.addToGroup': (a) => browser.addToGroup(Number(a.id), String(a.groupId)),
+    'tabs.moveGroup': (a) => browser.moveGroup(String(a.id), Number(a.index)),
     'bookmarks.listMenu': (a) => {
       const list = a.folder ? bookmarks.items.filter((b) => b.folder === a.folder) : bookmarks.items.filter((b) => (a.ids || []).includes(b.id));
       if (list.length) popup(bookmarkItems(list), a.x, a.y);

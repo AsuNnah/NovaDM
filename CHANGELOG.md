@@ -20,6 +20,11 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
     Private windows have groups too (not kept, like everything private).
 - **Drag and drop in the tab strip:** drag a tab to reorder it; dropping it on a grouped tab or on
   a group's chip puts it in that group, dropping it elsewhere takes it out.
+- **Drag a whole group** by its chip: it moves with all its tabs, and never splits another group.
+- **Keyboard shortcuts for groups** (also listed with Ctrl+/ and shown in the tab menus):
+  Ctrl+Shift+K adds the tab to a new group, Ctrl+Shift+U takes it out, Ctrl+Shift+L folds or unfolds
+  its group. Ctrl+Shift+PgUp / PgDn move the tab left / right as in Chrome: at a group's edge the tab
+  first leaves or enters the group, and a folded group is jumped over. Ctrl+Tab skips folded tabs.
 - **Pinned tabs:** right-click → *Pin*. Pinned tabs show only their icon, stay on the left and come
   back on start.
 - **Tab menu** (right-click a tab): New tab to the right, Add to group / Remove from group, Reload,

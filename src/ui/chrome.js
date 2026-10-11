@@ -13,6 +13,7 @@ function call(m, a) { return api.call(m, a); }
 const tabEls = new Map();
 const chipEls = new Map(); // tab group id -> its chip (name and colour, before the group's tabs)
 let dragId = null; // the tab being dragged
+let dragGroup = null; // or the group being dragged (by its chip)
 
 function makeTabEl(id) {
   const el = document.createElement('div');
@@ -35,33 +36,58 @@ function makeTabEl(id) {
   // Drag and drop: the tab goes before or after the tab it is dropped on, into that tab's group.
   el.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); el.classList.add('dragging'); });
   el.addEventListener('dragend', () => { dragId = null; el.classList.remove('dragging'); clearDropMarks(); });
+  // Not a drop target for itself, or for the group being dragged when it is one of its tabs.
+  const accepts = () => {
+    if (dragId != null) return dragId !== id;
+    if (dragGroup == null) return false;
+    const t = tabs.find((x) => x.id === id);
+    return !(t && t.group && t.group.id === dragGroup);
+  };
   el.addEventListener('dragover', (e) => {
-    if (dragId == null || dragId === id) return;
+    if (!accepts()) return;
     e.preventDefault();
     e.stopPropagation();
     clearDropMarks();
     el.classList.add(dropAfter(e, el) ? 'drop-after' : 'drop-before');
   });
   el.addEventListener('drop', (e) => {
-    if (dragId == null || dragId === id) return;
+    if (!accepts()) return;
     e.preventDefault();
     e.stopPropagation();
-    const rest = tabs.filter((t) => t.id !== dragId);
     const target = tabs.find((t) => t.id === id);
-    const index = rest.findIndex((t) => t.id === id) + (dropAfter(e, el) ? 1 : 0);
-    call('tabs.move', { id: dragId, index, groupId: target && target.group ? target.group.id : null });
+    if (dragGroup != null) call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, target, dropAfter(e, el)) });
+    else {
+      const rest = tabs.filter((t) => t.id !== dragId);
+      const index = rest.findIndex((t) => t.id === id) + (dropAfter(e, el) ? 1 : 0);
+      call('tabs.move', { id: dragId, index, groupId: target && target.group ? target.group.id : null });
+    }
     clearDropMarks();
   });
   return el;
 }
 const dropAfter = (e, el) => { const r = el.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
+/** Where a dragged group goes (index in the order without its tabs): beside the target tab, or
+ * beside the target's whole group, so a group is never split. No target: at the end. */
+function groupDropIndex(gid, target, after) {
+  const rest = tabs.filter((t) => !(t.group && t.group.id === gid));
+  if (!target) return rest.length;
+  const ids = target.group ? rest.filter((t) => t.group && t.group.id === target.group.id).map((t) => t.id) : [target.id];
+  return after ? rest.findIndex((t) => t.id === ids[ids.length - 1]) + 1 : rest.findIndex((t) => t.id === ids[0]);
+}
 function clearDropMarks() { for (const x of document.querySelectorAll('.drop-before, .drop-after, .drop-into')) x.classList.remove('drop-before', 'drop-after', 'drop-into'); }
 
 function makeChipEl(gid) {
   const el = document.createElement('div');
   el.className = 'tgroup';
   el.dataset.gid = gid;
+  el.draggable = true;
   el.innerHTML = '<span class="gname"></span>';
+  // Drag the chip to move the whole group.
+  el.addEventListener('dragstart', (e) => {
+    if (el.querySelector('input')) { e.preventDefault(); return; }
+    dragGroup = gid; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); el.classList.add('dragging');
+  });
+  el.addEventListener('dragend', () => { dragGroup = null; el.classList.remove('dragging'); clearDropMarks(); });
   el.addEventListener('mousedown', (e) => { if (e.button === 0 && !el.querySelector('input')) e.preventDefault(); });
   el.addEventListener('click', () => {
     if (el.querySelector('input')) return;
@@ -70,9 +96,19 @@ function makeChipEl(gid) {
   });
   el.addEventListener('contextmenu', (e) => { e.preventDefault(); call('tabs.groupMenu', { id: gid, x: e.clientX, y: e.clientY }); });
   el.addEventListener('dblclick', () => editGroup(gid));
-  // A tab dropped on the chip joins the group, at its end.
-  el.addEventListener('dragover', (e) => { if (dragId == null) return; e.preventDefault(); e.stopPropagation(); clearDropMarks(); el.classList.add('drop-into'); });
-  el.addEventListener('drop', (e) => { if (dragId == null) return; e.preventDefault(); e.stopPropagation(); call('tabs.addToGroup', { id: dragId, groupId: gid }); clearDropMarks(); });
+  // A tab dropped on the chip joins the group, at its end; another group dropped on it goes before it.
+  el.addEventListener('dragover', (e) => {
+    if (dragId == null && (dragGroup == null || dragGroup === gid)) return;
+    e.preventDefault(); e.stopPropagation(); clearDropMarks();
+    el.classList.add(dragId != null ? 'drop-into' : 'drop-before');
+  });
+  el.addEventListener('drop', (e) => {
+    if (dragId == null && (dragGroup == null || dragGroup === gid)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (dragId != null) call('tabs.addToGroup', { id: dragId, groupId: gid });
+    else call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, tabs.find((t) => t.group && t.group.id === gid), false) });
+    clearDropMarks();
+  });
   return el;
 }
 const groupOf = (gid) => (tabs.find((t) => t.group && t.group.id === gid) || {}).group || null;
@@ -166,11 +202,12 @@ function renderTabs() {
   });
 }
 // A tab dropped on the empty part of the strip goes to the end, outside any group.
-$('tabs').addEventListener('dragover', (e) => { if (dragId != null) e.preventDefault(); });
+$('tabs').addEventListener('dragover', (e) => { if (dragId != null || dragGroup != null) e.preventDefault(); });
 $('tabs').addEventListener('drop', (e) => {
-  if (dragId == null) return;
+  if (dragId == null && dragGroup == null) return;
   e.preventDefault();
-  call('tabs.move', { id: dragId, index: tabs.length - 1, groupId: null });
+  if (dragGroup != null) call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, null, true) });
+  else call('tabs.move', { id: dragId, index: tabs.length - 1, groupId: null });
   clearDropMarks();
 });
 

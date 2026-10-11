@@ -14,8 +14,8 @@ function shortcutFor(input) {
     if (/^[1-8]$/.test(k) && !shift) return 'tab-' + k;
     if (k === '9' && !shift) return 'tab-last';
     if (k === 'tab') return shift ? 'prev-tab' : 'next-tab';
-    if (k === 'pagedown') return 'next-tab';
-    if (k === 'pageup') return 'prev-tab';
+    if (k === 'pagedown') return shift ? 'move-tab-right' : 'next-tab';
+    if (k === 'pageup') return shift ? 'move-tab-left' : 'prev-tab';
     if (k === 'f4') return 'close-tab';
     if (k === 'delete' && shift) return 'clear-data';
     if (k === '/' || k === '?') return 'shortcut-list';
@@ -23,6 +23,7 @@ function shortcutFor(input) {
       return {
         t: 'reopen-tab', n: 'new-private', w: 'close-window', r: 'hard-reload', d: 'bookmark-all', b: 'bookmarks-bar',
         o: 'bookmarks', a: 'tab-search', i: 'devtools', j: 'devtools-console', c: 'devtools-inspect', g: 'find-prev',
+        k: 'group-new', u: 'group-remove', l: 'group-fold', // tab groups (not taken by Chrome or Brave)
       }[k] || null;
     }
     return {
@@ -51,7 +52,8 @@ function shortcutFor(input) {
 }
 
 const LIST = [
-  ['Tabs', 'Ctrl+T / Ctrl+N new tab · Ctrl+Shift+N private window · Ctrl+W close · Ctrl+Shift+T reopen closed tab · Ctrl+Tab / Ctrl+PgDn next · Ctrl+Shift+Tab / Ctrl+PgUp previous · Ctrl+1…8 tab n · Ctrl+9 last tab · Ctrl+Shift+A search tabs · Ctrl+Shift+W close window'],
+  ['Tabs', 'Ctrl+T / Ctrl+N new tab · Ctrl+Shift+N private window · Ctrl+W close · Ctrl+Shift+T reopen closed tab · Ctrl+Tab / Ctrl+PgDn next · Ctrl+Shift+Tab / Ctrl+PgUp previous · Ctrl+1…8 tab n · Ctrl+9 last tab · Ctrl+Shift+A search tabs · Ctrl+Shift+PgUp / PgDn move the tab · Ctrl+Shift+W close window'],
+  ['Tab groups', 'Ctrl+Shift+K add the tab to a new group · Ctrl+Shift+U take it out of its group · Ctrl+Shift+L fold or unfold its group · drag a group by its name to move it'],
   ['Address bar', 'Ctrl+L / Alt+D / F6 / Ctrl+K / Ctrl+E go to the address bar · Ctrl+Enter add www. and .com · Alt+Enter open in a new tab · type a site (youtube, wiki, github…) then Tab to search it'],
   ['Page', 'Alt+← / Alt+→ back / forward · F5 / Ctrl+R reload · Shift+F5 / Ctrl+Shift+R reload without cache · Esc stop · Alt+Home home page · F11 full screen · Ctrl+P print · Ctrl+S save page · Ctrl+O open a file · Ctrl + / − / 0 or Ctrl+wheel zoom'],
   ['Find', 'Ctrl+F find · F3 / Ctrl+G next · Shift+F3 / Ctrl+Shift+G previous'],
