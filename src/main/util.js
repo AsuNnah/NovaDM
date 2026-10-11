@@ -134,7 +134,7 @@ function siteOf(u) {
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function uid() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  return Date.now().toString(36) + require('crypto').randomBytes(4).toString('hex').slice(0, 6);
 }
 
 // http(s) links in a piece of text (clipboard, pasted lists), in order, without duplicates.

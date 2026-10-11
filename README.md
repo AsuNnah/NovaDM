@@ -74,8 +74,8 @@ the SHA-256 of its files so you can check your download.
 - Browser extension for Chrome, Edge and Brave (`browser-extension/`, load it unpacked)
 - Command line (`NovaDM.exe --add <link>`), `novadm://` links, and a local API with an MCP endpoint
   for AI assistants (off by default, this PC only)
-- Site extensions: small sandboxed scripts that find a site's downloads
-  ([guide](docs/site-extensions.md))
+- Site extensions: small sandboxed scripts that find a site's downloads (example in
+  `site-extensions/example`)
 
 ### Add-ons (optional, installed separately)
 
@@ -116,7 +116,7 @@ encrypted with Windows' data protection.
 **Sign-ins.** Cookies (what keeps you logged in) are encrypted on disk. When you sign in, NovaDM
 warns if the password is in a known data breach (Have I Been Pwned; only the first 5 characters of
 the password's hash are sent, never the password) or is sent without HTTPS. The app is locked down
-so other programs can't run code through it. Details, tests and limits: [docs/security.md](docs/security.md).
+so other programs can't run code through it. To report a security problem, see [SECURITY.md](SECURITY.md).
 
 Windows Firewall may ask about NovaDM the first time a page uses WebRTC (Chromium then opens a
 network port); blocking it is fine. NovaDM itself opens no network ports.
@@ -165,7 +165,6 @@ browser-extension/ the Chrome / Edge / Brave extension
 site-extensions/   an example site extension
 test/              unit tests
 tools/             in-app self-tests, benchmark, icon generator
-docs/              design notes and plans
 build/             installer customisation
 ```
 
@@ -175,7 +174,7 @@ What changed in each version: [CHANGELOG.md](CHANGELOG.md).
 
 Every feature and fix goes through the same pipeline: intake and sizing, brainstorm, plan, build,
 test, security test, release and maintenance, with automatic checks on GitHub (tests, dependency
-audit, CodeQL, build security checks, privacy check). See [docs/pipeline.md](docs/pipeline.md).
+audit, CodeQL and free security scanners, build security checks, privacy check).
 
 ## License
 

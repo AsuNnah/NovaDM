@@ -19,3 +19,6 @@ graphify-out/
 
 # Personal strings for tools/check-private.js (never published)
 .private-patterns
+
+# Design notes, plans and pipeline docs: kept on this PC only, not published
+docs/

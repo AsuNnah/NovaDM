@@ -10,11 +10,13 @@ on:
 
 permissions:
   contents: read
-  security-events: write
 
 jobs:
   analyze:
     runs-on: ubuntu-latest
+    permissions: # only this job writes results (OpenSSF Scorecard: least privilege)
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v7
       - uses: github/codeql-action/init@v4

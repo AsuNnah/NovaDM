@@ -39,5 +39,5 @@ Out of scope: problems in the add-ons themselves (yt-dlp, FFmpeg, aria2), in Ele
 (report those upstream; NovaDM ships their fixes in updates), in websites, and attacks that need
 someone who already controls the PC.
 
-How NovaDM is protected and tested: [docs/security.md](docs/security.md). How every change is
-checked before release: [docs/pipeline.md](docs/pipeline.md).
+Every change is checked before release by the tests, CodeQL and the free security scanners in
+`.github/workflows/`; their findings are in the repository's Security tab.

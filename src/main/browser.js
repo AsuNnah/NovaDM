@@ -375,7 +375,7 @@ class Browser extends EventEmitter {
       case 'novadm:dom-media':
         for (const m of payload || []) {
           this.media.onResponse(tab.id, {
-            id: 'dom-' + Math.random(), url: m.url, method: 'GET', statusCode: 200,
+            id: 'dom-' + require('crypto').randomUUID(), url: m.url, method: 'GET', statusCode: 200,
             resourceType: 'media', headers: { 'content-type': guessMime(m) },
           });
         }
