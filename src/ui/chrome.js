@@ -11,13 +11,17 @@ function call(m, a) { return api.call(m, a); }
 // Tab elements are kept and updated in place (keyed by id). Re-creating them on every update
 // would destroy the element under the mouse between mousedown and click.
 const tabEls = new Map();
+const chipEls = new Map(); // tab group id -> its chip (name and colour, before the group's tabs)
+let dragId = null; // the tab being dragged
 
 function makeTabEl(id) {
   const el = document.createElement('div');
   el.className = 'tab';
   el.dataset.id = id;
-  el.innerHTML = '<span class="inc hidden">◐</span><div class="fav"></div><div class="ttl"></div><div class="cls" title="Close tab (Ctrl+W)"></div>';
+  el.draggable = true;
+  el.innerHTML = '<span class="inc hidden">◐</span><div class="fav"></div><div class="ttl"></div><span class="mut hidden"></span><div class="cls" title="Close tab (Ctrl+W)"></div>';
   el.querySelector('.cls').innerHTML = xSvg();
+  el.querySelector('.mut').innerHTML = mutedSvg();
   const cls = el.querySelector('.cls');
   // Keep the tab from being selected when the close button is pressed.
   cls.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -27,21 +31,121 @@ function makeTabEl(id) {
     else if (e.button === 1) { e.preventDefault(); call('tabs.close', { id }); }
   });
   el.addEventListener('auxclick', (e) => e.preventDefault());
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); call('tabs.contextMenu', { id, x: e.clientX, y: e.clientY }); });
+  // Drag and drop: the tab goes before or after the tab it is dropped on, into that tab's group.
+  el.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); el.classList.add('dragging'); });
+  el.addEventListener('dragend', () => { dragId = null; el.classList.remove('dragging'); clearDropMarks(); });
+  el.addEventListener('dragover', (e) => {
+    if (dragId == null || dragId === id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    clearDropMarks();
+    el.classList.add(dropAfter(e, el) ? 'drop-after' : 'drop-before');
+  });
+  el.addEventListener('drop', (e) => {
+    if (dragId == null || dragId === id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rest = tabs.filter((t) => t.id !== dragId);
+    const target = tabs.find((t) => t.id === id);
+    const index = rest.findIndex((t) => t.id === id) + (dropAfter(e, el) ? 1 : 0);
+    call('tabs.move', { id: dragId, index, groupId: target && target.group ? target.group.id : null });
+    clearDropMarks();
+  });
   return el;
 }
+const dropAfter = (e, el) => { const r = el.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
+function clearDropMarks() { for (const x of document.querySelectorAll('.drop-before, .drop-after, .drop-into')) x.classList.remove('drop-before', 'drop-after', 'drop-into'); }
+
+function makeChipEl(gid) {
+  const el = document.createElement('div');
+  el.className = 'tgroup';
+  el.dataset.gid = gid;
+  el.innerHTML = '<span class="gname"></span>';
+  el.addEventListener('mousedown', (e) => { if (e.button === 0 && !el.querySelector('input')) e.preventDefault(); });
+  el.addEventListener('click', () => {
+    if (el.querySelector('input')) return;
+    const g = groupOf(gid);
+    if (g) call('tabs.groupUpdate', { id: gid, collapsed: !g.collapsed });
+  });
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); call('tabs.groupMenu', { id: gid, x: e.clientX, y: e.clientY }); });
+  el.addEventListener('dblclick', () => editGroup(gid));
+  // A tab dropped on the chip joins the group, at its end.
+  el.addEventListener('dragover', (e) => { if (dragId == null) return; e.preventDefault(); e.stopPropagation(); clearDropMarks(); el.classList.add('drop-into'); });
+  el.addEventListener('drop', (e) => { if (dragId == null) return; e.preventDefault(); e.stopPropagation(); call('tabs.addToGroup', { id: dragId, groupId: gid }); clearDropMarks(); });
+  return el;
+}
+const groupOf = (gid) => (tabs.find((t) => t.group && t.group.id === gid) || {}).group || null;
+
+/** Type the group's name in its chip (Enter keeps it, Esc cancels). */
+function editGroup(gid) {
+  const chip = chipEls.get(gid);
+  const g = groupOf(gid);
+  if (!chip || !g || chip.querySelector('input')) return;
+  const input = document.createElement('input');
+  input.className = 'gedit';
+  input.maxLength = 40;
+  input.value = g.title || '';
+  input.placeholder = 'Name this group';
+  input.setAttribute('aria-label', 'Group name');
+  chip.querySelector('.gname').replaceWith(input);
+  chip.classList.add('editing');
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+    const span = document.createElement('span');
+    span.className = 'gname';
+    input.replaceWith(span);
+    chip.classList.remove('editing');
+    if (save) call('tabs.groupUpdate', { id: gid, title: input.value });
+    renderTabs();
+  };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); e.stopPropagation(); });
+  input.addEventListener('blur', () => finish(true));
+  input.focus();
+  input.select();
+}
+api.on('group-edit', (d) => setTimeout(() => editGroup(d.id), 0));
 
 function renderTabs() {
   const host = $('tabs');
-  const ids = new Set(tabs.map((t) => t.id));
-  for (const [id, el] of tabEls) if (!ids.has(id)) { el.remove(); tabEls.delete(id); }
+  // The strip: each group's chip before its first tab, then the tabs.
+  const els = [];
+  const groups = new Set();
   tabs.forEach((t, i) => {
+    const g = t.group;
+    if (g && (i === 0 || !tabs[i - 1].group || tabs[i - 1].group.id !== g.id)) {
+      let chip = chipEls.get(g.id);
+      if (!chip) { chip = makeChipEl(g.id); chipEls.set(g.id, chip); }
+      chip.style.setProperty('--gc', g.hex);
+      chip.classList.toggle('collapsed', !!g.collapsed);
+      chip.classList.toggle('untitled', !g.title);
+      chip.title = `${g.title || 'Unnamed group'} — click to ${g.collapsed ? 'expand' : 'collapse'}, right-click for more`;
+      const name = chip.querySelector('.gname');
+      if (name && name.textContent !== g.title) name.textContent = g.title;
+      groups.add(g.id);
+      els.push(chip);
+    }
     let el = tabEls.get(t.id);
     if (!el) { el = makeTabEl(t.id); tabEls.set(t.id, el); }
-    if (host.children[i] !== el) host.insertBefore(el, host.children[i] || null);
+    els.push(el);
+  });
+  const ids = new Set(tabs.map((t) => t.id));
+  for (const [id, el] of tabEls) if (!ids.has(id)) { el.remove(); tabEls.delete(id); }
+  for (const [gid, el] of chipEls) if (!groups.has(gid)) { el.remove(); chipEls.delete(gid); }
+  els.forEach((el, i) => { if (host.children[i] !== el) host.insertBefore(el, host.children[i] || null); });
+  tabs.forEach((t) => {
+    const el = tabEls.get(t.id);
     el.classList.toggle('active', t.id === activeId);
     el.classList.toggle('discarded', !!t.discarded);
-    el.title = t.title || 'New tab';
+    el.classList.toggle('pinned', !!t.pinned);
+    el.classList.toggle('grouped', !!t.group);
+    el.classList.toggle('folded', !!(t.group && t.group.collapsed));
+    if (t.group) el.style.setProperty('--gc', t.group.hex); else el.style.removeProperty('--gc');
+    el.title = (t.title || 'New tab') + (t.muted ? ' (muted)' : '');
     el.querySelector('.inc').classList.toggle('hidden', !t.incognito);
+    el.querySelector('.mut').classList.toggle('hidden', !t.muted);
     const ttl = el.querySelector('.ttl');
     if (ttl.textContent !== (t.title || 'New tab')) ttl.textContent = t.title || 'New tab';
     const fav = el.querySelector('.fav');
@@ -50,11 +154,25 @@ function renderTabs() {
       fav.dataset.key = favKey;
       fav.style.backgroundImage = '';
       if (t.loading) fav.innerHTML = '<div class="spin"></div>';
-      else if (t.favicon) { fav.innerHTML = ''; fav.style.backgroundImage = `url("${cssUrl(t.favicon)}")`; }
-      else fav.innerHTML = globeSvg();
+      else if (t.favicon) {
+        fav.innerHTML = '';
+        fav.style.backgroundImage = `url("${cssUrl(t.favicon)}")`;
+        // A favicon that doesn't load shows the globe (a pinned tab is only its icon).
+        const probe = new Image();
+        probe.onerror = () => { if (fav.dataset.key === favKey) { fav.style.backgroundImage = ''; fav.innerHTML = globeSvg(); } };
+        probe.src = t.favicon;
+      } else fav.innerHTML = globeSvg();
     }
   });
 }
+// A tab dropped on the empty part of the strip goes to the end, outside any group.
+$('tabs').addEventListener('dragover', (e) => { if (dragId != null) e.preventDefault(); });
+$('tabs').addEventListener('drop', (e) => {
+  if (dragId == null) return;
+  e.preventDefault();
+  call('tabs.move', { id: dragId, index: tabs.length - 1, groupId: null });
+  clearDropMarks();
+});
 
 function setActive(tab) {
   if (!tab) return;
@@ -282,6 +400,7 @@ api.on('focus-address', (d) => {
 
 function cssUrl(u) { return String(u).replace(/["\\]/g, ''); }
 function globeSvg() { return '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>'; }
+function mutedSvg() { return '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4z"/><path d="m16 9.5 5 5M21 9.5l-5 5"/></svg>'; }
 function xSvg() { return '<svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'; }
 
 call('tabs.list').then((d) => { tabs = d.tabs || []; activeId = d.activeId; renderTabs(); });

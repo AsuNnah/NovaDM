@@ -4,9 +4,10 @@
 // own screens, Shields rules and "clear when NovaDM closes".
 const fs = require('fs');
 const path = require('path');
-const { WebContentsView, Menu, dialog } = require('electron');
+const { WebContentsView, Menu, dialog, nativeImage } = require('electron');
 const { History, Bookmarks, TabSession } = require('./library');
 const { Shields } = require('./shields');
+const { COLORS, COLOR_HEX } = require('./tab-groups');
 
 const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
@@ -41,7 +42,8 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     if (browser.shuttingDown || browser.groups.normal.closing || settings.get('restoreTabs') === false) return;
     const { order, activeId } = browser.groups.normal; // private windows are never kept
     const list = order.map((id) => browser.tabs.get(id)).filter((t) => t && !t.incognito && /^(https?|novadm):/i.test(t.url || ''));
-    tabSession.save(list, Math.max(0, list.findIndex((t) => t.id === activeId)));
+    const groups = [...browser.groups.normal.tabGroups.values()].filter((g) => list.some((t) => t.groupId === g.id));
+    tabSession.save(list, Math.max(0, list.findIndex((t) => t.id === activeId)), groups);
   }
   browser.on('tabs', (_tabs, _active, kind) => { if (kind !== 'private') saveSession(); });
 
@@ -50,7 +52,8 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     if (openUrl) return browser.createTab({ url: openUrl });
     const s = settings.get('restoreTabs') !== false ? tabSession.load() : { tabs: [] };
     if (!s.tabs.length) return browser.createTab({ url: 'novadm://newtab' });
-    const ids = s.tabs.map((t) => browser.createTab({ url: t.url, title: t.title, background: true, lazy: true }));
+    const gids = new Map(s.groups.map((g) => [g.id, browser.restoreGroup(g)])); // pinned tabs and groups come back too
+    const ids = s.tabs.map((t) => browser.createTab({ url: t.url, title: t.title, background: true, lazy: true, pinned: !!t.pinned, groupId: gids.get(t.group) ?? null }));
     browser.selectTab(ids[s.active] || ids[0]);
     return ids[s.active] || ids[0];
   }
@@ -153,6 +156,19 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     const s = scale();
     Menu.buildFromTemplate(template).popup({ window: win, x: Math.round((x || 0) * s), y: Math.round((y || 0) * s) });
   }
+  // Tab-group menus: a colour square per group, and a name for groups without one.
+  const swatches = new Map();
+  function swatch(color) {
+    if (!swatches.has(color)) {
+      const hex = COLOR_HEX[color] || '#888888';
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+      const px = Buffer.alloc(12 * 12 * 4);
+      for (let i = 0; i < px.length; i += 4) { px[i] = b; px[i + 1] = g; px[i + 2] = r; px[i + 3] = 255; } // BGRA
+      swatches.set(color, nativeImage.createFromBitmap(px, { width: 12, height: 12 }));
+    }
+    return swatches.get(color);
+  }
+  const groupName = (g) => g.title || `${g.color[0].toUpperCase()}${g.color.slice(1)} group`;
   function bookmarkItems(list) {
     return list.map((b) => ({ label: (b.title || b.url).slice(0, 60), click: () => openBookmark(b, 'here') }));
   }
@@ -252,6 +268,51 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
         { label: 'Delete', click: () => bookmarks.remove(b.id) },
       ], a.x, a.y);
     },
+    // ---- the tab strip: right-click menus, groups, drag and drop ----
+    'tabs.contextMenu': (a) => {
+      const t = browser.tabs.get(Number(a.id));
+      if (!t) return;
+      const kind = browser.kindOf(t);
+      const others = [...browser.groups[kind].tabGroups.values()].filter((g) => g.id !== t.groupId);
+      const newGroup = () => browser.emit('group-edit', browser.addToGroup(t.id), kind); // then name it
+      popup([
+        { label: 'New tab to the right', click: () => browser.createTab({ incognito: t.incognito, openerPartition: t.id }) },
+        { type: 'separator' },
+        others.length
+          ? { label: 'Add tab to group', submenu: [{ label: 'New group', click: newGroup }, { type: 'separator' }, ...others.map((g) => ({ label: groupName(g), icon: swatch(g.color), click: () => browser.addToGroup(t.id, g.id) }))] }
+          : { label: 'Add tab to new group', click: newGroup },
+        ...(t.groupId != null ? [{ label: 'Remove from group', click: () => browser.removeFromGroup(t.id) }] : []),
+        { type: 'separator' },
+        { label: 'Reload', accelerator: 'CmdOrCtrl+R', registerAccelerator: false, click: () => browser.reload(t.id) },
+        { label: 'Duplicate', click: () => browser.duplicateTab(t.id) },
+        { label: t.pinned ? 'Unpin' : 'Pin', click: () => browser.setPinned(t.id, !t.pinned) },
+        { label: t.muted ? 'Unmute tab' : 'Mute tab', enabled: !!t.wc, click: () => browser.toggleMute(t.id) },
+        { type: 'separator' },
+        { label: 'Close', accelerator: 'CmdOrCtrl+W', registerAccelerator: false, click: () => browser.closeTab(t.id) },
+        { label: 'Close other tabs', click: () => browser.closeOthers(t.id) },
+        { label: 'Close tabs to the right', click: () => browser.closeOthers(t.id, { toRight: true }) },
+        { type: 'separator' },
+        { label: 'Reopen closed tab', accelerator: 'CmdOrCtrl+Shift+T', registerAccelerator: false, enabled: browser.closed.length > 0, click: () => browser.reopenClosed() },
+      ], a.x, a.y);
+    },
+    'tabs.groupMenu': (a) => {
+      const kind = browser.groupKind(String(a.id));
+      const g = browser.groups[kind].tabGroups.get(String(a.id));
+      if (!g) return;
+      const last = browser.groups[kind].order.filter((x) => browser.tabs.get(x).groupId === g.id).pop();
+      popup([
+        { label: 'Rename…', click: () => browser.emit('group-edit', g.id, kind) },
+        { label: 'Colour', submenu: COLORS.map((c) => ({ label: c[0].toUpperCase() + c.slice(1), icon: swatch(c), type: 'radio', checked: g.color === c, click: () => browser.updateGroup(g.id, { color: c }) })) },
+        { label: g.collapsed ? 'Expand' : 'Collapse', click: () => browser.updateGroup(g.id, { collapsed: !g.collapsed }) },
+        { type: 'separator' },
+        { label: 'New tab in group', click: () => browser.createTab({ incognito: kind === 'private', openerPartition: last }) },
+        { label: 'Ungroup', click: () => browser.ungroup(g.id) },
+        { label: 'Close group', click: () => browser.closeGroup(g.id) },
+      ], a.x, a.y);
+    },
+    'tabs.groupUpdate': (a) => browser.updateGroup(String(a.id), { ...(a.title != null ? { title: String(a.title) } : {}), ...(a.collapsed != null ? { collapsed: !!a.collapsed } : {}) }),
+    'tabs.move': (a) => browser.moveTab(Number(a.id), Number(a.index), a.groupId != null ? String(a.groupId) : null),
+    'tabs.addToGroup': (a) => browser.addToGroup(Number(a.id), String(a.groupId)),
     'bookmarks.listMenu': (a) => {
       const list = a.folder ? bookmarks.items.filter((b) => b.folder === a.folder) : bookmarks.items.filter((b) => (a.ids || []).includes(b.id));
       if (list.length) popup(bookmarkItems(list), a.x, a.y);

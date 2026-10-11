@@ -6,6 +6,29 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-10-11
+
+### Added
+- **Tab groups**, as in Chrome and Brave. Right-click a tab → *Add tab to new group*, then type its
+  name. A group has a coloured chip in the tab strip and a coloured line under its tabs.
+  - Click the chip to fold the group into it (and again to open it); right-click the chip to
+    rename it, choose one of 9 colours, open a new tab in it, ungroup it or close it.
+  - Links opened from a grouped tab join its group.
+  - Opening a tab of a folded group (Ctrl+Tab, tab search, …) unfolds it; folding the group of the
+    tab you're on moves you to a tab outside it.
+  - Groups, their names, colours and folding come back with "Open the tabs from last time".
+    Private windows have groups too (not kept, like everything private).
+- **Drag and drop in the tab strip:** drag a tab to reorder it; dropping it on a grouped tab or on
+  a group's chip puts it in that group, dropping it elsewhere takes it out.
+- **Pinned tabs:** right-click → *Pin*. Pinned tabs show only their icon, stay on the left and come
+  back on start.
+- **Tab menu** (right-click a tab): New tab to the right, Add to group / Remove from group, Reload,
+  Duplicate, Pin / Unpin, Mute / Unmute tab (a muted tab shows a speaker icon), Close, Close other
+  tabs, Close tabs to the right (pinned tabs stay), Reopen closed tab.
+
+### Improved
+- A tab whose site icon doesn't load shows the globe icon instead of nothing.
+
 ## [1.4.5] — 2026-10-11
 
 ### Added

@@ -294,6 +294,8 @@ function wireEvents() {
   on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   // A new tab's page takes the keyboard when it has loaded, so the address bar is focused again then.
+  // A new or renamed tab group: its name is typed in the tab strip.
+  on('group-edit', (gid) => { chromeView.webContents.focus(); sendUI('group-edit', { id: gid }); });
   on('blank-tab', (tab) => {
     const focus = () => { if (browser.activeTab() === tab) { chromeView.webContents.focus(); sendUI('focus-address', { keep: true }); } };
     focus();

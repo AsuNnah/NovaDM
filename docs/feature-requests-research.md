@@ -53,7 +53,7 @@ Browsers (Brave community, Mozilla Connect top-voted, Vivaldi):
 |---|---|
 | **Vertical tabs** | **No** |
 | **Split view** (two pages side by side; Firefox 150 shipped "open in split tab") | **No** |
-| **Tab groups** | **No** |
+| **Tab groups** | Have since 1.5.0 (with pinned tabs, drag and drop and a tab menu) |
 | **Profiles / workspaces** | **No** (one profile + private tabs) |
 | **Sync** between PCs | **No** (export/import only) |
 | **Speed dial / quick-access tiles** on the new tab | **No** (search box only) |

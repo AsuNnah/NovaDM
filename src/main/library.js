@@ -211,14 +211,21 @@ class TabSession {
     this.store = new JsonStore(path.join(dir, 'session.json'), { tabs: [], active: 0 });
   }
 
+  /** { tabs: [{ url, title, pinned?, group? }], groups: [{ id, title, color, collapsed }], active } */
   load() {
     const d = this.store.data || {};
     const tabs = (Array.isArray(d.tabs) ? d.tabs : []).filter((t) => t && /^(https?|novadm):/i.test(t.url || ''));
-    return { tabs, active: Math.max(0, Math.min(Number(d.active) || 0, tabs.length - 1)) };
+    const groups = (Array.isArray(d.groups) ? d.groups : []).filter((g) => g && typeof g.id === 'string');
+    return { tabs, groups, active: Math.max(0, Math.min(Number(d.active) || 0, tabs.length - 1)) };
   }
 
-  save(tabs, activeIndex) {
-    this.store.data = { tabs: tabs.map((t) => ({ url: t.url, title: t.title || '' })), active: activeIndex };
+  /** tabs: Browser tabs (pinned, groupId); groups: their tab groups. */
+  save(tabs, activeIndex, groups = []) {
+    this.store.data = {
+      tabs: tabs.map((t) => ({ url: t.url, title: t.title || '', ...(t.pinned ? { pinned: true } : {}), ...(t.groupId != null ? { group: t.groupId } : {}) })),
+      groups: groups.map((g) => ({ id: g.id, title: g.title, color: g.color, collapsed: !!g.collapsed })),
+      active: activeIndex,
+    };
     this.store.save(1500);
   }
 

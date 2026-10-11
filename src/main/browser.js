@@ -7,6 +7,7 @@ const { EventEmitter } = require('events');
 const { app, WebContentsView, session: electronSession, ipcMain } = require('electron');
 const net = require('./net');
 const { shortcutFor } = require('./shortcuts');
+const { normalizeOrder, nextColor, cleanGroup, COLOR_HEX } = require('./tab-groups');
 
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
 const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
@@ -28,7 +29,8 @@ class Browser extends EventEmitter {
     // Two windows: normal tabs and private tabs each have their own window, tab order, active tab,
     // size and parent view. `cur` is the window being worked on (main.js switches it); methods that
     // act on one tab switch to that tab's window themselves (see the end of this file).
-    const group = () => ({ order: [], activeId: null, bounds: { x: 0, y: 0, width: 800, height: 600 }, parentView: null, onRestack: null, closing: false });
+    // tabGroups: the window's tab groups, id -> { id, title, color, collapsed } (tab-groups.js).
+    const group = () => ({ order: [], activeId: null, bounds: { x: 0, y: 0, width: 800, height: 600 }, parentView: null, onRestack: null, closing: false, tabGroups: new Map() });
     this.groups = { normal: group(), private: group() };
     this.cur = 'normal';
     this.ensureWindow = null; // set by main: (kind) => opens the window for that kind of tab if needed
@@ -129,6 +131,7 @@ class Browser extends EventEmitter {
   set parentView(v) { this.groups[this.cur].parentView = v; }
   get onRestack() { return this.groups[this.cur].onRestack; }
   set onRestack(v) { this.groups[this.cur].onRestack = v; }
+  get tabGroups() { return this.groups[this.cur].tabGroups; }
 
   kindOf(tab) { return tab && tab.incognito ? 'private' : 'normal'; }
   /** Run fn with `kind`'s window as the current one. */
@@ -152,16 +155,21 @@ class Browser extends EventEmitter {
     return this.inGroup(kind, () => this._createTab(opts));
   }
 
-  _createTab({ url = NEWTAB, incognito = false, background = false, openerPartition, lazy = false, title = '' } = {}) {
+  _createTab({ url = NEWTAB, incognito = false, background = false, openerPartition, lazy = false, title = '', pinned = false, groupId = null } = {}) {
     const id = ++this._seq;
+    // A link opened from a grouped tab joins that group (as in Chrome).
+    const opener = openerPartition != null ? this.tabs.get(openerPartition) : null;
+    if (groupId == null && opener && !opener.pinned) groupId = opener.groupId;
     const tab = {
       id, view: null, wc: null, wcId: null, incognito, url: '', title: title || 'New tab', favicon: '',
       loading: false, canGoBack: false, canGoForward: false, secure: false, muted: false,
       discarded: false, saved: null, hiddenAt: Date.now(), readable: false,
+      pinned: !!pinned, groupId: !pinned && groupId != null && this.tabGroups.has(groupId) ? groupId : null,
     };
     this.tabs.set(id, tab);
     if (openerPartition != null) { const i = this.order.indexOf(openerPartition); this.order.splice(i >= 0 ? i + 1 : this.order.length, 0, id); }
     else this.order.push(id);
+    this.tidyOrder();
     if (lazy && background) {
       tab.url = normalizeUrl(url, this.settings);
       tab.secure = tab.url.startsWith('https:');
@@ -530,6 +538,8 @@ class Browser extends EventEmitter {
     if (prev && prev.id !== id) { prev.hiddenAt = Date.now(); if (prev.view) prev.view.setVisible(false); }
     this.activeId = id;
     const tab = this.tabs.get(id);
+    const g = tab.groupId != null && this.tabGroups.get(tab.groupId);
+    if (g && g.collapsed) g.collapsed = false; // a tab in a folded group opens it
     if (tab.discarded) this.revive(tab);
     tab.view.setBounds(this.bounds);
     tab.view.setVisible(true);
@@ -558,9 +568,12 @@ class Browser extends EventEmitter {
     }
     if (tab.view) { try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {} }
     if (tab.wc) { try { tab.wc.close(); } catch {} }
+    this.dropEmptyGroups();
     if (this.shuttingDown || this.groups[this.cur].closing) { this.emitTabs(); return; } // window closing: no replacement tab
     if (this.activeId === id) {
-      const next = this.order[idx] || this.order[idx - 1] || null;
+      // The next tab to the right (else left), preferring one that isn't in a folded group.
+      const shown = (x) => !this.isFolded(this.tabs.get(x));
+      const next = this.order.slice(idx).find(shown) || this.order.slice(0, idx).reverse().find(shown) || this.order[idx] || this.order[idx - 1] || null;
       this.activeId = null;
       if (next != null) this.selectTab(next);
       else if (this.cur === 'private') { this.emitTabs(); this.emit('group-empty', 'private'); return; } // last private tab: the window closes
@@ -600,7 +613,138 @@ class Browser extends EventEmitter {
       canGoBack: tab.canGoBack, canGoForward: tab.canGoForward, active: tab.id === this.activeId,
       discarded: !!tab.discarded, readable: !!tab.readable,
       bookmarked: this.isBookmarked ? this.isBookmarked(tab.url) : false,
+      pinned: !!tab.pinned, muted: !!tab.muted,
+      group: tab.groupId != null && this.tabGroups.has(tab.groupId) ? { ...this.tabGroups.get(tab.groupId), hex: COLOR_HEX[this.tabGroups.get(tab.groupId).color] } : null,
     };
+  }
+
+  // ---- pinned tabs, tab groups and the tab menu (order rules: tab-groups.js) ----
+  tidyOrder() { this.order = normalizeOrder(this.order, (x) => this.tabs.get(x)); }
+  isFolded(tab) { const g = tab && tab.groupId != null && this.tabGroups.get(tab.groupId); return !!(g && g.collapsed); }
+  dropEmptyGroups() {
+    for (const gid of [...this.tabGroups.keys()]) if (!this.order.some((x) => this.tabs.get(x).groupId === gid)) this.tabGroups.delete(gid);
+  }
+  /** After pinning, grouping or moving: groups without tabs go, the order is tidied, the strip redrawn. */
+  groupsChanged() { this.dropEmptyGroups(); this.tidyOrder(); this.emitTabs(); }
+  /** The window ('normal' / 'private') a tab group belongs to. */
+  groupKind(gid) { return this.groups.private.tabGroups.has(gid) ? 'private' : 'normal'; }
+
+  setPinned(id, pinned) {
+    const tab = this.tabs.get(id);
+    if (!tab) return;
+    tab.pinned = !!pinned;
+    if (tab.pinned) tab.groupId = null; // pinned tabs are never in a group
+    this.groupsChanged();
+  }
+
+  /** Put a tab in a group, at the group's end; a new group when `gid` is empty. Returns the group id. */
+  addToGroup(id, gid) {
+    const tab = this.tabs.get(id);
+    if (!tab) return null;
+    let g = gid != null ? this.tabGroups.get(gid) : null;
+    if (!g) {
+      g = { id: 'g' + (++this._seq), ...cleanGroup({ color: nextColor([...this.tabGroups.values()].map((x) => x.color)) }) };
+      this.tabGroups.set(g.id, g);
+    }
+    tab.pinned = false;
+    tab.groupId = null;
+    const at = this.order.indexOf(id);
+    this.order.splice(at, 1);
+    const last = this.order.map((x) => this.tabs.get(x).groupId).lastIndexOf(g.id);
+    this.order.splice(last >= 0 ? last + 1 : at, 0, id); // a new group starts where the tab is
+    tab.groupId = g.id;
+    g.collapsed = false;
+    this.groupsChanged();
+    return g.id;
+  }
+
+  /** Take a tab out of its group; it goes just after the group. */
+  removeFromGroup(id) {
+    const tab = this.tabs.get(id);
+    if (!tab || tab.groupId == null) return;
+    const gid = tab.groupId;
+    tab.groupId = null;
+    this.order.splice(this.order.indexOf(id), 1);
+    const last = this.order.map((x) => this.tabs.get(x).groupId).lastIndexOf(gid);
+    if (last >= 0) this.order.splice(last + 1, 0, id);
+    else this.order.splice(this.order.length, 0, id);
+    this.groupsChanged();
+  }
+
+  /** Drag and drop: the tab goes to `index` (in the order without it), in group `gid` or none. */
+  moveTab(id, index, gid = null) {
+    const tab = this.tabs.get(id);
+    if (!tab || !this.order.includes(id)) return;
+    this.order.splice(this.order.indexOf(id), 1);
+    this.order.splice(Math.max(0, Math.min(Number(index) || 0, this.order.length)), 0, id);
+    if (!tab.pinned) tab.groupId = gid != null && this.tabGroups.has(gid) ? gid : null;
+    this.groupsChanged();
+  }
+
+  /** Rename, recolour, fold or unfold a group. Folding moves away from a tab inside it. */
+  updateGroup(gid, patch = {}) {
+    return this.inGroup(this.groupKind(gid), () => {
+      const g = this.tabGroups.get(gid);
+      if (!g) return;
+      Object.assign(g, cleanGroup({ ...g, ...patch }));
+      if (g.collapsed && this.isFolded(this.activeTab())) this.leaveGroup(gid);
+      this.emitTabs();
+    });
+  }
+
+  /** Select a tab outside group `gid` (the nearest to the right, else left), or open a new tab. */
+  leaveGroup(gid) {
+    const idx = this.order.indexOf(this.activeId);
+    const outside = (x) => this.tabs.get(x).groupId !== gid && !this.isFolded(this.tabs.get(x));
+    const next = this.order.slice(idx + 1).find(outside) || this.order.slice(0, Math.max(0, idx)).reverse().find(outside);
+    if (next != null) this.selectTab(next);
+    else this.createTab({ url: NEWTAB, incognito: this.cur === 'private' });
+  }
+
+  ungroup(gid) {
+    this.inGroup(this.groupKind(gid), () => {
+      for (const x of this.order) if (this.tabs.get(x).groupId === gid) this.tabs.get(x).groupId = null;
+      this.groupsChanged();
+    });
+  }
+
+  closeGroup(gid) {
+    this.inGroup(this.groupKind(gid), () => {
+      const ids = this.order.filter((x) => this.tabs.get(x).groupId === gid);
+      if (ids.includes(this.activeId)) this.leaveGroup(gid); // so no tab of the group gets loaded on the way
+      for (const x of ids) this.closeTab(x);
+    });
+  }
+
+  /** A group from a saved session; returns its new id. */
+  restoreGroup(saved) {
+    return this.inGroup('normal', () => {
+      const g = { id: 'g' + (++this._seq), ...cleanGroup(saved) };
+      this.tabGroups.set(g.id, g);
+      return g.id;
+    });
+  }
+
+  duplicateTab(id) {
+    const tab = this.tabs.get(id);
+    if (tab) this.createTab({ url: tab.url, incognito: tab.incognito, openerPartition: tab.id });
+  }
+
+  /** Close every other tab (`toRight`: only those to the right). Pinned tabs stay. */
+  closeOthers(id, { toRight = false } = {}) {
+    const idx = this.order.indexOf(id);
+    if (idx < 0) return;
+    const ids = this.order.filter((x, i) => x !== id && !this.tabs.get(x).pinned && (!toRight || i > idx));
+    if (ids.includes(this.activeId)) this.selectTab(id);
+    for (const x of ids) this.closeTab(x);
+  }
+
+  toggleMute(id) {
+    const tab = this.tabs.get(id);
+    if (!tab || !tab.wc) return;
+    tab.muted = !tab.wc.isAudioMuted();
+    tab.wc.setAudioMuted(tab.muted);
+    this.refreshTabState(tab);
   }
 
   emitTabs() { this.emit('tabs', this.order.map((id) => this.serializeTab(this.tabs.get(id))).filter(Boolean), this.activeId, this.cur); }
@@ -614,7 +758,8 @@ class Browser extends EventEmitter {
 }
 
 // Methods for one tab work in that tab's window (its order, active tab, size and parent view).
-for (const m of ['makeView', 'revive', 'discard', 'selectTab', 'closeTab', 'refreshTabState', 'serializeTab']) {
+for (const m of ['makeView', 'revive', 'discard', 'selectTab', 'closeTab', 'refreshTabState', 'serializeTab',
+  'setPinned', 'addToGroup', 'removeFromGroup', 'moveTab', 'duplicateTab', 'closeOthers', 'toggleMute']) {
   const f = Browser.prototype[m];
   Browser.prototype[m] = function (x, ...rest) {
     const tab = typeof x === 'object' && x ? x : this.tabs.get(x);
