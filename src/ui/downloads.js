@@ -87,7 +87,7 @@ function statusText(d) {
     case 'queued': return ['Queued', d.received > 0 ? `${pct}% · ${sizeTxt}` : '', parts].filter(Boolean).join(' · ');
     case 'paused': return ['Paused', `${pct}%`, sizeTxt, parts].filter(Boolean).join(' · ');
     case 'error': return `<span class="err">Failed: ${esc(d.error || 'unknown error')}</span>` + (parts ? ' · ' + parts : '');
-    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt), VERIFY_TEXT[d.verify] || '', SCAN_TEXT[d.scan] || '', EXTRACT_TEXT(d)].filter(Boolean).join(' · ');
+    case 'done': return [fmtSize(d.size), 'Finished ' + fmtDate(d.completedAt), d.optimizing ? 'Optimizing for playback…' : '', VERIFY_TEXT[d.verify] || '', SCAN_TEXT[d.scan] || '', EXTRACT_TEXT(d)].filter(Boolean).join(' · ');
     case 'scheduled': {
       const q = queueInfo.queues.find((x) => x.id === d.queue);
       const when = q && q.next ? 'starts ' + fmtDate(q.next) : 'waits for its schedule';

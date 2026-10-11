@@ -3,6 +3,8 @@
 //  - Mark of the Web: the file gets a Zone.Identifier stream (ZoneId=3, "from the internet"), like
 //    browsers write, so Windows SmartScreen and Office Protected View check it before it runs.
 //  - Virus scan with Microsoft Defender's command-line scanner (MpCmdRun.exe), when installed.
+//  - Videos saved as fragments (HLS, DASH, joined tracks) become a normal MP4 with FFmpeg, if it is
+//    installed: players start at once and jump without delay (makeFaststart).
 // Only Windows and NTFS support these; elsewhere they are skipped quietly.
 const fs = require('fs');
 const path = require('path');
@@ -109,4 +111,49 @@ function extractArchive(file, { tarPath } = {}) {
   });
 }
 
-module.exports = { markOfTheWeb, readMarkOfTheWeb, findDefender, parseScanOutput, scanFile, wantsScan, isArchive, extractArchive };
+/** A fragmented MP4 (moof boxes, or mvex in the moov): what video downloads save before makeFaststart. */
+function isFragmentedMp4(file) {
+  const { readBoxes, child } = require('../media/mp4');
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const head = Buffer.alloc(Math.min(1 << 20, fs.fstatSync(fd).size));
+    fs.readSync(fd, head, 0, head.length, 0);
+    const boxes = readBoxes(head);
+    const moov = boxes.find((b) => b.type === 'moov');
+    return boxes.some((b) => b.type === 'moof') || !!(moov && child(head, moov, 'mvex'));
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+/**
+ * Rewrite a fragmented MP4 as a normal one with its index first (FFmpeg -c copy -movflags +faststart;
+ * nothing is re-encoded). The original is replaced only when FFmpeg succeeded and the result is
+ * about as big; otherwise it stays as it is. { ok, size } or { ok: false, error }.
+ * shortcut: if NovaDM closes during the rewrite, "<name>.faststart.part" is left next to the video.
+ */
+async function makeFaststart(file, ffmpeg, { retries = 10, waitMs = 1000 } = {}) {
+  const tmp = file + '.faststart.part';
+  try {
+    await ffmpeg.run(['-i', file, '-map', '0', '-c', 'copy', '-movflags', '+faststart', '-f', 'mp4', tmp]);
+    const before = fs.statSync(file).size;
+    const after = fs.statSync(tmp).size;
+    if (after < before * 0.9) throw new Error(`FFmpeg's file is too small (${after} of ${before} bytes)`);
+    // A player may still have the video open: try again for a while before giving up.
+    for (let i = 0; ; i++) {
+      try { fs.renameSync(tmp, file); break; } catch (e) {
+        if (i >= retries || !['EPERM', 'EBUSY', 'EACCES'].includes(e.code)) throw e;
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+    }
+    return { ok: true, size: after };
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch {}
+    return { ok: false, error: String(e && e.message || e) };
+  }
+}
+
+module.exports = { markOfTheWeb, readMarkOfTheWeb, findDefender, parseScanOutput, scanFile, wantsScan, isArchive, extractArchive, isFragmentedMp4, makeFaststart };
