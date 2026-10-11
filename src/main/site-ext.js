@@ -95,7 +95,8 @@ class SiteExtensions {
   async installFromFolder(src) {
     const man = readManifest(src);
     if (this.confirm && !(await this.confirm(man))) return { ok: false, cancelled: true };
-    // nosemgrep: ajinabraham.njsscan.crypto.crypto_node.node_sha1 -- a short folder name from the extension's name, not protection
+    // Not a finding: a short folder name from the extension's name, not protection
+    // nosemgrep: ajinabraham.njsscan.crypto.crypto_node.node_sha1
     const id = man.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '-' + crypto.createHash('sha1').update(man.name).digest('hex').slice(0, 6);
     const dest = path.join(this.dir, id);
     fs.rmSync(dest, { recursive: true, force: true });
@@ -135,7 +136,8 @@ class SiteExtensions {
   }
 
   runOne(ext, page) {
-    // nosemgrep: ajinabraham.njsscan.traversal.resolve_path_traversal.join_resolve_path_traversal -- ext.id is a folder NovaDM listed itself; readManifest refuses scripts with '..' or absolute paths
+    // Not a finding: ext.id is a folder NovaDM listed itself; readManifest refuses scripts with '..' or absolute paths
+    // nosemgrep: ajinabraham.njsscan.traversal.resolve_path_traversal.join_resolve_path_traversal
     const code = fs.readFileSync(path.join(this.dir, ext.id, ext.script), 'utf8');
     const sandbox = this.createSandbox();
     const wcId = sandbox.webContents.id;
