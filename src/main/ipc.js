@@ -15,6 +15,7 @@ const { STORE_URL } = require('./extensions');
 const diagnostics = require('./diagnostics');
 const { siteFor } = require('./site-search');
 const updates = require('./updates');
+const addonUpdates = require('./addon-updates');
 const { canAutoUpdate, createUpdater } = require('./updater');
 const net = require('./net');
 
@@ -201,10 +202,10 @@ function registerIpc(ctx) {
 
     // ---- FFmpeg (Settings → Add-ons) ----
     'ffmpeg.status': () => getManagers().ffmpeg.status(),
-    'ffmpeg.install': async () => {
+    'ffmpeg.install': async (args) => {
       const { ffmpeg, browser } = getManagers();
       const push = (p) => { for (const t of browser.internalTabs('settings')) t.wc.send('novadm:internal-event', 'ffmpeg', p); };
-      try { const st = await ffmpeg.install(push); return { ok: true, status: st }; } catch (e) { push({ phase: 'error', error: e.message }); return { ok: false, error: e.message }; }
+      try { const st = await ffmpeg.install(push, { newest: !!(args && args.newest) }); return { ok: true, status: st }; } catch (e) { push({ phase: 'error', error: e.message }); return { ok: false, error: e.message }; }
     },
     'ffmpeg.uninstall': () => { getManagers().ffmpeg.uninstall(); getManagers().settings.set({ ffmpegPath: '' }); return getManagers().ffmpeg.status(); },
     'ffmpeg.choose': async () => {
@@ -430,15 +431,29 @@ function registerIpc(ctx) {
 
   // The installed NovaDM updates itself (updater.js); the portable version and runs from source get a
   // notice. NOVADM_TEST_AUTOUPDATE: self-tests from source use the self-updater too.
+  // GitHub (release names, notes, checksum lists). updates.fetchOverride: set by self-tests only.
+  const fetchText = async (url) => {
+    if (updates.fetchOverride) return updates.fetchOverride(url);
+    const headers = /^https:\/\/api\.github\.com\//.test(url) ? { accept: 'application/vnd.github+json' } : {};
+    return (await net.fetchText(url, { session: require('electron').session.defaultSession, headers, timeoutMs: 15000 })).text;
+  };
+  // Update preview: the notes of every release since the installed one, fetched once per new version.
+  let notes = null; // { version, list }
+  const loadNotes = () => {
+    if (!update || !update.version || (notes && notes.version === update.version)) return;
+    const n = { version: update.version, list: null };
+    notes = n;
+    n.ready = updates.whatsNew(app.getVersion(), fetchText).then((list) => { n.list = list; pushAddons(); }).catch(() => { if (notes === n) notes = null; });
+  };
+  const setUpdate = (u) => { update = u; loadNotes(); pushAddons(); };
   const auto = canAutoUpdate() || (!app.isPackaged && process.env.NOVADM_TEST_AUTOUPDATE)
-    ? createUpdater({ onState: (s) => { update = { ...s, auto: true, url: 'https://github.com/AsuNnah/NovaDM/releases/latest' }; pushAddons(); } })
+    ? createUpdater({ onState: (s) => setUpdate({ ...s, auto: true, url: 'https://github.com/AsuNnah/NovaDM/releases/latest' }) })
     : null;
   // Once a day (first time 30 s after start): is there a newer NovaDM on GitHub? Off in Settings.
   // Resolves true when GitHub answered.
   const runCheck = () => {
     if (auto) return auto.check().then((r) => !!r);
-    const fetchText = async (url) => (await net.fetchText(url, { session: require('electron').session.defaultSession, headers: { accept: 'application/vnd.github+json' }, timeoutMs: 15000 })).text;
-    return updates.check(app.getVersion(), fetchText).then((u) => { update = u; pushAddons(); return true; }).catch(() => false);
+    return updates.check(app.getVersion(), fetchText).then((u) => { setUpdate(u); return true; }).catch(() => false);
   };
   const checkUpdates = () => (getManagers().settings.get('updateCheck') === false ? undefined : runCheck());
   handlers['update.check'] = checkUpdates;
@@ -451,8 +466,18 @@ function registerIpc(ctx) {
     install: !app.isPackaged ? 'from source' : process.env.PORTABLE_EXECUTABLE_FILE ? 'portable' : 'installed',
     auto: !!auto,
     update,
+    notes: notes && notes.version === (update && update.version) ? notes.list : null,
   });
-  handlers['about.check'] = async () => ({ ...handlers['about.info'](), checked: await runCheck() });
+  // Also the add-ons and Electron (addon-updates.js), checked side by side with NovaDM.
+  handlers['about.check'] = async () => {
+    const { ytdlp, ffmpeg, aria2 } = getManagers();
+    const [checked, addons] = await Promise.all([
+      runCheck(),
+      addonUpdates.check({ ytdlp, ffmpeg, aria2, electron: process.versions.electron, fetchText }).catch(() => []),
+    ]);
+    if (notes && notes.ready) await notes.ready; // the update preview, when a new version was just found
+    return { ...handlers['about.info'](), checked, addons };
+  };
   setTimeout(checkUpdates, 30000).unref();
   setInterval(checkUpdates, 24 * 3600 * 1000).unref();
   // The warning on the menu button follows add-on changes made from Settings too.

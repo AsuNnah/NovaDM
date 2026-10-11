@@ -14,7 +14,7 @@ const PLACE = {
   grabber: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: 'min(940px, calc(100% - 32px))', height: 'calc(100% - 24px)' },
   downloads: { right: '102px', width: '400px' },
   shields: { right: '206px', width: '320px' },
-  menu: { right: '12px', width: '240px' },
+  menu: { right: '12px', width: '290px' },
   prompt: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '420px' },
   dialog: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '480px', top: '40px' },
   tabsearch: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '520px', top: '8px' },
@@ -267,14 +267,14 @@ function dlRow(d) {
 function renderShields() {
   content.innerHTML = '';
   const s = shieldsData;
-  content.append(el('div', 'hdr', '<div class="t">Shields</div>'));
+  content.append(el('div', 'hdr', '<div class="t">Guard</div>'));
   const wrap = el('div'); wrap.style.padding = '12px 14px';
   const site = el('div'); site.style.cssText = 'color:var(--fg2);font-size:12px;margin-bottom:6px;'; site.textContent = s.site || 'this page';
   const big = el('div'); big.style.cssText = 'font-size:26px;font-weight:600;'; big.textContent = s.count || 0;
   const sub = el('div'); sub.style.cssText = 'color:var(--fg3);font-size:12px;margin-bottom:14px;'; sub.textContent = 'items blocked on this page';
   wrap.append(site, big, sub);
   const toggle = el('button', 'btn'); toggle.style.width = '100%';
-  toggle.textContent = s.siteEnabled ? 'Shields are UP for this site' : 'Shields are DOWN for this site';
+  toggle.textContent = s.siteEnabled ? 'Guard is ON for this site' : 'Guard is OFF for this site';
   if (s.siteEnabled) toggle.classList.add('pri');
   toggle.onclick = () => api.call('shields.toggleSite');
   wrap.append(toggle);
@@ -317,6 +317,9 @@ function renderMenu() {
       go.onclick = () => { api.call(ready ? 'update.install' : 'update.open'); close(); };
       links.append(go);
     }
+    const news = el('button', 'btn sm', 'What’s new');
+    news.onclick = () => { api.call('tabs.new', { url: 'novadm://settings?section=about' }); close(); };
+    links.append(news);
     const later = el('button', 'btn sm', 'Later');
     later.onclick = () => api.call('update.later');
     links.append(later);
@@ -339,26 +342,53 @@ function renderMenu() {
     }
     content.append(box);
   }
+  // [label, icon, shortcut, method, arg]; null draws a divider between groups (like Chrome and Brave).
   const items = [
-    ['New tab', 'tabs.new', {}],
-    ['New private window', 'tabs.new', { incognito: true }],
-    ['Downloads', 'downloads.openPageTab', {}],
-    ['History', 'tabs.new', { url: 'novadm://history' }],
-    ['Bookmarks', 'tabs.new', { url: 'novadm://bookmarks' }],
-    ['Find in page', 'find.open', {}],
-    ['Reader view', 'reader.open', {}],
-    ['Detected media', '_panel', 'media'],
-    ['Grab page content', '_panel', 'grabber'],
-    ['Get extensions (Chrome Web Store)', 'extensions.openStore', {}],
-    ['Settings', 'tabs.new', { url: 'novadm://settings' }],
-    ['Report a problem…', 'diagnostics.save', {}],
-    [`About NovaDM${addonsData && addonsData.current ? ' ' + addonsData.current : ''}`, 'tabs.new', { url: 'novadm://settings?section=about' }],
+    ['New tab', 'newtab', 'Ctrl+T', 'tabs.new', {}],
+    ['New private window', 'private', 'Ctrl+Shift+N', 'tabs.new', { incognito: true }],
+    null,
+    ['Downloads', 'download', 'Ctrl+J', 'downloads.openPageTab', {}],
+    ['History', 'history', 'Ctrl+H', 'tabs.new', { url: 'novadm://history' }],
+    ['Bookmarks', 'star', 'Ctrl+Shift+O', 'tabs.new', { url: 'novadm://bookmarks' }],
+    null,
+    ['Find in page', 'find', 'Ctrl+F', 'find.open', {}],
+    ['Reader view', 'reader', '', 'reader.open', {}],
+    ['Detected media', 'media', '', '_panel', 'media'],
+    ['Grab page content', 'grab', '', '_panel', 'grabber'],
+    null,
+    ['Get extensions (Chrome Web Store)', 'puzzle', '', 'extensions.openStore', {}],
+    null,
+    ['Settings', 'gear', '', 'tabs.new', { url: 'novadm://settings' }],
+    ['Report a problem…', 'flag', '', 'diagnostics.save', {}],
+    [`About NovaDM${addonsData && addonsData.current ? ' ' + addonsData.current : ''}`, 'info', '', 'tabs.new', { url: 'novadm://settings?section=about' }],
   ];
-  for (const [label, method, arg] of items) {
-    const mi = el('div', 'menuitem', esc(label));
+  for (const item of items) {
+    if (!item) { content.append(el('div', 'msep')); continue; }
+    const [label, icon, keys, method, arg] = item;
+    const mi = el('div', 'menuitem', `${menuIcon(icon)}<span class="ml">${esc(label)}</span>${keys ? `<span class="mk">${esc(keys)}</span>` : ''}`);
     mi.onclick = () => { if (method === '_panel') { api.call('panel.open', { name: arg }); } else { api.call(method, arg); close(); } };
     content.append(mi);
   }
+}
+
+// Menu icons: 24×24 outlines in the text colour.
+const MENU_ICONS = {
+  newtab: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M12 9v6M9 12h6"/>',
+  private: '<path d="M3 11h18M6.5 11l1.8-5.5h7.4l1.8 5.5"/><circle cx="7.5" cy="16" r="2.8"/><circle cx="16.5" cy="16" r="2.8"/><path d="M10.3 16h3.4"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
+  history: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
+  find: '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>',
+  reader: '<path d="M5 5.5h14M5 10h14M5 14.5h14M5 19h9"/>',
+  media: '<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M10 9.3v5.4l4.6-2.7z"/>',
+  grab: '<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>',
+  puzzle: '<path d="M9 4.5a2 2 0 0 1 4 0V6h3.5a1 1 0 0 1 1 1v3.5H19a2 2 0 0 1 0 4h-1.5V18a1 1 0 0 1-1 1H13v-1.5a2 2 0 0 0-4 0V19H5.5a1 1 0 0 1-1-1v-3.5H6a2 2 0 0 0 0-4H4.5V7a1 1 0 0 1 1-1H9z"/>',
+  gear: '<circle cx="12" cy="12" r="2.6"/><circle cx="12" cy="12" r="6.3"/><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M5.6 18.4l1.9-1.9M16.5 7.5l1.9-1.9"/>',
+  flag: '<path d="M5.5 21V4M5.5 4.5h11.5l-2.3 4.2 2.3 4.3H5.5"/>',
+  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.6v.4"/>',
+};
+function menuIcon(name) {
+  return `<svg class="mi-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${MENU_ICONS[name] || ''}</svg>`;
 }
 
 // ---- tab search (Ctrl+Shift+A) ----

@@ -39,7 +39,7 @@ Download managers (GitHub issues sorted by reactions; 👍 = reactions) and IDM'
 | **IDM-style "download complete" box** (Open / Open folder / Close) | Gopeed | Partly (Windows notification) |
 | **FTP / FTPS / SFTP links** | Gopeed | **No** in the UI (aria2 could do FTP) |
 | **Custom HTTP headers per site** | Gopeed | Partly (per-site user agent and sign-in) |
-| **Subtitles downloaded with the video** | XDM | Partly (detected, separate download) |
+| **Subtitles downloaded with the video** | XDM | Have since 1.4.5 for yt-dlp sites (VTT next to the video); other sites: detected, separate download |
 | **Playlist downloads** (YouTube etc.) | XDM | **No** |
 | **Accessibility** (screen reader, keyboard-only use) | XDM | **Not checked** |
 | **Whole-site grabber / mirror** (IDM Site Grabber) | IDM | **No** (images and files of one page only) |
@@ -53,7 +53,7 @@ Browsers (Brave community, Mozilla Connect top-voted, Vivaldi):
 |---|---|
 | **Vertical tabs** | **No** |
 | **Split view** (two pages side by side; Firefox 150 shipped "open in split tab") | **No** |
-| **Tab groups** | **No** |
+| **Tab groups** | Have since 1.5.0 (with pinned tabs, drag and drop and a tab menu) |
 | **Profiles / workspaces** | **No** (one profile + private tabs) |
 | **Sync** between PCs | **No** (export/import only) |
 | **Speed dial / quick-access tiles** on the new tab | **No** (search box only) |
@@ -74,11 +74,12 @@ Ordered by value for effort. S = small (a day or less), M = a few days, L = a we
 | Version | Features | Size |
 |---|---|---|
 | **1.4 Everyday use** (done) | New "Bolder" look; private windows (own colours and icon); update notice; deceptive-site warning; Report a problem (personal data removed); warning on the menu button for missing add-ons; tab search (Ctrl+Shift+A); address bar focused in new tabs; type a site name + Tab to search it | S each |
-| **Next update (on hold, user's idea 2026-10-11)** | **Update preview**: before installing an automatic update, show what's new (the release notes of every version between the installed one and the new one) in the menu card / a small window, with *Restart to update* and *Later* | S |
+| **Done in 1.4.5** | **Update preview**: before installing an automatic update, show what's new (the release notes of every version between the installed one and the new one) in the menu card / a small window, with *Restart to update* and *Later* | S |
 | Later: sign-in protection | "Forget sign-ins when NovaDM closes" for chosen sites (plan in docs/v1.5-plan.md on branch feat/1.5.0); device-bound sign-ins when Electron supports them (tested: not in Electron 44) | M |
-| **1.6 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
+| **1.6.0 Multiple windows** (next; user's choice 2026-10-11) | Ctrl+N opens a new window (now: a new tab); drag a tab out of the strip into a new window, and onto another window's strip; each window has its own tabs, groups, find bar and panels; all windows (position, size) come back on start. Needs the window code keyed by window instead of normal / private | L |
+| **Later: download-manager wishes** (was 1.6) | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
 | **1.7 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |
-| **1.8 Tabs** | Vertical tabs; tab groups; split view; picture-in-picture button; page screenshot; speed-dial tiles | S (search, PiP, screenshot) to L (split view) |
+| **1.8 Tabs** | Vertical tabs; split view (tab groups: done in 1.5.0); picture-in-picture button; page screenshot; speed-dial tiles | S (search, PiP, screenshot) to L (split view) |
 | **1.9 Power users** | Customizable shortcuts; mouse gestures; aria2-compatible RPC (AriaNg works); RSS auto-downloads; profiles | M each |
 | Later / needs a decision | Sync (needs a server or a sync folder); password manager (security-critical); translate (needs a service); cloud hosts (Mega / Google Drive, site rules change often); remote web UI; BitTorrent v2 (aria2 lacks it); auto-update (needs code signing); Tor Browser windows (on hold) | L |
 

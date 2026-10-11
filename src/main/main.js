@@ -294,6 +294,8 @@ function wireEvents() {
   on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
   // A new tab's page takes the keyboard when it has loaded, so the address bar is focused again then.
+  // A new or renamed tab group: its name is typed in the tab strip.
+  on('group-edit', (gid) => { chromeView.webContents.focus(); sendUI('group-edit', { id: gid }); });
   on('blank-tab', (tab) => {
     const focus = () => { if (browser.activeTab() === tab) { chromeView.webContents.focus(); sendUI('focus-address', { keep: true }); } };
     focus();
@@ -561,9 +563,19 @@ function handleShortcut(tab, action) {
     case 'forward': return browser.forward(tab.id);
     case 'home': return browser.navigate(tab.id, settings.get('homepage') || 'novadm://newtab');
     case 'next-tab': case 'prev-tab': {
+      // Tabs in folded groups are skipped (as in Chrome), unless every other tab is folded.
       const n = browser.order.length;
-      return pick((browser.order.indexOf(tab.id) + (action === 'next-tab' ? 1 : n - 1)) % n);
+      const at = browser.order.indexOf(tab.id);
+      for (let s = 1; s < n; s++) {
+        const i = (at + (action === 'next-tab' ? s : n - s)) % n;
+        if (!browser.isFolded(browser.tabs.get(browser.order[i]))) return pick(i);
+      }
+      return pick((at + (action === 'next-tab' ? 1 : n - 1)) % n);
     }
+    case 'move-tab-left': case 'move-tab-right': return browser.stepTab(tab.id, action === 'move-tab-left' ? -1 : 1);
+    case 'group-new': return browser.emit('group-edit', browser.addToGroup(tab.id), browser.kindOf(tab));
+    case 'group-remove': return browser.removeFromGroup(tab.id);
+    case 'group-fold': { const g = tab.groupId != null && browser.groups[browser.kindOf(tab)].tabGroups.get(tab.groupId); return g && browser.updateGroup(g.id, { collapsed: !g.collapsed }); }
     case 'tab-last': return pick(browser.order.length - 1);
     case 'fullscreen': return win && win.setFullScreen(!win.isFullScreen());
     case 'print': return wc && wc.print();
@@ -968,7 +980,7 @@ app.whenReady().then(async () => {
   if (devRun && process.env.NOVADM_SELFTEST) {
     const t = require(path.resolve(process.env.NOVADM_SELFTEST));
     setTimeout(() => {
-      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, api, ytdlp, siteExt, handleLaunch, browsing, getWindow: () => win }))
+      Promise.resolve(t({ app, browser, media, downloads, settings, adblock, ipc: ipcHandlers, setPanel, overlayView, chromeView, addFlow, clipboardWatcher, scheduler, background, api, ytdlp, ffmpeg, aria2, siteExt, handleLaunch, browsing, getWindow: () => win }))
         .catch((e) => console.error('selftest failed', e));
     }, Number(process.env.NOVADM_SELFTEST_DELAY) || 3000);
   }

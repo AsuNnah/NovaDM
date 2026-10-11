@@ -13,7 +13,7 @@ const INJECT_CH = '@ghostery/adblocker/inject-cosmetic-filters';
 const MUTATION_CH = '@ghostery/adblocker/is-mutation-observer-enabled';
 
 // EasyList + EasyPrivacy + uBlock Origin lists (Ghostery preset), plus OISD Big: a domain list that
-// covers pop-under / redirect ad networks (1DM ships OISD among its hosts sources too).
+// covers pop-under / redirect ad networks.
 const EXTRA_LISTS = ['https://big.oisd.nl/'];
 // Deceptive sites: checked on page loads themselves (the ad lists skip those), whatever the Shields
 // setting. Phishing URL Blocklist (OpenPhish, PhishTank; updated twice a day) and uBlock's Badware risks.

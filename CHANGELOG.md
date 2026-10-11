@@ -6,6 +6,67 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-10-11
+
+### Added
+- **Tab groups**, as in Chrome and Brave. Right-click a tab → *Add tab to new group*, then type its
+  name. A group has a coloured chip in the tab strip and a coloured line under its tabs.
+  - Click the chip to fold the group into it (and again to open it); right-click the chip to
+    rename it, choose one of 9 colours, open a new tab in it, ungroup it or close it.
+  - Links opened from a grouped tab join its group.
+  - Opening a tab of a folded group (Ctrl+Tab, tab search, …) unfolds it; folding the group of the
+    tab you're on moves you to a tab outside it.
+  - Groups, their names, colours and folding come back with "Open the tabs from last time".
+    Private windows have groups too (not kept, like everything private).
+- **Drag and drop in the tab strip:** drag a tab to reorder it; dropping it on a grouped tab or on
+  a group's chip puts it in that group, dropping it elsewhere takes it out.
+- **Drag a whole group** by its chip: it moves with all its tabs, and never splits another group.
+- **Keyboard shortcuts for groups** (also listed with Ctrl+/ and shown in the tab menus):
+  Ctrl+Shift+K adds the tab to a new group, Ctrl+Shift+U takes it out, Ctrl+Shift+L folds or unfolds
+  its group. Ctrl+Shift+PgUp / PgDn move the tab left / right as in Chrome: at a group's edge the tab
+  first leaves or enters the group, and a folded group is jumped over. Ctrl+Tab skips folded tabs.
+- **Pinned tabs:** right-click → *Pin*. Pinned tabs show only their icon, stay on the left and come
+  back on start.
+- **Tab menu** (right-click a tab): New tab to the right, Add to group / Remove from group, Reload,
+  Duplicate, Pin / Unpin, Mute / Unmute tab (a muted tab shows a speaker icon), Close, Close other
+  tabs, Close tabs to the right (pinned tabs stay), Reopen closed tab.
+
+### Improved
+- A tab whose site icon doesn't load shows the globe icon instead of nothing.
+
+## [1.4.5] — 2026-10-11
+
+### Added
+- **Check for updates also checks the add-ons and Electron** (Settings → About): the installed and
+  the newest version of yt-dlp, FFmpeg, aria2 and the Electron NovaDM is built on.
+  - yt-dlp and FFmpeg get an **Update** button (the same checksum-verified install as before).
+  - A warning shows when an update may not work with NovaDM: an FFmpeg major version newer than the
+    one NovaDM is tested with (9) needs **Update anyway** and a confirmation, and installing FFmpeg
+    now takes the newest build of the tested version.
+  - aria2 is only reported: NovaDM installs the aria2 version it has checked, since aria2 publishes
+    no checksums. Electron is part of NovaDM and comes with NovaDM updates; a warning shows when
+    this NovaDM's Electron no longer gets security fixes.
+  - Copies you chose with "Use my own…" are only reported, never replaced.
+- **Update preview:** when a new NovaDM is found, Settings → About shows what's new in every
+  version since yours, before it installs. The update notice on the menu has a **What's new** button.
+- **Subtitles with yt-dlp videos:** the yt-dlp choices include the site's subtitles (English first,
+  up to 6) and the automatic captions in the video's language, saved as WebVTT files named like the
+  video (`Title.en.vtt`) in the video folder, so players load them with it.
+
+### Improved
+- **The menu has icons**, is grouped like Chrome's and Brave's, and shows each item's shortcut.
+- **Shields is now called Guard** (toolbar button, panel and settings): NovaDM's own name for its
+  ad, tracker and fingerprinting protection.
+
+### Documentation and licensing
+- The installed app includes NovaDM's license (`LICENSE.NovaDM.txt` next to `NovaDM.exe`), beside
+  Electron's and Chromium's.
+- README: a "Use responsibly" section (download what you have the right to keep, follow each
+  site's terms, no copy-protection breaking), and the privacy section lists every connection
+  NovaDM makes by itself, including the 1.4.5 update checks and yt-dlp on YouTube.
+- The video-detection notes describe only what users see in other download managers, not how
+  they work inside.
+
 ## [1.4.4] — 2026-10-11
 
 ### Fixed
@@ -422,7 +483,7 @@ and live DASH recording.
 
 ## [1.0.0] — 2026-10-09
 
-Everyday browsing: the browser features the 1DM feature map still had open. Plan for 1.x:
+Everyday browsing: the browser features still missing compared with other browsers and download managers. Plan for 1.x:
 `docs/v1-plan.md`.
 
 ### Added

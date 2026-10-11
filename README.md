@@ -24,14 +24,18 @@ the SHA-256 of its files so you can check your download.
 ## What it does
 
 **Browser**
-- Tabs, private windows (their own purple look and taskbar icon), history, bookmarks (with a bookmarks bar and import/export from Chrome,
+- Tabs with **tab groups** (named, coloured, foldable; drag tabs in and out), pinned tabs and a
+  right-click tab menu; private windows (their own purple look and taskbar icon), history, bookmarks (with a bookmarks bar and import/export from Chrome,
   Brave, Edge and Firefox), find in page, reader view, restore tabs on start
 - Chrome Web Store extensions
 - Brave's keyboard shortcuts (Ctrl+/ lists them), dark/light theme and accent colours
 - Tab search (Ctrl+Shift+A); type a site name in the address bar and press Tab to search that
   site (YouTube, Wikipedia, GitHub, …)
 - Report a problem (menu): a bug report file with personal data removed, to read and send
-- About NovaDM (menu, or Settings → About): the installed version, the build, and "Check for updates"
+- About NovaDM (menu, or Settings → About): the installed version, the build, "Check for updates" with
+  what's new in the new version, and the newest yt-dlp, FFmpeg, aria2 and Electron (with a warning when
+  an update is a version NovaDM isn't tested with)
+- Menu with icons, groups and shortcuts
 - Unloads tabs you haven't used for a while, to save memory
 
 **Privacy and safety**
@@ -85,6 +89,14 @@ published checksum. You can also point NovaDM at your own copy.
 | [FFmpeg](https://github.com/BtbN/FFmpeg-Builds) | ~80 MB | Downloaded videos start at once and seek without delay (made into a normal MP4); joining WebM / plain-MP4 picture and sound, saving sound only, repairing videos |
 | [yt-dlp](https://github.com/yt-dlp/yt-dlp) | one .exe | "Find with yt-dlp" for sites NovaDM's own detection can't read; on YouTube it is asked by itself |
 
+## Use responsibly
+
+NovaDM downloads what a site sends to your browser. Download only what you have the right to keep,
+and follow each site's terms: some sites, YouTube among them, don't allow downloading in their
+terms. NovaDM does not break copy protection: DRM-protected streams are labelled and not
+downloaded. yt-dlp, FFmpeg and aria2 are separate programs with their own licenses, downloaded
+from their official releases only when you ask for them.
+
 ## Privacy
 
 NovaDM has no telemetry, no accounts and no ads of its own. Everything it stores (settings,
@@ -93,7 +105,10 @@ downloads list, history, bookmarks, cookies) stays in `%APPDATA%\NovaDM` on your
 On its own it only connects to download the ad-block lists (every 4 days) and the phishing lists
 (daily), to ask GitHub once a day for a newer NovaDM and download it (installed version; can be turned off), and to the
 Secure DNS provider you choose; add-ons and the torrent tracker list are downloaded only when you
-use them. The sites you visit are checked against the lists on your PC, never sent anywhere.
+use them. When a new NovaDM is found, its release notes come from GitHub too; "Check for updates"
+in Settings → About also asks GitHub for the newest yt-dlp, FFmpeg, aria2 and Electron. With
+yt-dlp installed, opening a YouTube video lets yt-dlp ask YouTube about that video (as the page
+does; Settings → Add-ons turns it off). The sites you visit are checked against the lists on your PC, never sent anywhere.
 Private windows leave no history or downloads list entries, and their cookies, site data and
 sign-ins are deleted when the private window closes. Passwords for proxies and sites are
 encrypted with Windows' data protection.

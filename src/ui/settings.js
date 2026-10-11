@@ -381,6 +381,53 @@ async function initAbout() {
     else if (checked) { el.textContent = 'You have the latest version.'; el.classList.add('ok'); }
     else el.textContent = a.auto ? 'Updates install by themselves.' : 'New versions show on the menu button.';
     $('aboutInstall').hidden = !(u && u.phase === 'ready');
+    renderNotes(a.notes);
+    if (a.addons) renderAddons(a.addons);
+  };
+  // Update preview: what's new in each version since this one (text from GitHub, shown as text only).
+  const node = (tag, text, cls) => { const e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; };
+  const renderNotes = (list) => {
+    const box = $('aboutNotes');
+    box.textContent = '';
+    $('aboutNotesRow').hidden = !(list && list.length);
+    for (const r of list || []) {
+      box.append(node('h3', `What's new in NovaDM ${r.version}`));
+      for (const s of r.sections) {
+        if (s.title) box.append(node('h4', s.title));
+        const ul = node('ul');
+        for (const it of s.items) ul.append(node('li', it));
+        box.append(ul);
+      }
+    }
+  };
+  // Add-ons and Electron: newest versions, Update buttons, and warnings for untested versions.
+  const renderAddons = (list) => {
+    const box = $('aboutAddons');
+    box.textContent = '';
+    for (const a of list) {
+      const row = node('div', '', 'row');
+      const lbl = node('div', '', 'lbl');
+      lbl.append(node('b', a.name));
+      lbl.append(node('span', a.error ? `Couldn’t check: ${a.error}`
+        : `${a.installed ? `Installed: ${a.installed}` : 'Not installed'}${a.latest ? ` · Newest: ${a.latest}` : ''}`));
+      const msg = a.warn || a.note || (a.update ? 'Update available.' : a.installed && !a.error ? 'Up to date.' : '');
+      if (msg) lbl.append(node('div', (a.warn ? '⚠ ' : '') + msg, `status${a.warn ? ' warn' : a.update || a.note ? '' : ' ok'}`));
+      row.append(lbl);
+      if (a.action) {
+        const acts = node('div', '', 'ffacts');
+        const btn = node('button', a.warn ? 'Update anyway' : 'Update');
+        btn.onclick = async () => {
+          if (a.warn && !confirm(`${a.warn}\n\nUpdate ${a.name} to ${a.latest} anyway?`)) return;
+          btn.disabled = true; btn.textContent = 'Updating…';
+          const r = await bridge.call(a.action, a.args || {}).catch((e) => ({ ok: false, error: e.message }));
+          btn.textContent = r && r.ok ? 'Updated' : 'Failed';
+          if (r && r.ok) $('aboutCheck').click(); // show the new versions
+        };
+        acts.append(btn);
+        row.append(acts);
+      }
+      box.append(row);
+    }
   };
   let info;
   try { info = await bridge.call('about.info'); } catch { return; }
@@ -388,6 +435,7 @@ async function initAbout() {
   $('aboutCheck').onclick = async () => {
     $('aboutCheck').disabled = true;
     $('aboutUpdate').textContent = 'Checking…';
+    $('aboutAddons').textContent = '';
     try { const r = await bridge.call('about.check'); render(r, r.checked); } finally { $('aboutCheck').disabled = false; }
   };
   $('aboutInstall').onclick = () => bridge.call('update.install');

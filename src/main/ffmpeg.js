@@ -13,13 +13,20 @@ const { execFile, spawn } = require('child_process');
 const RELEASE = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/';
 const SUMS_URL = RELEASE + 'checksums.sha256';
 
-/** From the checksum list: the newest stable win64 LGPL shared build { name, sha256 } (master as fallback). */
-function pickBuild(sums) {
+// The newest FFmpeg major version NovaDM is tested with. Install picks the newest build of it; a newer
+// major is installed only when the user chooses "Update anyway" (Settings → About). Raise after testing.
+const TESTED_MAJOR = 9;
+
+/**
+ * From the checksum list: the newest stable win64 LGPL shared build { name, sha256 } with a major
+ * version up to maxMajor (the newest one when there is none; master as the last fallback).
+ */
+function pickBuild(sums, maxMajor = Infinity) {
   const rows = String(sums || '').split(/\r?\n/).map((l) => /^([0-9a-f]{64})\s+\*?(\S+)$/i.exec(l.trim())).filter(Boolean).map((m) => ({ sha256: m[1].toLowerCase(), name: m[2] }));
   const stable = rows.filter((r) => /^ffmpeg-n(\d+)\.(\d+)(?:\.(\d+))?-latest-win64-lgpl-shared-[\d.]+\.zip$/.test(r.name));
   const ver = (n) => (/^ffmpeg-n(\d+)\.(\d+)(?:\.(\d+))?/.exec(n) || []).slice(1).map((x) => Number(x) || 0);
   stable.sort((a, b) => { const va = ver(a.name); const vb = ver(b.name); for (let i = 0; i < 3; i++) if (va[i] !== vb[i]) return vb[i] - va[i]; return 0; });
-  return stable[0] || rows.find((r) => r.name === 'ffmpeg-master-latest-win64-lgpl-shared.zip') || null;
+  return stable.find((r) => ver(r.name)[0] <= maxMajor) || stable[0] || rows.find((r) => r.name === 'ffmpeg-master-latest-win64-lgpl-shared.zip') || null;
 }
 
 /** "time=00:01:02.50" in FFmpeg's progress output, in seconds. */
@@ -68,12 +75,15 @@ class FFmpeg {
     return { installed: !!this.versionCache.version, path: exe, version: this.versionCache.version, custom: exe !== path.join(this.dir, 'bin', 'ffmpeg.exe'), installing: !!this.installing };
   }
 
-  /** Download, verify and unpack the official build. onProgress({ phase, received, size }). */
-  install(onProgress = () => {}) {
+  /**
+   * Download, verify and unpack the official build. onProgress({ phase, received, size }).
+   * newest: the newest stable build even when its major version is newer than TESTED_MAJOR.
+   */
+  install(onProgress = () => {}, { newest = false } = {}) {
     if (this.installing) return this.installing;
     this.installing = (async () => {
       onProgress({ phase: 'checking' });
-      const build = pickBuild(await this.fetchText(SUMS_URL));
+      const build = pickBuild(await this.fetchText(SUMS_URL), newest ? Infinity : TESTED_MAJOR);
       if (!build) throw new Error('Could not find an FFmpeg build for Windows in the official list');
       const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'novadm-ffmpeg-'));
       try {
@@ -150,4 +160,4 @@ class FFmpeg {
   }
 }
 
-module.exports = { FFmpeg, pickBuild, parseTime, SUMS_URL };
+module.exports = { FFmpeg, pickBuild, parseTime, SUMS_URL, TESTED_MAJOR };

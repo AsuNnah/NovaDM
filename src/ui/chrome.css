@@ -93,3 +93,22 @@ browser-action-list::part(action):hover { background-color: var(--hover); }
 .bm span { overflow: hidden; text-overflow: ellipsis; }
 .bm.more { font-size: 14px; padding: 0 9px; }
 .tab.discarded .fav, .tab.discarded .ttl { opacity: .55; }
+
+/* Pinned tabs and tab groups (1.5) */
+.tab.pinned { flex: none; width: 38px; min-width: 38px; padding: 0; justify-content: center; box-shadow: inset 0 0 0 1px var(--line); }
+.tab.pinned.active { box-shadow: var(--ring); }
+.tab.pinned .ttl, .tab.pinned .cls { display: none; }
+.tab .mut { display: flex; flex: none; color: var(--fg3); }
+.tab.pinned .mut { position: absolute; right: 2px; top: 2px; }
+.tab.grouped::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: 1px; height: 2px; border-radius: 2px; background: var(--gc); }
+.tab.folded { display: none; }
+.tgroup { -webkit-app-region: no-drag; flex: none; display: flex; align-items: center; height: 22px; max-width: 160px; padding: 0 9px; border-radius: 11px; background: var(--gc); color: #111; font-size: 12px; font-weight: 600; cursor: default; }
+.tgroup .gname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tgroup.untitled:not(.editing) { width: 12px; height: 12px; padding: 0; margin: 0 4px; border-radius: 50%; }
+.tgroup.collapsed { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--gc); }
+.tgroup .gedit { width: 130px; padding: 0; background: transparent; border: 0; outline: 0; color: #111; font: inherit; }
+.tgroup .gedit::placeholder { color: rgba(0,0,0,.6); }
+.tab.dragging { opacity: .45; }
+.tab.drop-before { box-shadow: inset 2px 0 0 var(--accent); }
+.tab.drop-after { box-shadow: inset -2px 0 0 var(--accent); }
+.tgroup.drop-into { outline: 2px solid var(--accent); outline-offset: 2px; }
