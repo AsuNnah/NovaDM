@@ -39,7 +39,7 @@ Download managers (GitHub issues sorted by reactions; 👍 = reactions) and IDM'
 | **IDM-style "download complete" box** (Open / Open folder / Close) | Gopeed | Partly (Windows notification) |
 | **FTP / FTPS / SFTP links** | Gopeed | **No** in the UI (aria2 could do FTP) |
 | **Custom HTTP headers per site** | Gopeed | Partly (per-site user agent and sign-in) |
-| **Subtitles downloaded with the video** | XDM | Partly (detected, separate download) |
+| **Subtitles downloaded with the video** | XDM | Have since 1.4.5 for yt-dlp sites (VTT next to the video); other sites: detected, separate download |
 | **Playlist downloads** (YouTube etc.) | XDM | **No** |
 | **Accessibility** (screen reader, keyboard-only use) | XDM | **Not checked** |
 | **Whole-site grabber / mirror** (IDM Site Grabber) | IDM | **No** (images and files of one page only) |
@@ -74,7 +74,7 @@ Ordered by value for effort. S = small (a day or less), M = a few days, L = a we
 | Version | Features | Size |
 |---|---|---|
 | **1.4 Everyday use** (done) | New "Bolder" look; private windows (own colours and icon); update notice; deceptive-site warning; Report a problem (personal data removed); warning on the menu button for missing add-ons; tab search (Ctrl+Shift+A); address bar focused in new tabs; type a site name + Tab to search it | S each |
-| **Next update (on hold, user's idea 2026-10-11)** | **Update preview**: before installing an automatic update, show what's new (the release notes of every version between the installed one and the new one) in the menu card / a small window, with *Restart to update* and *Later* | S |
+| **Done in 1.4.5** | **Update preview**: before installing an automatic update, show what's new (the release notes of every version between the installed one and the new one) in the menu card / a small window, with *Restart to update* and *Later* | S |
 | Later: sign-in protection | "Forget sign-ins when NovaDM closes" for chosen sites (plan in docs/v1.5-plan.md on branch feat/1.5.0); device-bound sign-ins when Electron supports them (tested: not in Electron 44) | M |
 | **1.6 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
 | **1.7 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |

@@ -81,7 +81,29 @@ function choicesFrom(info) {
     push(`Sound only (${(a.ext || '').toUpperCase()})`, { kind: 'http', url: a.url, sources: [a.url], headers: headersOf(a), name: `${title}.${a.ext || 'm4a'}`, size: sizeOf(a) || -1, category: 'music' }, -1);
   }
   out.sort((x, y) => y.height - x.height);
-  return { title, duration: info.duration || 0, thumbnail: info.thumbnail || '', choices: out.slice(0, 12).map(({ label, spec }) => ({ label, spec })) };
+  return { title, duration: info.duration || 0, thumbnail: info.thumbnail || '', choices: [...out.slice(0, 12), ...subtitleChoices(info, title)].map(({ label, spec }) => ({ label, spec })) };
+}
+
+/**
+ * Subtitles as WebVTT files named like the video (title.en.vtt) in the video folder, so players
+ * load them with it: the site's own subtitles (English first, up to 6) and the automatic captions in
+ * the video's language when it has no subtitles of its own in that language.
+ */
+function subtitleChoices(info, title) {
+  const vtt = (tracks) => (Array.isArray(tracks) ? tracks.find((t) => t && t.ext === 'vtt' && /^https?:/.test(t.url || '')) : null);
+  const label = (lang, tracks) => ((Array.isArray(tracks) && tracks.find((t) => t && t.name)) || {}).name || lang;
+  const spec = (lang, t) => ({ kind: 'http', url: t.url, sources: [t.url], headers: {}, name: `${title}.${lang}.vtt`, size: -1, category: 'video', pageUrl: info.webpage_url || '' });
+  const own = Object.entries(info.subtitles || {}).filter(([lang, tracks]) => lang !== 'live_chat' && vtt(tracks))
+    .sort(([a], [b]) => (b.startsWith('en') - a.startsWith('en')) || a.localeCompare(b)).slice(0, 6);
+  const out = own.map(([lang, tracks]) => ({ label: `Subtitles: ${label(lang, tracks)} (VTT)`, spec: spec(lang, vtt(tracks)) }));
+  const orig = info.language || '';
+  const auto = info.automatic_captions || {};
+  const autoKey = auto[`${orig}-orig`] ? `${orig}-orig` : orig && auto[orig] ? orig : '';
+  if (autoKey && !own.some(([lang]) => lang.split('-')[0] === orig)) {
+    const t = vtt(auto[autoKey]);
+    if (t) out.push({ label: `Subtitles: ${label(orig, auto[autoKey]).replace(/\s*\(Original\)$/i, '')} (automatic, VTT)`, spec: spec(orig, t) });
+  }
+  return out;
 }
 
 class YtDlp {

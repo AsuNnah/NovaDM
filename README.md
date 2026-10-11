@@ -31,7 +31,10 @@ the SHA-256 of its files so you can check your download.
 - Tab search (Ctrl+Shift+A); type a site name in the address bar and press Tab to search that
   site (YouTube, Wikipedia, GitHub, …)
 - Report a problem (menu): a bug report file with personal data removed, to read and send
-- About NovaDM (menu, or Settings → About): the installed version, the build, and "Check for updates"
+- About NovaDM (menu, or Settings → About): the installed version, the build, "Check for updates" with
+  what's new in the new version, and the newest yt-dlp, FFmpeg, aria2 and Electron (with a warning when
+  an update is a version NovaDM isn't tested with)
+- Menu with icons, groups and shortcuts
 - Unloads tabs you haven't used for a while, to save memory
 
 **Privacy and safety**

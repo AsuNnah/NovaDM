@@ -6,6 +6,28 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.4.5] — 2026-10-11
+
+### Added
+- **Check for updates also checks the add-ons and Electron** (Settings → About): the installed and
+  the newest version of yt-dlp, FFmpeg, aria2 and the Electron NovaDM is built on.
+  - yt-dlp and FFmpeg get an **Update** button (the same checksum-verified install as before).
+  - A warning shows when an update may not work with NovaDM: an FFmpeg major version newer than the
+    one NovaDM is tested with (9) needs **Update anyway** and a confirmation, and installing FFmpeg
+    now takes the newest build of the tested version.
+  - aria2 is only reported: NovaDM installs the aria2 version it has checked, since aria2 publishes
+    no checksums. Electron is part of NovaDM and comes with NovaDM updates; a warning shows when
+    this NovaDM's Electron no longer gets security fixes.
+  - Copies you chose with "Use my own…" are only reported, never replaced.
+- **Update preview:** when a new NovaDM is found, Settings → About shows what's new in every
+  version since yours, before it installs. The update notice on the menu has a **What's new** button.
+- **Subtitles with yt-dlp videos:** the yt-dlp choices include the site's subtitles (English first,
+  up to 6) and the automatic captions in the video's language, saved as WebVTT files named like the
+  video (`Title.en.vtt`) in the video folder, so players load them with it.
+
+### Improved
+- **The menu has icons**, is grouped like Chrome's and Brave's, and shows each item's shortcut.
+
 ## [1.4.4] — 2026-10-11
 
 ### Fixed
