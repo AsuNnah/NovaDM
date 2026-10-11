@@ -63,8 +63,7 @@ function render() {
   $('proxyPacRow').hidden = pm !== 'pac';
   $('proxyAuthRow').hidden = pm !== 'manual' && pm !== 'pac';
   // Not a finding: the text box's placeholder, not a password
-  // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_password
-  $('proxyPass').placeholder = current.proxyHasPassword ? 'Password saved' : 'Password';
+  $('proxyPass').placeholder = current.proxyHasPassword ? 'Password saved' : 'Password'; // nosemgrep: ajinabraham.njsscan.generic.hardcoded_secrets.node_password
   $('afterProgramShow').textContent = current.afterProgram || 'None';
   renderRules();
   if (document.activeElement !== $('secureDnsCustom')) $('secureDnsCustom').value = current.secureDnsCustom || '';

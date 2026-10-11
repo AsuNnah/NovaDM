@@ -96,8 +96,7 @@ class SiteExtensions {
     const man = readManifest(src);
     if (this.confirm && !(await this.confirm(man))) return { ok: false, cancelled: true };
     // Not a finding: a short folder name from the extension's name, not protection
-    // nosemgrep: ajinabraham.njsscan.crypto.crypto_node.node_sha1
-    const id = man.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '-' + crypto.createHash('sha1').update(man.name).digest('hex').slice(0, 6);
+    const id = man.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) + '-' + crypto.createHash('sha1').update(man.name).digest('hex').slice(0, 6); // nosemgrep: ajinabraham.njsscan.crypto.crypto_node.node_sha1
     const dest = path.join(this.dir, id);
     fs.rmSync(dest, { recursive: true, force: true });
     fs.mkdirSync(this.dir, { recursive: true });
@@ -137,8 +136,7 @@ class SiteExtensions {
 
   runOne(ext, page) {
     // Not a finding: ext.id is a folder NovaDM listed itself; readManifest refuses scripts with '..' or absolute paths
-    // nosemgrep: ajinabraham.njsscan.traversal.resolve_path_traversal.join_resolve_path_traversal
-    const code = fs.readFileSync(path.join(this.dir, ext.id, ext.script), 'utf8');
+    const code = fs.readFileSync(path.join(this.dir, ext.id, ext.script), 'utf8'); // nosemgrep: ajinabraham.njsscan.traversal.resolve_path_traversal.join_resolve_path_traversal
     const sandbox = this.createSandbox();
     const wcId = sandbox.webContents.id;
     this.runs.set(wcId, { ext, session: page.session });
