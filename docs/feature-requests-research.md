@@ -74,6 +74,7 @@ Ordered by value for effort. S = small (a day or less), M = a few days, L = a we
 | Version | Features | Size |
 |---|---|---|
 | **1.4 Everyday use** (done) | New "Bolder" look; private windows (own colours and icon); update notice; deceptive-site warning; Report a problem (personal data removed); warning on the menu button for missing add-ons; tab search (Ctrl+Shift+A); address bar focused in new tabs; type a site name + Tab to search it | S each |
+| **Next update (on hold, user's idea 2026-10-11)** | **Update preview**: before installing an automatic update, show what's new (the release notes of every version between the installed one and the new one) in the menu card / a small window, with *Restart to update* and *Later* | S |
 | Later: sign-in protection | "Forget sign-ins when NovaDM closes" for chosen sites (plan in docs/v1.5-plan.md on branch feat/1.5.0); device-bound sign-ins when Electron supports them (tested: not in Electron 44) | M |
 | **1.6 Download-manager wishes** | Bypass key in the browser extension (hold Alt to let the browser download); "Download complete" box (Open / Open folder); sounds on finish / error; date-time in file names (option); FTP links through aria2; custom headers per site; subtitles saved next to the video; playlist download through yt-dlp | S–M each |
 | **1.7 Grabber and filters** (old 1.4 leftovers) | Grabber for all links + crawl N levels (IDM Site Grabber); page resources view; custom filter / hosts lists and allow-list page; cookie import from Chrome/Brave/Edge; desktop/mobile user-agent switch | M |
