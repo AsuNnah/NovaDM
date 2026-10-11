@@ -736,6 +736,7 @@ control:
 | Security | The AI pentest failed on three releases in a row | the free model quota ran out mid-scan (HTTP 429) | free scanners in CI as the main deep check; the AI pentest only as a bonus |
 | Security | Dependabot alerts, secret scanning and private reporting were all off | public-repository features are opt-in | a settings table (section 4) and a `SECURITY.md` |
 | Git | Small edits became whole-file diffs, stacked branches conflicted | Windows tools wrote CRLF line endings into LF files | `.gitattributes` (`* text=auto eol=lf`) and a one-time renormalization |
+| Security | In-code `nosemgrep` comments didn't close Semgrep's alerts, and editing the flagged line re-opened a CodeQL alert there | alerts uploaded as SARIF ignore in-code suppressions; CodeQL ties a dismissal to the line's code | dismiss false positives in GitHub with a reason; don't edit a line only to silence a scanner |
 | Git | A later version's PR was merged before the earlier one | stacked PRs, merged out of order | each version is still tagged on its own last commit (stage 9) |
 | Video | Downloaded videos took ~20 s to start and seeked slowly in Windows players | fragmented MP4 (the streaming format) saved as the final file | post-processing rewrites it as a normal MP4 with the index first (FFmpeg, no re-encoding) |
 

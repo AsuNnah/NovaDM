@@ -9,8 +9,7 @@ const seen = new Map(); // full SHA-1 -> times seen in breaches
 
 /** How many times this password appears in known breaches (0 = not found). */
 async function breachCount(password, fetchText) {
-  // Not a finding: Have I Been Pwned's range API is keyed by SHA-1; not used for protection
-  const sha = crypto.createHash('sha1').update(String(password), 'utf8').digest('hex').toUpperCase(); // nosemgrep: ajinabraham.njsscan.crypto.crypto_node.node_sha1
+  const sha = crypto.createHash('sha1').update(String(password), 'utf8').digest('hex').toUpperCase();
   if (seen.has(sha)) return seen.get(sha);
   const text = await fetchText(module.exports.api + sha.slice(0, 5));
   const line = String(text).split(/\r?\n/).find((l) => l.slice(0, 35).toUpperCase() === sha.slice(5));

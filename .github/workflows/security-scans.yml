@@ -57,8 +57,9 @@ jobs:
       # Only the code that ships (src, the browser extension); tools/ and test/ are local test scripts.
       # regex_dos is left out: it flags every regex that sees outside text, also simple anchored ones;
       # CodeQL's ReDoS queries (security-extended) check real catastrophic backtracking.
-      # Other false positives are marked in the code: a "Not a finding: <reason>" line above, and
-      # `// nosemgrep: <rule>` at the end of the line itself.
+      # Other false positives are dismissed in GitHub with the reason (docs/security.md). In-code
+      # `nosemgrep` comments don't close alerts uploaded as SARIF, and editing a flagged line makes
+      # CodeQL see a new alert there.
       - name: Semgrep
         run: semgrep scan --config p/javascript --config p/nodejsscan --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --metrics=off --sarif --output semgrep.sarif src browser-extension
       - name: Send the results to code scanning

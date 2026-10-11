@@ -73,10 +73,10 @@ Scorecard) run with CodeQL on every change. Their first run (2026-10-11) was tri
 | NovaDM's toolbar view passed any link to `shell.openExternal` | Real, low risk (the toolbar shows only NovaDM's own content) | Only `http`, `https` and `mailto` links leave NovaDM now |
 | `Math.random` for download and media ids | Not a secret | Ids from `crypto` instead |
 | sprintf-js ≤ 1.1.3 slow-format advisory (GHSA-hp3w-g68c-fv3c) | Build-time only (electron-builder's chain), not in the app; no fixed version | Ignored in `osv-scanner.toml` until 2027-01-11, then looked at again |
-| SHA-1 in the leaked-password check, torrent info-hashes and a folder name | Required by those protocols; not used for protection | Marked `nosemgrep` with the reason |
-| Path join for site-extension scripts | The script name is checked when the manifest is read (no `..`, no absolute path) | Marked `nosemgrep` with the reason |
-| "Password" in a text box's placeholder | Not a password | Marked `nosemgrep` |
+| SHA-1 in the leaked-password check, torrent info-hashes and a folder name | Required by those protocols; not used for protection | Dismissed in GitHub with the reason |
+| Path join for site-extension scripts | The script name is checked when the manifest is read (no `..`, no absolute path) | Dismissed in GitHub with the reason |
+| "Password" in a text box's placeholder | Not a password | Dismissed in GitHub with the reason |
 | Regex denial of service (Semgrep `regex_dos`, 16 places) | All simple anchored patterns; the rule flags every regex that sees outside text | Rule left out; CodeQL's precise ReDoS queries stay on |
-| Content Security Policy "review" notes (11 pages) | Every UI page has a strict CSP (`default-src 'none'; script-src 'self'`); only the site-extension sandbox page allows `eval`, to run the user's site extensions with no Node, an empty cookie jar and no network | Check left out |
+| Content Security Policy "review" notes (11 pages, global and per page) | Every UI page has a strict CSP (`default-src 'none'; script-src 'self'`); only the site-extension sandbox page allows `eval`, to run the user's site extensions with no Node, an empty cookie jar and no network | Check left out |
 | Custom Chromium switches | Hardening on purpose (third-party cookies off, no JIT in Safer/Safest) | Check left out |
 | `executeJavaScript` (find bar, DevTools panels) and the `novadm:` / `magnet:` handlers | Fixed strings only; deep links ask before acting | Dismissed in GitHub with the reason |
