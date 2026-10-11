@@ -75,6 +75,12 @@
         "to": "browser-extension"
       }
     ],
+    "extraFiles": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE.NovaDM.txt"
+      }
+    ],
     "protocols": [
       {
         "name": "NovaDM link",

@@ -28,6 +28,15 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 ### Improved
 - **The menu has icons**, is grouped like Chrome's and Brave's, and shows each item's shortcut.
 
+### Documentation and licensing
+- The installed app includes NovaDM's license (`LICENSE.NovaDM.txt` next to `NovaDM.exe`), beside
+  Electron's and Chromium's.
+- README: a "Use responsibly" section (download what you have the right to keep, follow each
+  site's terms, no copy-protection breaking), and the privacy section lists every connection
+  NovaDM makes by itself, including the 1.4.5 update checks and yt-dlp on YouTube.
+- The video-detection notes describe only what users see in other download managers, not how
+  they work inside.
+
 ## [1.4.4] — 2026-10-11
 
 ### Fixed
@@ -436,7 +445,7 @@ and live DASH recording.
 
 ## [1.0.0] — 2026-10-09
 
-Everyday browsing: the browser features the 1DM feature map still had open. Plan for 1.x:
+Everyday browsing: the browser features still missing compared with other browsers and download managers. Plan for 1.x:
 `docs/v1-plan.md`.
 
 ### Added

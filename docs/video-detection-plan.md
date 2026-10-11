@@ -1,28 +1,13 @@
 # NovaDM — Auto-detect & download (video first): research summary and Windows plan
 
-## 1. What 1DM does (research summary)
+## 1. Starting point
 
-In short, 1DM:
+Features users know from download managers such as 1DM (from their public descriptions and
+settings screens): media found on a page as it plays, HLS / DASH streams with a quality choice,
+"use the page title as the file name", "convert TS to MP4", subtitles, a per-site block list,
+and skipping the download editor. How NovaDM does this is its own design, below.
 
-1. Intercepts every WebView request and matches URLs against a list of media extensions.
-2. Injects JavaScript into each page that hooks `XMLHttpRequest`, `fetch`, `window.open` and
-   `WebSocket`, so it sees AJAX-loaded playlists, their response text and the exact request headers.
-3. Scans the full page HTML with regexes, plus site extractors (Vimeo, Dailymotion, Facebook, ...).
-4. Probes each candidate (`Range: bytes=0-`) and classifies it by Content-Type and the first bytes
-   (`#EXTM3U`, `<MPD`, `WEBVTT`, `[Script Info]`).
-5. Parses HLS/DASH: variants, resolution, bandwidth, duration, part count, AES-128 keys, live
-   playlists, split audio/video, subtitles.
-6. Downloads parts into temporary files, then merges them and converts TS to MP4/AAC with FFmpeg.
-
-User-facing options found in the app: "Use webpage title as file name", "Convert ts files to mp4",
-"Show video links which don't have audio", sort "Video first / Audio first / Both (prefer full
-stream) / Full stream only", custom sniffer extensions and MIME types (with `!` to ignore),
-automatic subtitle capture, built-in Preview/Stream, AES key viewer, "skip download editor when a
-row is clicked", a per-site blacklist, and download buttons injected into social-media posts.
-
-**DRM fallback:** 1DM's "DRM protected video handling" blocks the page's DRM (Widevine) request so
-the site's player falls back to an unprotected stream, if the site has one. NovaDM gets this
-behavior by default: Electron ships without Widevine, so DRM requests always fail and any
+**DRM:** Electron ships without Widevine, so DRM requests always fail and any
 unprotected fallback the site serves is detected like normal media. NovaDM watches for the DRM
 request and shows a note in the panel ("This site asked for DRM — showing the unprotected version
 it provided"). Streams that are encrypted with DRM are labelled "Protected — can't download";
