@@ -9,6 +9,12 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 ## [1.5.2] — 2026-10-11
 
 ### Fixed
+- **History, open tabs and other saved data were lost after closing NovaDM on some PCs.** Windows
+  sometimes refuses, for a moment, to replace a saved file (`EPERM`, usually an antivirus or the search
+  indexer looking at it); NovaDM then left the new data in `history.json.tmp` and started empty the next
+  time. A refused save is now retried and, if still refused, written in place; and data left in a
+  `.tmp` file by an earlier refusal is read back at start-up, so history lost this way comes back.
+  Applies to every saved file: history, open tabs, bookmarks, settings and the downloads list.
 - **An extension's own pages open.** `chrome-extension://…` addresses (options pages, welcome pages,
   the Options item on an extension's toolbar button) were turned into `https://chrome-extension//…`
   and showed "Can't find chrome-extension".
