@@ -79,3 +79,74 @@ test('resumed conversion skips the init segment and continues the timeline', () 
 });
 
 module.exports = { tfdts };
+
+// ---- timeline across segments (1.4.3: a 2 h video showed 13:15:21) ----
+const { firstPts } = require('../src/main/media/transmux');
+const { readBoxes, children, child } = require('../src/main/media/mp4');
+
+// Start time (tfdt) of every fragment of the video track, in its own timescale.
+function videoStarts(buf) {
+  const starts = {};
+  for (const moof of readBoxes(buf).filter((b) => b.type === 'moof')) {
+    for (const traf of children(buf, moof).filter((b) => b.type === 'traf')) {
+      const tfhd = child(buf, traf, 'tfhd');
+      const tfdt = child(buf, traf, 'tfdt');
+      const id = buf.readUInt32BE(tfhd.start + tfhd.header + 4);
+      const v1 = buf[tfdt.start + tfdt.header] === 1;
+      (starts[id] = starts[id] || []).push(v1 ? Number(buf.readBigUInt64BE(tfdt.start + tfdt.header + 4)) : buf.readUInt32BE(tfdt.start + tfdt.header + 4));
+    }
+  }
+  return starts;
+}
+
+// A copy of a TS segment with every PTS / DTS moved by `add` ticks (a later piece of one stream).
+function shiftTimestamps(seg, add) {
+  const b = Buffer.from(seg);
+  const write = (p, v) => {
+    const prefix = b[p] & 0xf0;
+    b[p] = prefix | ((Math.floor(v / 2 ** 30) & 7) << 1) | 1;
+    b[p + 1] = Math.floor(v / 2 ** 22) & 0xff;
+    b[p + 2] = ((Math.floor(v / 2 ** 15) & 0x7f) << 1) | 1;
+    b[p + 3] = Math.floor(v / 2 ** 7) & 0xff;
+    b[p + 4] = ((v & 0x7f) << 1) | 1;
+  };
+  const read = (p) => ((b[p] >> 1) & 7) * 2 ** 30 + b[p + 1] * 2 ** 22 + (b[p + 2] >> 1) * 2 ** 15 + b[p + 3] * 2 ** 7 + (b[p + 4] >> 1);
+  for (let i = 0; i + 188 <= b.length; i += 188) {
+    if (b[i] !== 0x47 || !(b[i + 1] & 0x40)) continue;
+    let p = i + 4;
+    if (b[i + 3] & 0x20) p += 1 + b[i + 4];
+    if (b[p] !== 0 || b[p + 1] !== 0 || b[p + 2] !== 1) continue;
+    const flags = b[p + 7] >> 6;
+    if (flags & 2) write(p + 9, read(p + 9) + add);
+    if (flags === 3) write(p + 14, read(p + 14) + add);
+  }
+  return b;
+}
+
+function convert(segments, duration) {
+  const out = [];
+  const tx = new TsToMp4((b) => out.push(Buffer.from(b)));
+  for (const s of segments) { tx.push(s, duration); tx.flushSegment(); }
+  tx.end();
+  return Buffer.concat(out);
+}
+
+test('timeline: segments that restart their clock are placed one after another', () => {
+  const seg = fs.readFileSync(SEG);
+  assert.strictEqual(firstPts(seg), 126000); // 1.4 s
+  const starts = videoStarts(convert(Array(6).fill(seg), 10));
+  for (const [id, s] of Object.entries(starts)) {
+    for (let i = 1; i < s.length; i++) assert.ok(s[i] > s[i - 1], `track ${id} goes forward: ${s.join(',')}`);
+    assert.ok(s[s.length - 1] < 2 ** 31, `track ${id} never wraps: ${s.join(',')}`);
+  }
+  const video = Object.values(starts).find((s) => s[1] - s[0] === 900000); // 90 kHz track: 10 s apart
+  assert.ok(video, 'video fragments 10 s apart: ' + JSON.stringify(starts));
+});
+
+test('timeline: a continuous stream is converted as before', () => {
+  const seg = fs.readFileSync(SEG);
+  const pieces = Array.from({ length: 6 }, (_, i) => shiftTimestamps(seg, i * 900000));
+  const continuous = videoStarts(convert(pieces, 10));
+  const plain = videoStarts((() => { const o = []; const tx = new TsToMp4((b) => o.push(Buffer.from(b))); for (const s of pieces) { tx.push(s); tx.flushSegment(); } tx.end(); return Buffer.concat(o); })());
+  assert.deepStrictEqual(continuous, plain); // durations given or not: same timeline
+});

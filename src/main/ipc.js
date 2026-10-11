@@ -401,13 +401,25 @@ function registerIpc(ctx) {
     ? createUpdater({ onState: (s) => { update = { ...s, auto: true, url: 'https://github.com/AsuNnah/NovaDM/releases/latest' }; pushAddons(); } })
     : null;
   // Once a day (first time 30 s after start): is there a newer NovaDM on GitHub? Off in Settings.
-  const checkUpdates = () => {
-    if (getManagers().settings.get('updateCheck') === false) return;
-    if (auto) return auto.check();
+  // Resolves true when GitHub answered.
+  const runCheck = () => {
+    if (auto) return auto.check().then((r) => !!r);
     const fetchText = async (url) => (await net.fetchText(url, { session: require('electron').session.defaultSession, headers: { accept: 'application/vnd.github+json' }, timeoutMs: 15000 })).text;
-    return updates.check(app.getVersion(), fetchText).then((u) => { update = u; pushAddons(); }).catch(() => {});
+    return updates.check(app.getVersion(), fetchText).then((u) => { update = u; pushAddons(); return true; }).catch(() => false);
   };
+  const checkUpdates = () => (getManagers().settings.get('updateCheck') === false ? undefined : runCheck());
   handlers['update.check'] = checkUpdates;
+  // Settings → About: the installed version and where updates stand. "Check now" works even with
+  // the daily check off, because the user asked for it.
+  handlers['about.info'] = () => ({
+    version: app.getVersion(),
+    electron: process.versions.electron,
+    chromium: process.versions.chrome,
+    install: !app.isPackaged ? 'from source' : process.env.PORTABLE_EXECUTABLE_FILE ? 'portable' : 'installed',
+    auto: !!auto,
+    update,
+  });
+  handlers['about.check'] = async () => ({ ...handlers['about.info'](), checked: await runCheck() });
   setTimeout(checkUpdates, 30000).unref();
   setInterval(checkUpdates, 24 * 3600 * 1000).unref();
   // The warning on the menu button follows add-on changes made from Settings too.

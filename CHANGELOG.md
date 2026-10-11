@@ -6,6 +6,20 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.4.3] — 2026-10-11
+
+### Fixed
+- **Downloaded videos showed the wrong length** (for example 13:15:21 for a 2:28:16 video) and
+  seeking jumped around, on streams whose segments each restart their clock. NovaDM now places
+  every segment right after the one before it, so the saved MP4 is as long as the video. Streams
+  with a continuous clock are converted exactly as before.
+
+### Added
+- **About NovaDM** on the menu (it shows the version) and at the end of Settings: the installed
+  version, the install type (installed / portable), the Electron and Chromium versions, the update
+  status, **Check for updates** (works even with the daily check off), **Restart to update** when a
+  new version is ready, and a link to what's new.
+
 ## [1.4.2] — 2026-10-11
 
 ### Fixed

@@ -347,6 +347,7 @@ function renderMenu() {
     ['Get extensions (Chrome Web Store)', 'extensions.openStore', {}],
     ['Settings', 'tabs.new', { url: 'novadm://settings' }],
     ['Report a problem…', 'diagnostics.save', {}],
+    [`About NovaDM${addonsData && addonsData.current ? ' ' + addonsData.current : ''}`, 'tabs.new', { url: 'novadm://settings?section=about' }],
   ];
   for (const [label, method, arg] of items) {
     const mi = el('div', 'menuitem', esc(label));

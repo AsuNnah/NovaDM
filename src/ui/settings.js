@@ -365,6 +365,36 @@ async function initAria2() {
   refresh();
 }
 
-init();
-// novadm://settings?section=addons (from the add-on warning on the menu button)
-{ const sec = $(new URLSearchParams(location.search).get('section') || '-'); if (sec) setTimeout(() => sec.scrollIntoView(), 300); }
+// ---- about ----
+async function initAbout() {
+  const render = (a, checked) => {
+    $('aboutVersion').textContent = `NovaDM ${a.version}`;
+    $('aboutBuild').textContent = `${a.install === 'installed' ? 'Installed' : a.install === 'portable' ? 'Portable' : 'Run from source'} · Electron ${a.electron} · Chromium ${a.chromium}`;
+    const u = a.update;
+    const el = $('aboutUpdate');
+    el.className = 'status';
+    if (u && u.phase === 'ready') { el.textContent = `NovaDM ${u.version} is ready. Restart to finish updating.`; el.classList.add('ok'); }
+    else if (u && u.phase === 'downloading') el.textContent = `Downloading NovaDM ${u.version}… ${u.percent || 0}%`;
+    else if (u && u.phase === 'error') { el.textContent = `Couldn’t download NovaDM ${u.version}: ${u.error || ''}`; el.classList.add('warn'); }
+    else if (u) { el.textContent = `NovaDM ${u.version} is available.`; el.classList.add('warn'); }
+    else if (checked === false) { el.textContent = 'Couldn’t reach GitHub. Try again later.'; el.classList.add('warn'); }
+    else if (checked) { el.textContent = 'You have the latest version.'; el.classList.add('ok'); }
+    else el.textContent = a.auto ? 'Updates install by themselves.' : 'New versions show on the menu button.';
+    $('aboutInstall').hidden = !(u && u.phase === 'ready');
+  };
+  let info;
+  try { info = await bridge.call('about.info'); } catch { return; }
+  render(info);
+  $('aboutCheck').onclick = async () => {
+    $('aboutCheck').disabled = true;
+    $('aboutUpdate').textContent = 'Checking…';
+    try { const r = await bridge.call('about.check'); render(r, r.checked); } finally { $('aboutCheck').disabled = false; }
+  };
+  $('aboutInstall').onclick = () => bridge.call('update.install');
+  $('aboutReleases').onclick = () => bridge.navigate('https://github.com/AsuNnah/NovaDM/releases');
+}
+
+// novadm://settings?section=addons (add-on warning) or ?section=about (menu); scrolled to once the
+// sections above it have filled in, so it doesn't move away.
+const section = $(new URLSearchParams(location.search).get('section') || '-');
+Promise.allSettled([init(), initAbout()]).then(() => { if (section) setTimeout(() => section.scrollIntoView(), 100); });
