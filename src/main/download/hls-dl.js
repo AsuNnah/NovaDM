@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const net = require('../net');
 const hls = require('../media/hls');
+const diagnostics = require('../diagnostics');
 const { TsToMp4 } = require('../media/transmux');
 const { HttpError } = net;
 
@@ -415,7 +416,9 @@ class HlsDownload extends EventEmitter {
       try {
         let data = await this.getBytes(url, seg.range);
         if (seg.key && seg.key.method === 'AES-128') data = await this.decrypt(seg, data);
-        return data;
+        const clean = hls.stripImageDisguise(data);
+        if (clean !== data && !this._disguised) { this._disguised = true; diagnostics.add('note', [`video download ${this.id}: segments disguised as pictures, picture header removed`]); }
+        return clean;
       } catch (err) {
         lastErr = err;
         if (err instanceof HttpError && err.fatal && attempt >= urls.length - 1) throw err;
@@ -558,6 +561,7 @@ class HlsDownload extends EventEmitter {
 
   initContainer(firstBuf, seg) {
     const kind = hls.sniffContainer(firstBuf);
+    diagnostics.add('note', [`video download ${this.id}: stream ${seg.map ? 'fmp4 (init map)' : kind}, ${this.segments.length} segments${this.live ? ', live' : ''}${seg.key ? ', encrypted ' + seg.key.method : ''}`]);
     if (seg.map || kind === 'fmp4') { this._container = 'fmp4'; return; }
     if (kind === 'ts' && this.convertTs) {
       this._container = 'ts';

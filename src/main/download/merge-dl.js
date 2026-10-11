@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const net = require('../net');
 const hls = require('../media/hls');
+const diagnostics = require('../diagnostics');
 const dash = require('../media/dash');
 const { Mp4Merger, readBoxes, child, children } = require('../media/mp4');
 const { HttpError } = net;
@@ -575,7 +576,9 @@ class MergeDownload extends EventEmitter {
         let data = await this.getBytes(seg.url, seg.range, true, t.headers);
         if (seg.key && seg.key.method === 'AES-128') data = await this.decrypt(seg, data);
         else if (seg.key && seg.key.method !== 'NONE') { const e = new Error('This stream is DRM-protected and cannot be downloaded'); e.code = 'DRM'; throw e; }
-        return data;
+        const clean = hls.stripImageDisguise(data);
+        if (clean !== data && !this._disguised) { this._disguised = true; diagnostics.add('note', [`video download ${this.id}: separate audio/video, segments disguised as pictures, header removed`]); }
+        return clean;
       } catch (err) {
         lastErr = err;
         if (err.code === 'DRM') throw err;

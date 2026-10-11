@@ -1,6 +1,7 @@
 'use strict';
 // Tab manager: one WebContentsView per tab, navigation, the pop-up guard, site permissions, and
 // the media sniffer (request-header capture + response classification into the media registry).
+const diagnostics = require('./diagnostics');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { app, WebContentsView, session: electronSession, ipcMain } = require('electron');
@@ -306,6 +307,7 @@ class Browser extends EventEmitter {
     });
     wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
       // -3 = aborted (user navigated away / download started): not an error.
+      if (isMain && code !== -3 && !tab.incognito) diagnostics.add('load', [`tab: ${desc} (${code}) ${url}`]); // the report keeps the site only
       if (!isMain || code === -3 || !/^https?:/i.test(url)) return;
       // A link NovaDM upgraded to HTTPS, and the site has no working HTTPS: open it as it was.
       const plain = this.shields ? this.shields.fallback(url) : null;
@@ -424,7 +426,8 @@ class Browser extends EventEmitter {
     const decision = this.popup.decideRequest({ pageUrl: tab.url, url, click, isAd });
     if (decision === 'open') {
       if (/^https?:|^novadm:/i.test(url)) {
-        const background = disposition === 'background-tab' || !!(click && click.mods);
+        // As in Chrome: Ctrl+click / middle-click behind, Ctrl+Shift+click and Shift+click in front.
+        const background = disposition === 'background-tab' || (!['foreground-tab', 'new-window'].includes(disposition) && !!(click && click.mods));
         this.createTab({ url, incognito: tab.incognito, background, openerPartition: tab.id });
       }
       return;

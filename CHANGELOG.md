@@ -6,6 +6,24 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.4.2] — 2026-10-11
+
+### Fixed
+- **Video downloads came out blank, partly playable or without sound** on sites that store their
+  stream on free image hosting: each segment starts with a small fake picture (PNG / JPEG / GIF /
+  BMP / WebP header) in front of the real video. NovaDM now drops that header, like players do
+  (and like 1DM); a stream downloaded this way is byte-for-byte the same as one without the
+  disguise. Only segments that start with a picture header *and* contain video are changed.
+- **Ctrl+click and middle-click** open the link in a new tab **behind** the current one, as in
+  Chrome (they switched to the new tab: the Chrome-extension support marked every new tab as the
+  active one). **Ctrl+Shift+click** opens it in front.
+
+### Improved
+- **Report a problem** now also lists: crashes in NovaDM's core, NovaDM pages or websites that
+  failed to load (site and error code only), how each recent video download was handled (stream
+  format, disguised segments), the last 10 downloads, windows and tabs, the install type and the
+  update status. Personal data is still removed.
+
 ## [1.4.1] — 2026-10-11
 
 ### Fixed
