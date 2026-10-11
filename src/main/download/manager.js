@@ -13,6 +13,7 @@ const { RateLimiter } = require('./limiter');
 const { JsonStore } = require('../store');
 const util = require('../util');
 const post = require('./postprocess');
+const diagnostics = require('../diagnostics');
 const { normalizeQueues } = require('../scheduler');
 const { categoryFor, siteSettingsFor } = require('../rules');
 
@@ -36,6 +37,7 @@ class DownloadManager extends EventEmitter {
     this.aria2 = null; // set by main (torrent/aria2.js): torrents and magnet links
     this.askTorrentFiles = null; // set by main: (rec, files) => Promise<'1,3' | null>
     this.seeders = new Map(); // id -> TorrentDownload still seeding after it finished
+    this.optimizing = new Set(); // ids of finished videos being made into a normal MP4 (optimizeVideo)
     this._finishedSinceIdle = false;
     this.limiter = new RateLimiter((settings.get('speedLimitKBps') || 0) * 1024);
     this.store = new JsonStore(path.join(app.getPath('userData'), 'downloads.json'), { items: [] });
@@ -578,6 +580,7 @@ class DownloadManager extends EventEmitter {
 
   // Mark of the Web, then (for programs and archives by default) a Microsoft Defender scan.
   async postProcess(rec) {
+    await this.optimizeVideo(rec); // first: the mark and the scan apply to the final file
     if (this.settings.get('markOfTheWeb') !== false && !rec.native) {
       const from = rec.kind === 'merge' ? (rec.mergeSource && rec.mergeSource.tracks[0] && rec.mergeSource.tracks[0].url) : rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0];
       post.markOfTheWeb(rec.savePath, { url: from || '', referrer: rec.pageUrl, incognito: rec.incognito });
@@ -591,6 +594,22 @@ class DownloadManager extends EventEmitter {
     }
     // Unpack archives (never one Defender reported).
     if (this.settings.get('extractArchives') && rec.scan !== 'threat' && post.isArchive(rec.savePath)) await this.extract(rec.id);
+  }
+
+  /**
+   * A video saved as fragments (HLS, DASH, joined tracks) becomes a normal MP4 with its index first,
+   * when FFmpeg is installed: players start it at once and jump without delay. Without FFmpeg, or
+   * if it fails, the fragmented MP4 stays (it plays, just slower to start and seek in some players).
+   */
+  async optimizeVideo(rec) {
+    if (!['hls', 'dash', 'merge'].includes(rec.kind) || !/\.(mp4|m4v)$/i.test(rec.savePath || '')) return;
+    if (!this.ffmpeg || !this.ffmpeg.available() || !post.isFragmentedMp4(rec.savePath)) return;
+    this.optimizing.add(rec.id); this.emitRecord(rec);
+    const r = await post.makeFaststart(rec.savePath, this.ffmpeg);
+    this.optimizing.delete(rec.id);
+    if (r.ok) { rec.size = r.size; rec.received = r.size; }
+    diagnostics.add(r.ok ? 'note' : 'warn', [`video download ${rec.id}: ${r.ok ? 'made into a normal MP4 for playback (faststart)' : 'kept as fragments: ' + r.error}`]);
+    this.persist(); this.emitRecord(rec);
   }
 
   /** Unpack a finished archive into a folder next to it. */
@@ -793,7 +812,7 @@ class DownloadManager extends EventEmitter {
       pageUrl: r.pageUrl, addedAt: r.addedAt, completedAt: r.completedAt, error: r.error,
       segments: r.segments, doneSegments: r.doneSegments, activeMs: this.activeMs(r),
       errorCode: r.errorCode || null, verify: r.verify || '', native: !!r.native, incognito: !!r.incognito,
-      queue: r.queue || 'main', scan: r.scan || '',
+      queue: r.queue || 'main', scan: r.scan || '', optimizing: this.optimizing.has(r.id),
       live: !!r.live, recording: !!r.recording && r.state === 'downloading', recordedSeconds: r.recordedSeconds || 0,
       from: r.from || '', joining: !!r.joining, extract: r.extract || '', extractedTo: r.extractedTo || '',
       phase: r.phase || '', seeding: !!r.seeding, uploadSpeed: r.uploadSpeed || 0, ratio: r.ratio || 0, seeders: r.seeders || 0,
