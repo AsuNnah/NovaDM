@@ -359,6 +359,10 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <div class="lbl"><b>yt-dlp</b><span>Optional. Finds the videos of over a thousand sites that NovaDM's own detection can't see ("Find with yt-dlp" in the media panel); NovaDM then downloads them. From github.com/yt-dlp/yt-dlp, checked against its published checksums. Each site's own terms apply.</span><div class="status" id="ytStatus">Checking…</div><div class="ffbar" id="ytBar" hidden><i></i></div></div>
       <div class="ffacts"><button id="ytInstall">Install</button><button id="ytChoose">Use my own…</button><button id="ytRemove" hidden>Remove</button></div>
     </div>
+    <div class="row">
+      <div class="lbl"><b>Use yt-dlp by itself on YouTube</b><span>When yt-dlp is installed and you open a YouTube video, NovaDM asks yt-dlp in the background, so the download choices are already in the media panel. yt-dlp then talks to YouTube like the page does.</span></div>
+      <label class="sw"><input type="checkbox" id="ytdlpAuto"><i></i></label>
+    </div>
   </div>
 
   <h2>Video detection</h2>
@@ -429,6 +433,14 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     <div class="row">
       <div class="lbl"><b>Search engine</b><span>Used when you type words in the address bar.</span></div>
       <select id="searchEngine"></select>
+    </div>
+  </div>
+
+  <h2 id="about">About NovaDM</h2>
+  <div class="card">
+    <div class="row">
+      <div class="lbl"><b id="aboutVersion">NovaDM</b><span id="aboutBuild"></span><div class="status" id="aboutUpdate"></div></div>
+      <div class="ffacts"><button id="aboutCheck">Check for updates</button><button id="aboutInstall" hidden>Restart to update</button><button id="aboutReleases">What's new</button></div>
     </div>
   </div>
 </div>

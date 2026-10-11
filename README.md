@@ -31,6 +31,7 @@ the SHA-256 of its files so you can check your download.
 - Tab search (Ctrl+Shift+A); type a site name in the address bar and press Tab to search that
   site (YouTube, Wikipedia, GitHub, …)
 - Report a problem (menu): a bug report file with personal data removed, to read and send
+- About NovaDM (menu, or Settings → About): the installed version, the build, and "Check for updates"
 - Unloads tabs you haven't used for a while, to save memory
 
 **Privacy and safety**
@@ -82,7 +83,7 @@ published checksum. You can also point NovaDM at your own copy.
 |---|---|---|
 | [aria2](https://github.com/aria2/aria2) | ~2.5 MB | Torrents and magnet links |
 | [FFmpeg](https://github.com/BtbN/FFmpeg-Builds) | ~80 MB | Joining WebM / plain-MP4 picture and sound, saving sound only, repairing videos |
-| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | one .exe | "Find with yt-dlp" for sites NovaDM's own detection can't read |
+| [yt-dlp](https://github.com/yt-dlp/yt-dlp) | one .exe | "Find with yt-dlp" for sites NovaDM's own detection can't read; on YouTube it is asked by itself |
 
 ## Privacy
 

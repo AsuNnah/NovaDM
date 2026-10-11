@@ -547,7 +547,7 @@ class HlsDownload extends EventEmitter {
     const seg = this.segments[idx];
     if (this._container === null) this.initContainer(buf, seg);
     if (this._container === 'ts') {
-      this._tx.push(buf);
+      this._tx.push(buf, seg.duration); // the playlist duration keeps the timeline continuous
       this._tx.flushSegment(); // writes this segment's MP4 fragment now
       return;
     }

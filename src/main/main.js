@@ -628,7 +628,8 @@ function sendMediaState() {
   const tabId = browser.activeId;
   if (tabId == null) return;
   const data = media.list(tabId);
-  sendUI('media', { count: media.count(tabId), ...data, ytdlp: !!(ytdlp && ytdlp.available()) });
+  const auto = ipcHandlers['media.ytdlpAuto'] ? ipcHandlers['media.ytdlpAuto']() : null;
+  sendUI('media', { count: media.count(tabId) + (auto && auto.ok ? 1 : 0), ...data, ytdlp: !!(ytdlp && ytdlp.available()), ytdlpAuto: auto });
 }
 
 // Turn a detected media item into a download.
@@ -930,7 +931,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
     const from = (event.senderFrame && event.senderFrame.url) || '';
     if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|about|update)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return inCtx(kindOfArgs([browser.tabIdForWc(event.sender.id)]), () => ipcHandlers[method](args || {}));
   });
   // Live updates for open Downloads pages.
