@@ -1,0 +1,95 @@
+# Stage 6 of docs/pipeline.md: free security scanners, no API keys and no cost. Their findings go to
+# the Security tab (code scanning) next to CodeQL's. They don't block merging: the required checks
+# stay `test` and `analyze`; new findings are triaged like CodeQL alerts (fix, or dismiss with a reason).
+#  - Electronegativity: Electron misconfigurations (window options, isolation, IPC, navigation).
+#  - Semgrep (Community Edition): JavaScript / Node.js security rules, different from CodeQL's.
+#  - OSV-Scanner: known vulnerabilities in package-lock.json (OSV database).
+#  - OpenSSF Scorecard: how the repository itself is protected (main branch and weekly only).
+name: Security scans
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '41 4 * * 2' # weekly, so new rules and advisories also check old code
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  electronegativity:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Electronegativity (pinned version)
+        run: npx --yes @doyensec/electronegativity@1.10.3 --input src --relative --electron-version 44.7.0 --output electronegativity.sarif
+      - name: Send the results to code scanning
+        if: always() && hashFiles('electronegativity.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: electronegativity.sarif
+          category: electronegativity
+
+  semgrep:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Semgrep (pinned version)
+        run: pip install semgrep==1.177.0
+      # Only the code that ships (src, the browser extension); tools/ and test/ are local test scripts.
+      - name: Semgrep
+        run: semgrep scan --config p/javascript --config p/nodejsscan --metrics=off --sarif --output semgrep.sarif src browser-extension
+      - name: Send the results to code scanning
+        if: always() && hashFiles('semgrep.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  osv-scanner:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.6.0
+    with:
+      scan-args: |-
+        --lockfile=package-lock.json
+      fail-on-vuln: false # reported in the Security tab; Dependabot opens the fix
+
+  scorecard:
+    # Scorecard only rates the default branch.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: ossf/scorecard-action@v2.4.4
+        with:
+          results_file: scorecard.sarif
+          results_format: sarif
+          publish_results: false
+      - name: Send the results to code scanning
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: scorecard.sarif
+          category: scorecard
