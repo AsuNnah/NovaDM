@@ -6,6 +6,16 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.5.1] — 2026-10-11
+
+### Changed
+- **Certificate warnings work like Chrome's.** A site whose certificate isn't trusted (a router or
+  other device on your network, for example) shows "Your connection is not private" with **Back to
+  safety**, and **Advanced** → *Proceed to … (unsafe)*. Proceeding trusts that site with that exact
+  certificate until NovaDM closes; the address bar shows no lock there, a different certificate warns
+  again, and private windows decide separately. The warning explains the problem (untrusted issuer,
+  certificate of another site — with the Secure DNS tip —, expired or not yet valid).
+
 ### Security
 - Links opened from NovaDM's own toolbar go to the default program only when they are web or mail
   links (`http`, `https`, `mailto`); other kinds of address can start programs. Found by the new

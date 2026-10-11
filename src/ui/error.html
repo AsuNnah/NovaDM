@@ -21,18 +21,30 @@ button.sec{background:transparent;color:var(--fg);border-color:var(--line);margi
 body.danger{--bg:#3a1416;--card:#4a1c1f;--line:#6b2a2e;}
 body.danger .icon{color:#ff8a80;}
 body.danger button.sec{color:var(--fg2);font-size:12.5px;}
+/* Certificate warning, laid out like Chrome's: Advanced on the left, Back to safety on the right. */
+body.cert .icon{background:none;border:0;width:auto;height:auto;color:#e5534b;justify-content:flex-start;}
+body.cert .buttons{display:flex;justify-content:space-between;align-items:center;}
+body.cert button.sec{margin-left:0;order:-1;}
+.adv{color:var(--fg2);margin-top:26px;}
+.adv a{color:var(--fg2);font-size:13px;}
+.adv .err{color:#e5534b;font-size:13px;margin-top:6px;}
 </style>
 <link rel="stylesheet" href="theme.css" />
 </head>
 <body>
   <div class="wrap">
-    <div class="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg></div>
+    <div class="icon" id="icon"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16.5v.5"/></svg></div>
     <h1 id="title">This page can't be opened</h1>
     <p class="host" id="host"></p>
     <p class="hint" id="hint"></p>
     <ul id="tips"></ul>
     <div class="code" id="code"></div>
-    <button id="retry">Try again</button><button class="sec" id="settings">Open settings</button>
+    <div class="buttons"><button id="retry">Try again</button><button class="sec" id="settings">Open settings</button></div>
+    <div class="adv" id="adv" hidden>
+      <p id="advText"></p>
+      <a href="#" id="proceed"></a>
+      <div class="err" id="proceedErr" hidden>Load the page again, then proceed.</div>
+    </div>
   </div>
   <script src="error.js"></script>
 </body>
