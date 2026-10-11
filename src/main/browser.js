@@ -11,7 +11,7 @@ const { normalizeOrder, nextColor, cleanGroup, stepTab, COLOR_HEX } = require('.
 
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
 const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
-const NEWTAB = 'novadm://newtab';
+const { normalizeUrl, NEWTAB } = require('./address');
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
@@ -836,16 +836,5 @@ function internalUrl(u) {
 }
 
 function displayUrl(u) { return (u || '').startsWith('novadm://') ? '' : (u || ''); }
-
-function normalizeUrl(input, settings) {
-  let s = String(input || '').trim();
-  if (!s) return NEWTAB;
-  if (s.startsWith('novadm://') || s.startsWith('about:') || /^view-source:https?:/i.test(s)) return s;
-  if (/^https?:\/\//i.test(s) || /^file:\/\//i.test(s)) return s;
-  // A single token with a dot and no spaces is treated as a domain; otherwise search.
-  const looksDomain = /^[^\s]+\.[^\s]{2,}(\/|$|:)/.test(s) || s.startsWith('localhost');
-  if (looksDomain && !s.includes(' ')) return 'https://' + s;
-  return settings.searchUrl(s);
-}
 
 module.exports = { Browser, NEWTAB };

@@ -6,6 +6,19 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.5.2] — 2026-10-11
+
+### Fixed
+- **An extension's own pages open.** `chrome-extension://…` addresses (options pages, welcome pages,
+  the Options item on an extension's toolbar button) were turned into `https://chrome-extension//…`
+  and showed "Can't find chrome-extension".
+
+### Added
+- **Options** button for each extension in Settings → Extensions (when it has an options page).
+- Extensions that block with Chrome's `declarativeNetRequest` (uBlock Origin Lite, AdGuard and other
+  Manifest V3 blockers) are marked in the install dialog and in Settings: NovaDM can't run that API,
+  so they load but block nothing; NovaDM's own ad blocker does that job.
+
 ## [1.5.1] — 2026-10-11
 
 ### Changed

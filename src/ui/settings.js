@@ -95,9 +95,18 @@ async function renderExtensions() {
     const b = document.createElement('b'); b.textContent = `${e.name} ${e.version ? '· ' + e.version : ''}`;
     const s = document.createElement('span'); s.textContent = e.description || e.id;
     lbl.append(b, s);
+    if (e.limited) {
+      const w = document.createElement('span'); w.style.color = 'var(--warn, #e0a030)';
+      w.textContent = "Blocks with Chrome's declarativeNetRequest, which NovaDM can't run: it won't block anything here. NovaDM's own ad blocker (Guard) does that job.";
+      lbl.append(w);
+    }
     const rm = document.createElement('button'); rm.textContent = 'Remove';
     rm.onclick = async () => { rm.disabled = true; rm.textContent = 'Removing…'; await bridge.call('extensions.remove', { id: e.id }); renderExtensions(); };
-    row.append(lbl, rm);
+    if (e.hasOptions) {
+      const op = document.createElement('button'); op.textContent = 'Options';
+      op.onclick = () => bridge.call('extensions.options', { id: e.id });
+      row.append(lbl, op, rm);
+    } else row.append(lbl, rm);
     host.appendChild(row);
   }
 }
