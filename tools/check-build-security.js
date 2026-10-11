@@ -30,6 +30,20 @@ async function start(exe, args, env, ms = 7000) {
   return { ran: fs.existsSync(marker), inspect, exited };
 }
 
+async function uiLoads(exe) {
+  const profile = fs.mkdtempSync(path.join(work, 'u-'));
+  let log = '';
+  const p = spawn(exe, [], { env: { ...process.env, NOVADM_USERDATA: profile, ELECTRON_ENABLE_LOGGING: '1' } });
+  for (const s of [p.stdout, p.stderr]) s.on('data', (d) => { log += d; });
+  let exited = false;
+  p.on('exit', () => { exited = true; });
+  await sleep(9000);
+  const alive = !exited;
+  try { execFileSync('taskkill', ['/PID', String(p.pid), '/T', '/F'], { stdio: 'ignore' }); } catch {}
+  const failed = (log.match(/Failed to load URL: \S*src\/ui\/\S+/g) || []).map((l) => l.replace(/.*src\/ui\//, ''));
+  return { ok: alive && !failed.length, detail: failed.length ? `not loaded: ${failed.join(', ')}` : alive ? 'all loaded' : 'NovaDM exited' };
+}
+
 async function cookieOnDisk(exe, args) {
   const SECRET = 'secret-session-' + Date.now();
   const server = require('http').createServer((req, res) => { res.setHeader('set-cookie', `session=${SECRET}; Max-Age=3600; Path=/`); res.end('<title>ok</title>ok'); });
@@ -58,7 +72,7 @@ async function cookieOnDisk(exe, args) {
   const check = (name, ok, detail = '') => results.push({ name, ok, detail });
 
   const wire = await getCurrentFuseWire(EXE);
-  const want = { RunAsNode: false, EnableCookieEncryption: true, EnableNodeOptionsEnvironmentVariable: false, EnableNodeCliInspectArguments: false, EnableEmbeddedAsarIntegrityValidation: true, OnlyLoadAppFromAsar: true, GrantFileProtocolExtraPrivileges: false };
+  const want = { RunAsNode: false, EnableCookieEncryption: true, EnableNodeOptionsEnvironmentVariable: false, EnableNodeCliInspectArguments: false, EnableEmbeddedAsarIntegrityValidation: true, OnlyLoadAppFromAsar: true, GrantFileProtocolExtraPrivileges: true }; // false breaks NovaDM's own file:// pages inside app.asar (1.3.0–1.4.0)
   for (const [k, on] of Object.entries(want)) check(`fuse ${k} ${on ? 'on' : 'off'}`, (wire[FuseV1Options[k]] === 49) === on);
 
   let r = await start(EXE, [script], { ELECTRON_RUN_AS_NODE: '1' });
@@ -69,6 +83,11 @@ async function cookieOnDisk(exe, args) {
   check('no debugger port with --inspect', !r.inspect);
   r = await start(EXE, [], { NOVADM_SELFTEST: script });
   check('test hook NOVADM_SELFTEST is off in the built app', !r.ran);
+
+  // NovaDM's own pages (toolbar, panels, new tab) load from the package. A security fuse once
+  // stopped them loading in the installed app while every check above still passed.
+  const ui = await uiLoads(EXE);
+  check("NovaDM's own pages load (toolbar, panels, new tab)", ui.ok, ui.detail);
 
   // A copy whose app code was changed must refuse to start.
   const copy = path.join(work, 'tampered');
