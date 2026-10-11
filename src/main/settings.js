@@ -117,6 +117,7 @@ function defaults() {
     clipboardExtensions: 'zip rar 7z exe msi apk iso mp4 mkv avi webm mov mp3 m4a flac pdf epub torrent m3u8',
     pageTitleNames: true,
     convertTsToMp4: true,
+    ytdlpAuto: true, // on YouTube video pages, ask yt-dlp in the background when it is installed
     minMediaKB: 300, // ignore smaller video/audio responses picked up by the sniffer
 
     // Ad blocker

@@ -19,6 +19,10 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   version, the install type (installed / portable), the Electron and Chromium versions, the update
   status, **Check for updates** (works even with the daily check off), **Restart to update** when a
   new version is ready, and a link to what's new.
+- **yt-dlp by itself on YouTube:** when yt-dlp is installed and you open a YouTube video, NovaDM
+  asks it in the background (once per video), so the download choices are already in the media
+  panel, with no need to click "Find with yt-dlp". Off in Settings → Add-ons. Without yt-dlp nothing
+  changes.
 
 ## [1.4.2] — 2026-10-11
 

@@ -628,7 +628,8 @@ function sendMediaState() {
   const tabId = browser.activeId;
   if (tabId == null) return;
   const data = media.list(tabId);
-  sendUI('media', { count: media.count(tabId), ...data, ytdlp: !!(ytdlp && ytdlp.available()) });
+  const auto = ipcHandlers['media.ytdlpAuto'] ? ipcHandlers['media.ytdlpAuto']() : null;
+  sendUI('media', { count: media.count(tabId) + (auto && auto.ok ? 1 : 0), ...data, ytdlp: !!(ytdlp && ytdlp.available()), ytdlpAuto: auto });
 }
 
 // Turn a detected media item into a download.

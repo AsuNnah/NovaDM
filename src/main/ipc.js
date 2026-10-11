@@ -30,8 +30,40 @@ const ADDONS = [
   { id: 'aria2', name: 'aria2', why: 'Torrents and magnet links' },
 ];
 
+// yt-dlp results per page (and private or not, since the cookies differ): a pending promise, then
+// { ok, title, duration, choices } or { ok: false, error }. The last 20 pages are kept.
+const ytdlpFound = new Map();
+const YOUTUBE_VIDEO = /^https:\/\/((www|m)\.)?youtube\.com\/(watch\?|shorts\/)|^https:\/\/youtu\.be\//i;
+const ytdlpKey = (tab) => `${tab.incognito ? 'p' : 'n'} ${tab.url}`;
+
 function registerIpc(ctx) {
   const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission, inSenderCtx = (_s, fn) => fn() } = ctx;
+
+  function ytdlpLookup(tab) {
+    const key = ytdlpKey(tab);
+    const hit = ytdlpFound.get(key);
+    if (hit && (hit.then || hit.ok)) return Promise.resolve(hit); // a failed lookup is tried again
+    const { browser, ytdlp } = getManagers();
+    const p = (async () => {
+      try {
+        const ses = tab.incognito ? browser.incognitoSession : browser.normalSession;
+        const cookies = await ses.cookies.get({ url: tab.url });
+        return { ok: true, ...(await ytdlp.find(tab.url, { cookies, referer: tab.url })) };
+      } catch (e) {
+        return { ok: false, error: e.message };
+      }
+    })().then((r) => { ytdlpFound.set(key, r); return r; });
+    ytdlpFound.delete(key);
+    ytdlpFound.set(key, p);
+    while (ytdlpFound.size > 20) ytdlpFound.delete(ytdlpFound.keys().next().value);
+    return p;
+  }
+  // What the panel gets: labels only; the choices stay here and the panel answers with a number.
+  function ytdlpAnswer(tab, r) {
+    if (!r.ok) return { ok: false, error: r.error };
+    ytdlpChoices = { tabId: tab.id, incognito: tab.incognito, list: r.choices };
+    return { ok: true, title: r.title, duration: r.duration, choices: r.choices.map((c) => c.label) };
+  }
 
   const handlers = {
     // ---- window ----
@@ -72,18 +104,19 @@ function registerIpc(ctx) {
     // yt-dlp add-on: what it finds on the page in the active tab; the choices stay here, the panel
     // only gets their labels and answers with a number.
     'media.ytdlpFind': async () => {
-      const { browser, ytdlp } = getManagers();
-      const tab = browser.activeTab();
+      const tab = getManagers().browser.activeTab();
       if (!tab || !/^https?:/i.test(tab.url || '')) return { ok: false, error: 'Open a web page first' };
-      try {
-        const ses = tab.incognito ? browser.incognitoSession : browser.normalSession;
-        const cookies = await ses.cookies.get({ url: tab.url });
-        const r = await ytdlp.find(tab.url, { cookies, referer: tab.url });
-        ytdlpChoices = { tabId: tab.id, incognito: tab.incognito, list: r.choices };
-        return { ok: true, title: r.title, duration: r.duration, choices: r.choices.map((c) => c.label) };
-      } catch (e) {
-        return { ok: false, error: e.message };
-      }
+      return ytdlpAnswer(tab, await ytdlpLookup(tab));
+    },
+    // Called with every media state: on a YouTube video page, yt-dlp is asked in the background
+    // (once per video) so its choices are ready in Detected media without "Find with yt-dlp".
+    'media.ytdlpAuto': () => {
+      const { browser, ytdlp, settings } = getManagers();
+      const tab = browser.activeTab();
+      if (!tab || !YOUTUBE_VIDEO.test(tab.url || '') || settings.get('ytdlpAuto') === false || !ytdlp.available()) return null;
+      const hit = ytdlpFound.get(ytdlpKey(tab));
+      if (!hit) { ytdlpLookup(tab).then(() => sendMediaState()); return null; }
+      return hit.then ? null : ytdlpAnswer(tab, hit); // still looking: nothing to show yet
     },
     'media.ytdlpDownload': (a) => {
       const c = ytdlpChoices && ytdlpChoices.list[a.index];
