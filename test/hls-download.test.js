@@ -35,6 +35,14 @@ function mp4Boxes(buf) {
   return t;
 }
 
+// The length in a converted MP4's header (mvhd, version 0), in seconds.
+function headerSeconds(buf) {
+  const { readBoxes, child } = require('../src/main/media/mp4');
+  const moov = readBoxes(buf).find((b) => b.type === 'moov');
+  const mvhd = child(buf, moov, 'mvhd');
+  return buf.readUInt32BE(mvhd.start + mvhd.header + 16) / buf.readUInt32BE(mvhd.start + mvhd.header + 12);
+}
+
 function serve(routes) {
   const server = http.createServer((req, res) => {
     const u = req.url;
@@ -67,6 +75,7 @@ test('plain TS HLS downloads and converts to MP4', async () => {
   const b = mp4Boxes(out);
   assert.ok(b.includes('ftyp') && b.includes('moov') && b.includes('moof') && b.includes('mdat'), 'boxes: ' + b.slice(0, 6));
   assert.ok(out.length > SEG.length, 'converted output present');
+  assert.equal(headerSeconds(out), N * 5, 'the header gives the playlist length (players show it)');
   assert.equal(dl.doneSegments, N);
   server.close();
 });
@@ -213,6 +222,7 @@ test('TS stream converted with a pause in the middle stays one valid MP4', async
   assert.equal(b.filter((x) => x === 'ftyp').length, 1, 'exactly one ftyp');
   assert.equal(b.filter((x) => x === 'moov').length, 1, 'exactly one moov');
   assert.ok(b.filter((x) => x === 'moof').length >= N, 'a fragment per segment: ' + b.filter((x) => x === 'moof').length);
+  assert.equal(headerSeconds(out), N * 5, 'length written after a resume (file reopened in append mode)');
   server.close();
 });
 

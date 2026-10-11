@@ -357,6 +357,9 @@ class DownloadManager extends EventEmitter {
     engine.on('done', () => {
       this.addActiveTime(rec);
       rec.state = 'done'; rec.completedAt = Date.now(); rec.speed = 0; rec.percent = 100;
+      // The last progress event comes after 'done' and is dropped as late, so take the final count here.
+      const fin = engine.progress ? engine.progress() : null;
+      if (fin && fin.segments) { rec.segments = fin.segments; rec.doneSegments = fin.doneSegments; }
       try { const st = fs.statSync(rec.savePath); if (st.isFile()) { rec.size = st.size; rec.received = rec.size; } } catch {}
       if (rec.kind === 'torrent') { rec.received = rec.size; this.seeders.set(rec.id, engine); }
       this.engines.delete(rec.id);
