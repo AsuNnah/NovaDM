@@ -106,7 +106,9 @@ On its own it only connects to download the ad-block lists (every 4 days) and th
 (daily), to ask GitHub once a day for a newer NovaDM and download it (installed version; can be turned off), and to the
 Secure DNS provider you choose; add-ons and the torrent tracker list are downloaded only when you
 use them. When a new NovaDM is found, its release notes come from GitHub too; "Check for updates"
-in Settings → About also asks GitHub for the newest yt-dlp, FFmpeg, aria2 and Electron. With
+in Settings → About also asks GitHub for the newest yt-dlp, FFmpeg, aria2 and Electron, and asks
+OSV.dev and the US National Vulnerability Database about known security problems in those versions
+(only the program name and version number are sent). With
 yt-dlp installed, opening a YouTube video lets yt-dlp ask YouTube about that video (as the page
 does; Settings → Add-ons turns it off). The sites you visit are checked against the lists on your PC, never sent anywhere.
 Private windows leave no history or downloads list entries, and their cookies, site data and

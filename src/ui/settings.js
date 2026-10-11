@@ -421,6 +421,23 @@ async function initAbout() {
         : `${a.installed ? `Installed: ${a.installed}` : 'Not installed'}${a.latest ? ` · Newest: ${a.latest}` : ''}`));
       const msg = a.warn || a.note || (a.update ? 'Update available.' : a.installed && !a.error ? 'Up to date.' : '');
       if (msg) lbl.append(node('div', (a.warn ? '⚠ ' : '') + msg, `status${a.warn ? ' warn' : a.update || a.note ? '' : ' ok'}`));
+      // Known security problems (addon-vulns.js): the installed version and the newest one.
+      const sec = a.security;
+      if (sec && a.installed) {
+        const list = (l) => l.slice(0, 4).map((v) => v.id + (v.severity ? ` (${v.severity.toLowerCase()})` : '')).join(', ') + (l.length > 4 ? ` and ${l.length - 4} more` : '');
+        let text = '';
+        let bad = false;
+        if (sec.error) text = `Couldn’t look up known security problems (${sec.source}): ${sec.error}`;
+        else if (sec.installed && sec.installed.length) {
+          bad = true;
+          const after = sec.latest ? (sec.latest.length ? ` ${a.latest} still has ${sec.latest.length}.` : ` ${a.latest} has none: update.`) : '';
+          text = `⚠ Known security problems in ${a.installed} (${sec.source}): ${list(sec.installed)}.${after}`;
+        } else if (sec.latest && sec.latest.length) {
+          bad = true;
+          text = `No known security problems in ${a.installed}. ⚠ The newest, ${a.latest}, has ${sec.latest.length} (${list(sec.latest)}): better to wait for a fix.`;
+        } else if (sec.installed) text = `No known security problems (${sec.source}).`;
+        if (text) lbl.append(node('div', text, `status${bad ? ' warn' : sec.error ? '' : ' ok'}`));
+      }
       row.append(lbl);
       if (a.action) {
         const acts = node('div', '', 'ffacts');
