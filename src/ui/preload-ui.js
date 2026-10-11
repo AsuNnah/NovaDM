@@ -15,6 +15,9 @@ if (/[\\/]ui[\\/]chrome\.html$/.test(decodeURIComponent(location.pathname))) {
   try { require('electron-chrome-extensions/browser-action').injectBrowserAction(); } catch (e) { console.error('extension buttons unavailable', e); }
 }
 
+// Each UI page subscribes once per event it shows (the panel: 17); more than 10 is expected here.
+ipcRenderer.setMaxListeners(50);
+
 contextBridge.exposeInMainWorld('novadm', {
   call: (method, args) => ipcRenderer.invoke('novadm:call', method, args),
   on: (name, cb) => {

@@ -6,6 +6,28 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.4.4] — 2026-10-11
+
+### Fixed
+- **Downloaded videos still showed 13:15:21 in Windows players.** The video itself was right; the
+  MP4 header said "length unknown" (the converter writes 0xFFFFFFFF, which players at 90 kHz show
+  as 13:15:21). NovaDM now writes the real length into the header when a video download finishes,
+  also after a pause and resume. Videos downloaded before 1.4.4 keep the wrong header until they
+  are downloaded again.
+- The Downloads list could show a finished video as "884/890 segments" although every segment was
+  saved: the final count arrived after the download was marked done and was ignored.
+- Starting with tabs restored but not loaded yet logged "extensions init failed" and skipped
+  registering the remaining tabs with Chrome extensions.
+- A harmless "possible memory leak" warning from the toolbar no longer fills problem reports.
+
+### Improved
+- **Downloaded videos start at once and jump without delay**, also in Windows' own players (some
+  showed a black screen for about 20 seconds). With FFmpeg installed (Settings → Add-ons), a
+  finished video download that was saved as fragments (HLS, DASH, joined picture and sound) is
+  rewritten as a normal MP4 with its index at the start: nothing is re-encoded, it takes a few
+  seconds per GB, and the Downloads list shows "Optimizing for playback…" meanwhile. If FFmpeg
+  isn't installed or the rewrite fails, the video stays as it was and still plays.
+
 ## [1.4.3] — 2026-10-11
 
 ### Fixed

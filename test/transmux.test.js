@@ -150,3 +150,38 @@ test('timeline: a continuous stream is converted as before', () => {
   const plain = videoStarts((() => { const o = []; const tx = new TsToMp4((b) => o.push(Buffer.from(b))); for (const s of pieces) { tx.push(s); tx.flushSegment(); } tx.end(); return Buffer.concat(o); })());
   assert.deepStrictEqual(continuous, plain); // durations given or not: same timeline
 });
+
+test('length: the header of a finished MP4 says how long it is (mux.js leaves it unknown)', () => {
+  const { readBoxes, child, children, writeDuration } = require('../src/main/media/mp4');
+  const seg = fs.readFileSync(SEG);
+  const chunks = [];
+  const tx = new TsToMp4((b) => chunks.push(Buffer.from(b)));
+  for (let i = 0; i < 3; i++) { tx.push(seg, 10); tx.flushSegment(); }
+  tx.end();
+  const file = path.join(require('os').tmpdir(), `novadm-length-${process.pid}.mp4`);
+  fs.writeFileSync(file, Buffer.concat(chunks));
+  const lengths = () => {
+    const buf = fs.readFileSync(file);
+    const moov = readBoxes(buf).find((b) => b.type === 'moov');
+    const at = (box, off) => buf.readUInt32BE(box.start + box.header + off); // version 0 boxes
+    const mvhd = child(buf, moov, 'mvhd');
+    const traks = children(buf, moov).filter((b) => b.type === 'trak');
+    return {
+      movie: at(mvhd, 16) / at(mvhd, 12),
+      tkhd: traks.map((t) => at(child(buf, t, 'tkhd'), 20) / at(mvhd, 12)),
+      mdhd: traks.map((t) => { const m = child(buf, child(buf, t, 'mdia'), 'mdhd'); return at(m, 16) / at(m, 12); }),
+    };
+  };
+  try {
+    assert.strictEqual(lengths().movie, 0xffffffff / 90000, 'mux.js writes "unknown" (shown as 13:15:21)');
+    const fd = fs.openSync(file, 'r+');
+    try { assert.ok(writeDuration(fd, tx.at)); } finally { fs.closeSync(fd); }
+    const l = lengths();
+    assert.strictEqual(tx.at, 30);
+    assert.strictEqual(l.movie, 30);
+    assert.deepStrictEqual(l.tkhd, [30, 30]);
+    for (const s of l.mdhd) assert.ok(Math.abs(s - 30) < 0.001, `track length ${s}`);
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+});

@@ -18,6 +18,7 @@ const net = require('../net');
 const hls = require('../media/hls');
 const diagnostics = require('../diagnostics');
 const { TsToMp4 } = require('../media/transmux');
+const { writeDuration } = require('../media/mp4');
 const { HttpError } = net;
 
 const DEFAULT_WINDOW = 10; // segments downloaded ahead of the writer
@@ -660,6 +661,7 @@ class HlsDownload extends EventEmitter {
     try {
       if (this._container === 'ts' && this._tx) this._tx.end();
       this.closeOut();
+      if (this._container === 'ts' && this._tx) this.writeLength(this._tx.at);
       fs.renameSync(this.partPath, this.savePath);
       fs.rmSync(this.metaPath, { force: true });
       fs.rmSync(this.playlistCopyPath, { force: true });
@@ -667,6 +669,21 @@ class HlsDownload extends EventEmitter {
     this.state = 'done';
     this.emit('done');
     this.emitUpdate(true);
+  }
+
+  // The converted MP4's header says "length unknown" until now. The file is reopened because a
+  // resumed download writes in append mode, which ignores positions.
+  writeLength(seconds) {
+    let fd = null;
+    try {
+      fd = fs.openSync(this.partPath, 'r+');
+      const ok = writeDuration(fd, seconds);
+      diagnostics.add('note', [`video download ${this.id}: ${ok ? `length ${Math.round(seconds)} s written to the file` : 'length not written (no MP4 header found)'}`]);
+    } catch (e) {
+      diagnostics.add('warn', [`video download ${this.id}: length not written: ${e.message}`]); // the video itself is fine
+    } finally {
+      if (fd !== null) fs.closeSync(fd);
+    }
   }
 
   fail(err) {

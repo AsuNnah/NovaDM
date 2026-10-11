@@ -76,7 +76,7 @@ class Extensions {
   // opened in the background (Ctrl+click, middle-click) must stay behind. So that request is ignored
   // and the library is told which tab really is active.
   addTab(wc, win) {
-    if (!this.ext) return;
+    if (!this.ext || !wc) return; // an unloaded tab is added when its page is made ('tab-created')
     this._registering = true;
     try { this.ext.addTab(wc, win); } finally { this._registering = false; }
     const active = this.browser.tabs.get(this.browser.groups.normal.activeId);

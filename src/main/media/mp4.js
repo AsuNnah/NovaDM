@@ -242,4 +242,36 @@ function parseSidx(buf, box) {
   return { timescale, refs };
 }
 
-module.exports = { readBoxes, children, child, makeBox, parseInit, Mp4Merger, isFragmented, parseSidx };
+/**
+ * Write the real length into the header of a finished fragmented MP4 (open file `fd`, in place).
+ * mux.js writes 0xFFFFFFFF ("unknown") in mvhd, tkhd and mdhd, and players that read the header,
+ * such as the Windows ones, show that as 13:15:21. Each track's mdhd gets the length in its own
+ * timescale. A field too small for the length (version 0, over ~13 h at 90 kHz) is left as it is.
+ */
+function writeDuration(fd, seconds) {
+  const fs = require('fs');
+  const head = Buffer.alloc(Math.min(1 << 20, fs.fstatSync(fd).size)); // ftyp + moov come first
+  fs.readSync(fd, head, 0, head.length, 0);
+  const moov = readBoxes(head).find((b) => b.type === 'moov');
+  const mvhd = moov && child(head, moov, 'mvhd');
+  if (!mvhd) return false;
+  // Version 0: 32-bit times and length; version 1: 64-bit. `at` is the length field's offset (v0, v1).
+  const put = (box, at0, at1, value) => {
+    const v1 = head[box.start + box.header] === 1;
+    const pos = box.start + box.header + (v1 ? at1 : at0);
+    if (v1) head.writeBigUInt64BE(BigInt(value), pos);
+    else if (value < 0xffffffff) head.writeUInt32BE(value, pos);
+  };
+  const movieScale = head.readUInt32BE(mvhd.start + mvhd.header + (head[mvhd.start + mvhd.header] === 1 ? 20 : 12));
+  put(mvhd, 16, 24, Math.round(seconds * movieScale));
+  for (const trak of children(head, moov).filter((b) => b.type === 'trak')) {
+    const tkhd = child(head, trak, 'tkhd');
+    const mdhd = path(head, trak, 'mdia', 'mdhd');
+    if (tkhd) put(tkhd, 20, 28, Math.round(seconds * movieScale));
+    if (mdhd) put(mdhd, 16, 24, Math.round(seconds * mdhdTimescale(head, mdhd)));
+  }
+  fs.writeSync(fd, head, moov.start, moov.end - moov.start, moov.start);
+  return true;
+}
+
+module.exports = { readBoxes, children, child, makeBox, parseInit, Mp4Merger, isFragmented, parseSidx, writeDuration };
