@@ -345,6 +345,12 @@ function registerIpc(ctx) {
     // ---- Chrome extensions ----
     'extensions.list': () => ({ ready: getManagers().extensions.ready, list: getManagers().extensions.list() }),
     'extensions.remove': async (a) => { await getManagers().extensions.remove(a.id); return { ok: true }; },
+    'extensions.options': (a) => {
+      const url = getManagers().extensions.optionsUrl(String(a.id || ''));
+      if (!url) return { ok: false };
+      getManagers().browser.createTab({ url });
+      return { ok: true };
+    },
     'extensions.openStore': () => getManagers().browser.createTab({ url: STORE_URL }),
 
     // ---- shields (adblock) ----

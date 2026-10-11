@@ -8,6 +8,8 @@ const { app, dialog, session } = require('electron');
 const { ElectronChromeExtensions } = require('electron-chrome-extensions');
 const { installChromeWebStore, uninstallExtension } = require('electron-chrome-web-store');
 
+const { usesDnr, optionsPageOf } = require('./extension-manifest');
+
 const STORE_URL = 'https://chromewebstore.google.com/';
 
 class Extensions {
@@ -67,7 +69,8 @@ class Extensions {
       cancelId: 1,
       title: 'Add extension',
       message: `Add "${name}" to NovaDM?`,
-      detail: perms.length ? `It will be able to use: ${perms.slice(0, 12).join(', ')}${perms.length > 12 ? ', …' : ''}` : 'It asks for no special permissions.',
+      detail: (perms.length ? `It will be able to use: ${perms.slice(0, 12).join(', ')}${perms.length > 12 ? ', …' : ''}` : 'It asks for no special permissions.')
+        + (usesDnr(m) ? '\n\nNote: this extension blocks with Chrome\'s declarativeNetRequest, which NovaDM cannot run, so its blocking will not work. NovaDM\'s own ad blocker (the Guard) does that job.' : ''),
     });
     return { action: response === 0 ? 'allow' : 'deny' };
   }
@@ -95,7 +98,17 @@ class Extensions {
     return api.getAllExtensions().map((e) => ({
       id: e.id, name: e.name, version: e.version,
       description: (e.manifest && e.manifest.description) || '',
+      hasOptions: !!optionsPageOf(e.manifest),
+      limited: usesDnr(e.manifest),
     }));
+  }
+
+  /** The extension's options page as a tab ('' when it has none). */
+  optionsUrl(id) {
+    const api = this.ses && (this.ses.extensions || this.ses);
+    const e = api && api.getAllExtensions().find((x) => x.id === id);
+    const page = e && optionsPageOf(e.manifest);
+    return page ? `chrome-extension://${e.id}/${String(page).replace(/^\//, '')}` : '';
   }
 
   async remove(id) {
