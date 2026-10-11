@@ -1,0 +1,7 @@
+# Store text files with LF line endings, whatever the editor or tool writes (Windows tools write CRLF):
+# mixed endings made every edited file a whole-file change and stacked branches conflict.
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.icns binary
+*.ts binary
