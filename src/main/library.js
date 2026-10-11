@@ -212,20 +212,37 @@ class TabSession {
   }
 
   /** { tabs: [{ url, title, pinned?, group? }], groups: [{ id, title, color, collapsed }], active } */
+  /**
+   * { tabs, groups, active, windows: [{ tabs, groups, active, bounds }] }. `windows` (1.6) has every
+   * normal window; a session saved by an older NovaDM is one window without a position.
+   */
   load() {
     const d = this.store.data || {};
-    const tabs = (Array.isArray(d.tabs) ? d.tabs : []).filter((t) => t && /^(https?|novadm):/i.test(t.url || ''));
-    const groups = (Array.isArray(d.groups) ? d.groups : []).filter((g) => g && typeof g.id === 'string');
-    return { tabs, groups, active: Math.max(0, Math.min(Number(d.active) || 0, tabs.length - 1)) };
+    const one = (w) => {
+      const tabs = (Array.isArray(w.tabs) ? w.tabs : []).filter((t) => t && /^(https?|novadm):/i.test(t.url || ''));
+      const groups = (Array.isArray(w.groups) ? w.groups : []).filter((g) => g && typeof g.id === 'string');
+      const b = w.bounds;
+      const bounds = b && ['x', 'y', 'width', 'height'].every((k) => Number.isFinite(b[k])) ? { x: b.x, y: b.y, width: b.width, height: b.height } : null;
+      return { tabs, groups, active: Math.max(0, Math.min(Number(w.active) || 0, tabs.length - 1)), bounds };
+    };
+    const windows = (Array.isArray(d.windows) && d.windows.length ? d.windows : [d]).map(one).filter((w) => w.tabs.length);
+    const first = windows[0] || one({});
+    return { tabs: first.tabs, groups: first.groups, active: first.active, windows };
   }
 
-  /** tabs: Browser tabs (pinned, groupId); groups: their tab groups. */
-  save(tabs, activeIndex, groups = []) {
-    this.store.data = {
-      tabs: tabs.map((t) => ({ url: t.url, title: t.title || '', ...(t.pinned ? { pinned: true } : {}), ...(t.groupId != null ? { group: t.groupId } : {}) })),
-      groups: groups.map((g) => ({ id: g.id, title: g.title, color: g.color, collapsed: !!g.collapsed })),
-      active: activeIndex,
-    };
+  /**
+   * windows: [{ tabs (Browser tabs: pinned, groupId), active (index), groups, bounds }], the first is
+   * the main window. Its tabs are also kept at the top level, which older NovaDM versions read.
+   */
+  save(windows) {
+    const one = (w) => ({
+      tabs: w.tabs.map((t) => ({ url: t.url, title: t.title || '', ...(t.pinned ? { pinned: true } : {}), ...(t.groupId != null ? { group: t.groupId } : {}) })),
+      groups: (w.groups || []).map((g) => ({ id: g.id, title: g.title, color: g.color, collapsed: !!g.collapsed })),
+      active: w.active || 0,
+      ...(w.bounds ? { bounds: w.bounds } : {}),
+    });
+    const list = windows.map(one);
+    this.store.data = { ...(list[0] || { tabs: [], groups: [], active: 0 }), windows: list };
     this.store.save(1500);
   }
 

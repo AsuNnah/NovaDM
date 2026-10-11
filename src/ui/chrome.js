@@ -34,28 +34,36 @@ function makeTabEl(id) {
   el.addEventListener('auxclick', (e) => e.preventDefault());
   el.addEventListener('contextmenu', (e) => { e.preventDefault(); call('tabs.contextMenu', { id, x: e.clientX, y: e.clientY }); });
   // Drag and drop: the tab goes before or after the tab it is dropped on, into that tab's group.
-  el.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); el.classList.add('dragging'); });
-  el.addEventListener('dragend', () => { dragId = null; el.classList.remove('dragging'); clearDropMarks(); });
+  el.addEventListener('dragstart', (e) => { dragId = id; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData(TAB_TYPE, String(id)); el.classList.add('dragging'); });
+  el.addEventListener('dragend', (e) => {
+    // Dropped where nothing takes it, away from the strip: the tab goes to a new window there.
+    if (droppedOutside(e)) call('tabs.detach', { id, x: e.screenX, y: e.screenY });
+    dragId = null; el.classList.remove('dragging'); clearDropMarks();
+  });
   // Not a drop target for itself, or for the group being dragged when it is one of its tabs.
-  const accepts = () => {
+  const accepts = (e) => {
+    if (fromOtherWindow(e)) return true;
     if (dragId != null) return dragId !== id;
     if (dragGroup == null) return false;
     const t = tabs.find((x) => x.id === id);
     return !(t && t.group && t.group.id === dragGroup);
   };
   el.addEventListener('dragover', (e) => {
-    if (!accepts()) return;
+    if (!accepts(e)) return;
     e.preventDefault();
     e.stopPropagation();
     clearDropMarks();
     el.classList.add(dropAfter(e, el) ? 'drop-after' : 'drop-before');
   });
   el.addEventListener('drop', (e) => {
-    if (!accepts()) return;
+    if (!accepts(e)) return;
     e.preventDefault();
     e.stopPropagation();
     const target = tabs.find((t) => t.id === id);
-    if (dragGroup != null) call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, target, dropAfter(e, el)) });
+    const remote = fromOtherWindow(e);
+    if (remote === TAB_TYPE) call('tabs.moveHere', { id: Number(e.dataTransfer.getData(TAB_TYPE)), index: tabs.findIndex((t) => t.id === id) + (dropAfter(e, el) ? 1 : 0), groupId: target && target.group ? target.group.id : null });
+    else if (remote === GROUP_TYPE) call('tabs.moveGroupHere', { id: e.dataTransfer.getData(GROUP_TYPE), index: groupDropIndex('', target, dropAfter(e, el)) });
+    else if (dragGroup != null) call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, target, dropAfter(e, el)) });
     else {
       const rest = tabs.filter((t) => t.id !== dragId);
       const index = rest.findIndex((t) => t.id === id) + (dropAfter(e, el) ? 1 : 0);
@@ -66,6 +74,20 @@ function makeTabEl(id) {
   return el;
 }
 const dropAfter = (e, el) => { const r = el.getBoundingClientRect(); return e.clientX > r.left + r.width / 2; };
+// Drags between windows (1.6): the tab or group id travels in the drag data; main checks it.
+const TAB_TYPE = 'application/x-novadm-tab';
+const GROUP_TYPE = 'application/x-novadm-group';
+/** TAB_TYPE / GROUP_TYPE when a drag comes from another window's strip, else ''. */
+function fromOtherWindow(e) {
+  if (dragId != null || dragGroup != null || !e.dataTransfer) return '';
+  const types = [...e.dataTransfer.types];
+  return types.includes(TAB_TYPE) ? TAB_TYPE : types.includes(GROUP_TYPE) ? GROUP_TYPE : '';
+}
+/** A drag that ended with no drop, away from the toolbar (on the page or outside the window). */
+function droppedOutside(e) {
+  if (!e.dataTransfer || e.dataTransfer.dropEffect !== 'none') return false;
+  return e.clientX < 0 || e.clientY < 0 || e.clientX > innerWidth || e.clientY > innerHeight;
+}
 /** Where a dragged group goes (index in the order without its tabs): beside the target tab, or
  * beside the target's whole group, so a group is never split. No target: at the end. */
 function groupDropIndex(gid, target, after) {
@@ -85,9 +107,12 @@ function makeChipEl(gid) {
   // Drag the chip to move the whole group.
   el.addEventListener('dragstart', (e) => {
     if (el.querySelector('input')) { e.preventDefault(); return; }
-    dragGroup = gid; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', ''); el.classList.add('dragging');
+    dragGroup = gid; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData(GROUP_TYPE, gid); el.classList.add('dragging');
   });
-  el.addEventListener('dragend', () => { dragGroup = null; el.classList.remove('dragging'); clearDropMarks(); });
+  el.addEventListener('dragend', (e) => {
+    if (droppedOutside(e)) call('tabs.detachGroup', { id: gid, x: e.screenX, y: e.screenY }); // tear the group off into a new window
+    dragGroup = null; el.classList.remove('dragging'); clearDropMarks();
+  });
   el.addEventListener('mousedown', (e) => { if (e.button === 0 && !el.querySelector('input')) e.preventDefault(); });
   el.addEventListener('click', () => {
     if (el.querySelector('input')) return;
@@ -98,14 +123,19 @@ function makeChipEl(gid) {
   el.addEventListener('dblclick', () => editGroup(gid));
   // A tab dropped on the chip joins the group, at its end; another group dropped on it goes before it.
   el.addEventListener('dragover', (e) => {
-    if (dragId == null && (dragGroup == null || dragGroup === gid)) return;
+    const remote = fromOtherWindow(e);
+    if (!remote && dragId == null && (dragGroup == null || dragGroup === gid)) return;
     e.preventDefault(); e.stopPropagation(); clearDropMarks();
-    el.classList.add(dragId != null ? 'drop-into' : 'drop-before');
+    el.classList.add(dragId != null || remote === TAB_TYPE ? 'drop-into' : 'drop-before');
   });
   el.addEventListener('drop', (e) => {
-    if (dragId == null && (dragGroup == null || dragGroup === gid)) return;
+    const remote = fromOtherWindow(e);
+    if (!remote && dragId == null && (dragGroup == null || dragGroup === gid)) return;
     e.preventDefault(); e.stopPropagation();
-    if (dragId != null) call('tabs.addToGroup', { id: dragId, groupId: gid });
+    const members = tabs.filter((t) => t.group && t.group.id === gid);
+    if (remote === TAB_TYPE) call('tabs.moveHere', { id: Number(e.dataTransfer.getData(TAB_TYPE)), index: tabs.indexOf(members[members.length - 1]) + 1, groupId: gid });
+    else if (remote === GROUP_TYPE) call('tabs.moveGroupHere', { id: e.dataTransfer.getData(GROUP_TYPE), index: tabs.indexOf(members[0]) });
+    else if (dragId != null) call('tabs.addToGroup', { id: dragId, groupId: gid });
     else call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, tabs.find((t) => t.group && t.group.id === gid), false) });
     clearDropMarks();
   });
@@ -202,11 +232,14 @@ function renderTabs() {
   });
 }
 // A tab dropped on the empty part of the strip goes to the end, outside any group.
-$('tabs').addEventListener('dragover', (e) => { if (dragId != null || dragGroup != null) e.preventDefault(); });
+$('tabs').addEventListener('dragover', (e) => { if (dragId != null || dragGroup != null || fromOtherWindow(e)) e.preventDefault(); });
 $('tabs').addEventListener('drop', (e) => {
-  if (dragId == null && dragGroup == null) return;
+  const remote = fromOtherWindow(e);
+  if (!remote && dragId == null && dragGroup == null) return;
   e.preventDefault();
-  if (dragGroup != null) call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, null, true) });
+  if (remote === TAB_TYPE) call('tabs.moveHere', { id: Number(e.dataTransfer.getData(TAB_TYPE)), index: tabs.length, groupId: null });
+  else if (remote === GROUP_TYPE) call('tabs.moveGroupHere', { id: e.dataTransfer.getData(GROUP_TYPE), index: tabs.length });
+  else if (dragGroup != null) call('tabs.moveGroup', { id: dragGroup, index: groupDropIndex(dragGroup, null, true) });
   else call('tabs.move', { id: dragId, index: tabs.length - 1, groupId: null });
   clearDropMarks();
 });

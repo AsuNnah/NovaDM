@@ -27,7 +27,7 @@ function shortcutFor(input) {
       }[k] || null;
     }
     return {
-      t: 'new-tab', n: 'new-tab', w: 'close-tab', l: 'focus-address', k: 'focus-address', e: 'focus-address', j: 'downloads',
+      t: 'new-tab', n: 'new-window', w: 'close-tab', l: 'focus-address', k: 'focus-address', e: 'focus-address', j: 'downloads',
       r: 'reload', f: 'find', g: 'find-next', d: 'bookmark', h: 'history', p: 'print', s: 'save-page', o: 'open-file', u: 'view-source',
     }[k] || null;
   }
@@ -52,7 +52,7 @@ function shortcutFor(input) {
 }
 
 const LIST = [
-  ['Tabs', 'Ctrl+T / Ctrl+N new tab · Ctrl+Shift+N private window · Ctrl+W close · Ctrl+Shift+T reopen closed tab · Ctrl+Tab / Ctrl+PgDn next · Ctrl+Shift+Tab / Ctrl+PgUp previous · Ctrl+1…8 tab n · Ctrl+9 last tab · Ctrl+Shift+A search tabs · Ctrl+Shift+PgUp / PgDn move the tab · Ctrl+Shift+W close window'],
+  ['Tabs', 'Ctrl+T new tab · Ctrl+N new window · Ctrl+Shift+N private window · Ctrl+W close · Ctrl+Shift+T reopen closed tab · Ctrl+Tab / Ctrl+PgDn next · Ctrl+Shift+Tab / Ctrl+PgUp previous · Ctrl+1…8 tab n · Ctrl+9 last tab · Ctrl+Shift+A search tabs · Ctrl+Shift+PgUp / PgDn move the tab · Ctrl+Shift+W close window'],
   ['Tab groups', 'Ctrl+Shift+K add the tab to a new group · Ctrl+Shift+U take it out of its group · Ctrl+Shift+L fold or unfold its group · drag a group by its name to move it'],
   ['Address bar', 'Ctrl+L / Alt+D / F6 / Ctrl+K / Ctrl+E go to the address bar · Ctrl+Enter add www. and .com · Alt+Enter open in a new tab · type a site (youtube, wiki, github…) then Tab to search it'],
   ['Page', 'Alt+← / Alt+→ back / forward · F5 / Ctrl+R reload · Shift+F5 / Ctrl+Shift+R reload without cache · Esc stop · Alt+Home home page · F11 full screen · Ctrl+P print · Ctrl+S save page · Ctrl+O open a file · Ctrl + / − / 0 or Ctrl+wheel zoom'],

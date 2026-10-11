@@ -86,7 +86,7 @@ module.exports = async ({ app, browser, ipc, overlayView, ytdlp, ffmpeg }) => {
 
     const a = Object.fromEntries(result.about.addons.map((x) => [x.name, x]));
     result.checks = {
-      menu: result.menu.items === 13 && result.menu.withIcon === 13 && result.menu.dividers === 4 && result.menu.shortcuts.includes('Ctrl+J') && result.menu.oneLine && result.menu.menuHeight < 560,
+      menu: result.menu.items === 14 && result.menu.withIcon === 14 && result.menu.dividers === 4 && result.menu.shortcuts.includes('Ctrl+J') && result.menu.oneLine && result.menu.menuHeight < 560,
       notice: result.noticeHasWhatsNew,
       notes: result.about.notesShown && result.about.notesHeads.length === 1 && /9\.9\.9/.test(result.about.notesHeads[0]) && result.about.notesItems[0] === 'Something new for the test.',
       ytdlp: a['yt-dlp'] && a['yt-dlp'].button === 'Update',

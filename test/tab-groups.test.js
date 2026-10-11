@@ -40,11 +40,14 @@ test('a session keeps pinned tabs and groups; old sessions still load', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'novadm-session-'));
   try {
     const s = new TabSession(dir);
-    s.save([
-      { url: 'https://a.example/', title: 'A', pinned: true },
-      { url: 'https://b.example/', title: 'B', groupId: 'g7' },
-      { url: 'https://c.example/', title: 'C' },
-    ], 1, [{ id: 'g7', title: 'Work', color: 'green', collapsed: true }]);
+    s.save([{
+      tabs: [
+        { url: 'https://a.example/', title: 'A', pinned: true },
+        { url: 'https://b.example/', title: 'B', groupId: 'g7' },
+        { url: 'https://c.example/', title: 'C' },
+      ],
+      active: 1, groups: [{ id: 'g7', title: 'Work', color: 'green', collapsed: true }],
+    }]);
     s.flush();
     const back = new TabSession(dir).load();
     assert.deepEqual(back.tabs, [
@@ -93,4 +96,29 @@ test('shortcuts: group keys and moving tabs, without changing the existing ones'
   assert.equal(shortcutFor(key('G', { shift: true })), 'find-prev');
   assert.equal(shortcutFor(key('k')), 'focus-address');
   assert.equal(shortcutFor(key('k', { alt: true })), null, 'Ctrl+Alt (AltGr) keys stay free for typing');
+});
+
+test('1.6: a session keeps every window with its place; the first window is also readable by 1.5', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'novadm-session-'));
+  try {
+    const s = new TabSession(dir);
+    s.save([
+      { tabs: [{ url: 'https://a.example/', title: 'A' }], active: 0, bounds: { x: 10, y: 20, width: 1200, height: 800 } },
+      { tabs: [{ url: 'https://b.example/', title: 'B', groupId: 'g1' }, { url: 'https://c.example/', title: 'C' }], active: 1, groups: [{ id: 'g1', title: 'R', color: 'red' }], bounds: { x: 900, y: 40, width: 800, height: 600 } },
+      { tabs: [{ url: 'chrome://settings', title: 'not kept' }], active: 0 }, // nothing that can be reopened: no window
+    ]);
+    s.flush();
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, 'session.json'), 'utf8'));
+    assert.deepEqual(raw.tabs, [{ url: 'https://a.example/', title: 'A' }], '1.5 reads the top level: the main window');
+    const back = new TabSession(dir).load();
+    assert.equal(back.windows.length, 2);
+    assert.deepEqual(back.windows[1], { tabs: [{ url: 'https://b.example/', title: 'B', group: 'g1' }, { url: 'https://c.example/', title: 'C' }], groups: [{ id: 'g1', title: 'R', color: 'red', collapsed: false }], active: 1, bounds: { x: 900, y: 40, width: 800, height: 600 } });
+    assert.deepEqual(back.windows[0].bounds, { x: 10, y: 20, width: 1200, height: 800 });
+    fs.writeFileSync(path.join(dir, 'session.json'), JSON.stringify({ tabs: [{ url: 'https://old.example/', title: 'Old' }], active: 0 }));
+    const old = new TabSession(dir).load();
+    assert.deepEqual(old.windows.map((w) => w.tabs.length), [1], 'a 1.5 session is one window');
+    assert.equal(old.windows[0].bounds, null);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

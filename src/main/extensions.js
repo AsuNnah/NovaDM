@@ -82,7 +82,9 @@ class Extensions {
     if (!this.ext || !wc) return; // an unloaded tab is added when its page is made ('tab-created')
     this._registering = true;
     try { this.ext.addTab(wc, win); } finally { this._registering = false; }
-    const active = this.browser.tabs.get(this.browser.groups.normal.activeId);
+    const t = [...this.browser.tabs.values()].find((x) => x.wc === wc);
+    const g = this.browser.groups[this.browser.kindOf(t)] || this.browser.groups.normal;
+    const active = this.browser.tabs.get(g.activeId);
     if (active && active.wc && active.wc !== wc) this.ext.selectTab(active.wc);
   }
 

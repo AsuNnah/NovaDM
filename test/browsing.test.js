@@ -90,7 +90,7 @@ test('bookmarks: star toggle, edit, import and export (Chrome / Firefox HTML)', 
 test('tab session: web and NovaDM pages saved, others dropped', () => {
   const dir = tmp();
   const s = new TabSession(dir);
-  s.save([{ url: 'https://a.example/', title: 'A' }, { url: 'novadm://downloads', title: 'Downloads' }, { url: 'file:///c:/x', title: 'x' }], 1);
+  s.save([{ tabs: [{ url: 'https://a.example/', title: 'A' }, { url: 'novadm://downloads', title: 'Downloads' }, { url: 'file:///c:/x', title: 'x' }], active: 1 }]);
   s.flush();
   const again = new TabSession(dir).load();
   assert.deepStrictEqual(again.tabs.map((t) => t.url), ['https://a.example/', 'novadm://downloads']);
