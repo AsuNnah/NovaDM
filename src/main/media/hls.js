@@ -196,4 +196,23 @@ function sniffContainer(buf) {
   return 'unknown';
 }
 
-module.exports = { parse, parseAttributes, isPlaylist, ivFor, variantLabel, sniffContainer, isDrmKey };
+// Segments disguised as pictures: some sites store video on free image hosting by putting a small
+// PNG / JPEG / GIF / BMP / WebP header in front of each segment. Players skip it; so does NovaDM.
+const IMAGE_MAGIC = [[0x89, 0x50, 0x4e, 0x47], [0xff, 0xd8, 0xff], [0x47, 0x49, 0x46, 0x38], [0x42, 0x4d], [0x52, 0x49, 0x46, 0x46]];
+const FMP4_BOXES = ['ftyp', 'styp', 'moof', 'sidx'];
+
+/** The real MPEG-TS / fMP4 data of a segment that starts with a picture header; anything else as is. */
+function stripImageDisguise(buf) {
+  if (!buf || buf.length < 400 || !IMAGE_MAGIC.some((m) => m.every((b, i) => buf[i] === b))) return buf;
+  if (buf[0] === 0x52 && buf.toString('latin1', 8, 12) !== 'WEBP') return buf; // RIFF is also WAV audio
+  const end = Math.min(buf.length - 377, 64 * 1024); // the fake picture is small
+  for (let i = 1; i < end; i++) {
+    if (buf[i] === 0x47 && buf[i + 188] === 0x47 && buf[i + 376] === 0x47) return buf.subarray(i); // three TS packets in a row
+  }
+  for (let i = 4; i < end; i++) {
+    if (FMP4_BOXES.includes(buf.toString('latin1', i + 4, i + 8)) && buf.readUInt32BE(i) >= 8) return buf.subarray(i);
+  }
+  return buf; // a real picture, or nothing NovaDM recognises: unchanged
+}
+
+module.exports = { parse, parseAttributes, isPlaylist, ivFor, variantLabel, sniffContainer, isDrmKey, stripImageDisguise };

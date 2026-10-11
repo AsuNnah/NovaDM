@@ -30,7 +30,8 @@ class Extensions {
         const id = browser.createTab({ url: details.url || 'novadm://newtab', background: details.active === false });
         return [browser.tabs.get(id).wc, getWindow()];
       },
-      selectTab: (wc) => { const id = browser.tabIdForWc(wc.id); if (id != null) browser.selectTab(id); },
+      // Ignored while a tab is being registered (see addTab): only real requests from extensions.
+      selectTab: (wc) => { if (this._registering) return; const id = browser.tabIdForWc(wc.id); if (id != null) browser.selectTab(id); },
       removeTab: (wc) => { const id = browser.tabIdForWc(wc.id); if (id != null) browser.closeTab(id); },
       // NovaDM has one window: extension windows open as tabs.
       createWindow: async (details) => {
@@ -71,7 +72,16 @@ class Extensions {
     return { action: response === 0 ? 'allow' : 'deny' };
   }
 
-  addTab(wc, win) { if (this.ext) this.ext.addTab(wc, win); }
+  // The library treats every tab it learns about as the active one and asks NovaDM to show it; a tab
+  // opened in the background (Ctrl+click, middle-click) must stay behind. So that request is ignored
+  // and the library is told which tab really is active.
+  addTab(wc, win) {
+    if (!this.ext) return;
+    this._registering = true;
+    try { this.ext.addTab(wc, win); } finally { this._registering = false; }
+    const active = this.browser.tabs.get(this.browser.groups.normal.activeId);
+    if (active && active.wc && active.wc !== wc) this.ext.selectTab(active.wc);
+  }
 
   selectTab(wc) { if (this.ext) this.ext.selectTab(wc); }
 

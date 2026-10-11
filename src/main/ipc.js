@@ -347,7 +347,7 @@ function registerIpc(ctx) {
       if (ADDONS.some((x) => x.id === a.id)) settings.set({ addonRemindOff: [...new Set([...(settings.get('addonRemindOff') || []), a.id])] });
       pushAddons();
     },
-    'diagnostics.report': () => diagnostics.report({ app, ...getManagers() }),
+    'diagnostics.report': () => diagnostics.report({ app, ...getManagers(), update }),
     'diagnostics.save': async () => {
       const m = getManagers();
       const text = await handlers['diagnostics.report']();

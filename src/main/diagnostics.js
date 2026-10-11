@@ -23,11 +23,16 @@ function install(app) {
   }
   app.on('render-process-gone', (_e, wc, d) => add('crash', [`page process ${d.reason} (exit ${d.exitCode}) on ${wc.getURL()}`]));
   app.on('child-process-gone', (_e, d) => add('crash', [`${d.type} process ${d.reason} (exit ${d.exitCode})${d.name ? ' ' + d.name : ''}`]));
+  // Errors in NovaDM's own code that nothing caught (the monitor only watches; default handling stays).
+  process.on('uncaughtExceptionMonitor', (e) => add('crash', ['uncaught:', e]));
+  process.on('unhandledRejection', (r) => console.error('unhandled promise rejection:', r));
 }
 
 /** Errors printed in NovaDM's own UI pages (toolbar, panels). */
 function watchConsole(wc, label) {
   wc.on('console-message', (e) => { if (e.level === 'error' || e.level === 'warning') add(e.level === 'error' ? 'error' : 'warn', [`[${label}] ${e.message} (${e.sourceId}:${e.lineNumber})`]); });
+  // A NovaDM page that doesn't load (1.3.0–1.4.0: empty toolbar) shows up here.
+  wc.on('did-fail-load', (_e, code, desc, url, isMain) => { if (isMain && code !== -3) add('load', [`[${label}] ${desc} (${code}) ${url}`]); });
 }
 
 function settingValue(k, v) {
@@ -38,7 +43,7 @@ function settingValue(k, v) {
   return String(v).slice(0, 80);
 }
 
-async function report({ app, settings, downloads, extensions, ffmpeg, ytdlp, aria2 }) {
+async function report({ app, settings, downloads, extensions, ffmpeg, ytdlp, aria2, browser, update }) {
   const out = [];
   const section = (title) => out.push('', `## ${title}`);
 
@@ -48,6 +53,18 @@ async function report({ app, settings, downloads, extensions, ffmpeg, ytdlp, ari
     `Windows ${os.release()} ${os.arch()}, ${Math.round(os.totalmem() / 2 ** 30)} GB RAM, ${os.cpus().length} CPU threads`,
     `Running for ${Math.round(process.uptime() / 60)} min, ${app.getAppMetrics().length} processes`);
   try { out.push(`GPU: ${Object.entries(app.getGPUFeatureStatus()).filter(([, v]) => !/enabled/.test(v)).map(([k, v]) => `${k}=${v}`).join(', ') || 'all enabled'}`); } catch {}
+
+  out.push(`Install: ${!app.isPackaged ? 'from source' : process.env.PORTABLE_EXECUTABLE_FILE ? 'portable' : 'installed'}`);
+
+  if (browser) {
+    section('Windows and tabs');
+    const tabs = [...browser.tabs.values()];
+    const normal = tabs.filter((t) => !t.incognito);
+    out.push(`Normal tabs: ${normal.length} (${normal.filter((t) => t.discarded).length} unloaded), private tabs: ${tabs.length - normal.length}`);
+  }
+  section('Updates');
+  out.push(`Check for updates: ${settings.get('updateCheck') === false ? 'off' : 'on'}`);
+  out.push(update ? `Update ${update.version}: ${update.auto ? update.phase : 'notice'}${update.error ? ` (${update.error})` : ''}` : 'No newer version found (or not checked yet)');
 
   section('Add-ons');
   for (const [name, m] of [['FFmpeg', ffmpeg], ['yt-dlp', ytdlp], ['aria2', aria2]]) {
@@ -66,7 +83,13 @@ async function report({ app, settings, downloads, extensions, ffmpeg, ytdlp, ari
   const counts = {};
   for (const d of list) counts[d.state] = (counts[d.state] || 0) + 1;
   out.push(Object.entries(counts).map(([s, n]) => `${s} ${n}`).join(', ') || 'none');
-  for (const d of list.filter((x) => x.state === 'error').slice(0, 20)) {
+  // The last 10, any state: what kind of download, how far it got, and how it was handled.
+  for (const d of list.slice(0, 10)) {
+    let site = '';
+    try { site = new URL(d.pageUrl || d.from || '').host; } catch {}
+    out.push(`${d.state}: ${d.kind || 'http'} ${d.category || ''} from ${site || '?'}, ${d.percent != null ? d.percent + '%' : ''}${typeof d.segments === 'number' ? ` segments ${d.doneSegments || 0}/${d.segments}` : ''}${d.errorCode ? ' ' + d.errorCode : ''}${d.error ? ' ' + d.error : ''}`);
+  }
+  for (const d of list.filter((x) => x.state === 'error').slice(10, 20)) {
     let site = '';
     try { site = new URL(d.pageUrl || d.from || '').host; } catch {}
     out.push(`failed: ${d.kind || 'http'} ${d.category || ''} from ${site || '?'}: ${d.errorCode || ''} ${d.error || ''}`);

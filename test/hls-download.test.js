@@ -71,6 +71,46 @@ test('plain TS HLS downloads and converts to MP4', async () => {
   server.close();
 });
 
+// A 1×1 PNG (signature, IHDR, IEND) like the one some sites glue in front of each segment.
+const PNG = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.from('0000000d49484452000000010000000108060000001f15c489', 'hex'), Buffer.from('0000000049454e44ae426082', 'hex')]);
+
+async function downloadAll(segBody) {
+  const routes = {};
+  let playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:5\n#EXT-X-VERSION:3\n';
+  for (let i = 0; i < 6; i++) { routes[`/seg${i}.image`] = { body: segBody, type: 'image/png' }; playlist += `#EXTINF:5,\nseg${i}.image\n`; }
+  playlist += '#EXT-X-ENDLIST\n';
+  const server = serve(routes);
+  const base = await listen(server);
+  const save = tmp();
+  const dl = new HlsDownload({
+    id: 'hd', savePath: save, playlistUrl: base + '/index.m3u8', openConn: nodeOpen,
+    fetchText: async () => ({ text: playlist, finalUrl: base + '/index.m3u8' }), concurrency: 4,
+  });
+  await new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); dl.start(); });
+  server.close();
+  return fs.readFileSync(save);
+}
+
+test('segments disguised as PNG pictures download like plain ones (header dropped)', async () => {
+  const plain = await downloadAll(SEG);
+  const disguised = await downloadAll(Buffer.concat([PNG, SEG]));
+  assert.ok(mp4Boxes(disguised).includes('moov'), 'a real MP4');
+  assert.ok(disguised.equals(plain), 'same file as without the picture header');
+});
+
+test('stripImageDisguise: only a picture header in front of video is removed', () => {
+  const { stripImageDisguise } = require('../src/main/media/hls');
+  assert.ok(stripImageDisguise(Buffer.concat([PNG, SEG])).equals(SEG)); // PNG + TS
+  assert.ok(stripImageDisguise(Buffer.concat([Buffer.from('ffd8ffe000104a464946', 'hex'), Buffer.alloc(20), SEG])).equals(SEG)); // JPEG + TS
+  assert.strictEqual(stripImageDisguise(SEG), SEG); // plain TS untouched
+  const fmp4 = Buffer.concat([Buffer.from('00000018', 'hex'), Buffer.from('styp'), Buffer.alloc(16), Buffer.alloc(400)]);
+  assert.ok(stripImageDisguise(Buffer.concat([PNG, fmp4])).equals(fmp4)); // PNG + fMP4
+  const picture = Buffer.concat([PNG, Buffer.alloc(2000, 7)]);
+  assert.strictEqual(stripImageDisguise(picture), picture); // a real picture: unchanged
+  const wav = Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WAVE'), SEG]);
+  assert.strictEqual(stripImageDisguise(wav), wav); // WAV audio is not a disguise
+});
+
 test('AES-128 encrypted HLS decrypts to the same output as plain', async () => {
   const key = crypto.randomBytes(16);
   const iv = crypto.randomBytes(16);
