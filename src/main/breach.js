@@ -3,6 +3,7 @@
 // up in Have I Been Pwned's list of breached passwords with k-anonymity: only the first 5
 // characters of the hash leave this PC (answers padded, no cookies) and the match happens here.
 // The password itself is never sent or stored; results are kept in memory for this run only.
+const { capSize } = require('./housekeeping');
 const crypto = require('crypto');
 
 const seen = new Map(); // full SHA-1 -> times seen in breaches
@@ -15,6 +16,7 @@ async function breachCount(password, fetchText) {
   const line = String(text).split(/\r?\n/).find((l) => l.slice(0, 35).toUpperCase() === sha.slice(5));
   const n = line ? Number(line.split(':')[1]) || 0 : 0; // padding lines have a count of 0
   seen.set(sha, n);
+  capSize(seen, 1000); // one entry per password checked this session
   return n;
 }
 

@@ -65,6 +65,7 @@ function defaults() {
 
     // Tabs and pages
     discardTabsAfter: '30', // unload background tabs after this many idle minutes ('0' = never)
+    memorySaver: true, // also unload background tabs at once while memory is short (housekeeping.js)
 
     // Privacy and speed
     blockThirdPartyCookies: true, // Chromium's own switch, applied when NovaDM starts

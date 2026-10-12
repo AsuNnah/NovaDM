@@ -1,4 +1,5 @@
 'use strict';
+const { capSize } = require('./housekeeping');
 // Navigation shortcuts in the style of Brave's Shields: less work and fewer trackers per page.
 //  - debounce: skip known tracking redirect pages (google.com/url?q=…) and go straight to the target
 //  - tracking parameters: drop click identifiers (fbclid, gclid…) from addresses
@@ -134,7 +135,7 @@ class Shields {
         // The same http address again right after upgrading it: the HTTPS site sends visitors back
         // to http. Stay on http for this site instead of going round in circles.
         const again = this.recent.get(url);
-        if (again && Date.now() - again < 15000) { this.httpOnly.add(u.hostname); return null; }
+        if (again && Date.now() - again < 15000) { this.httpOnly.add(u.hostname); capSize(this.httpOnly); return null; }
         this.recent.set(url, Date.now());
         if (this.recent.size > 200) this.recent.delete(this.recent.keys().next().value);
         u.protocol = 'https:';
@@ -156,7 +157,7 @@ class Shields {
     if (!orig) return null;
     this.upgraded.delete(httpsUrl);
     const u = parse(orig);
-    if (u) this.httpOnly.add(u.hostname);
+    if (u) { this.httpOnly.add(u.hostname); capSize(this.httpOnly); }
     return orig;
   }
 }

@@ -6,6 +6,27 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.5.3] — 2026-10-12
+
+### Added
+- **Memory overload protection.** When Windows runs short of memory (under 10 % free), or NovaDM itself
+  uses over 40 % of it, background tabs are unloaded at once, the longest unused first, a few at a
+  time, like Chrome's Memory Saver. The tab you're on, tabs playing sound, tabs still loading and tabs
+  marked to stay loaded are kept; unloaded tabs load again when you open them. Settings → *Unload tabs
+  when memory is low* (on).
+- **Known security problems in add-ons.** *Check for updates* (Settings → About) also looks up the
+  installed and the newest version of yt-dlp and Electron (OSV.dev) and of FFmpeg and aria2 (the US
+  National Vulnerability Database), and shows the advisories with their severity, and whether updating
+  fixes them. Only the program name and version number are sent, and only when you press the button.
+
+### Fixed
+- Caches kept for the whole session no longer grow without end (leaked-password check results, sites
+  that only work over HTTP, sites refused for direct downloads: 1,000 each), and a NovaDM page's
+  colour styles are forgotten when it closes.
+- Leftovers are cleaned up: NovaDM's temp folders from an interrupted add-on install or yt-dlp run and
+  Chromium's half-written `.tmp` files (older than a day), a saved file's unused `.tmp` copy, and
+  `.faststart.part` from a video rewrite cut short by closing NovaDM.
+
 ## [1.5.2] — 2026-10-11
 
 ### Fixed

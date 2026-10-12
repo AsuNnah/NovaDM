@@ -16,6 +16,7 @@ const diagnostics = require('./diagnostics');
 const { siteFor } = require('./site-search');
 const updates = require('./updates');
 const addonUpdates = require('./addon-updates');
+const addonVulns = require('./addon-vulns');
 const { canAutoUpdate, createUpdater } = require('./updater');
 const net = require('./net');
 
@@ -451,6 +452,16 @@ function registerIpc(ctx) {
     const headers = /^https:\/\/api\.github\.com\//.test(url) ? { accept: 'application/vnd.github+json' } : {};
     return (await net.fetchText(url, { session: require('electron').session.defaultSession, headers, timeoutMs: 15000 })).text;
   };
+  // Security databases (OSV.dev, NVD) for the add-on check: JSON, GET or POST, through Chromium (proxy).
+  const fetchJson = async (url, opts = {}) => {
+    if (updates.fetchOverride) return JSON.parse(await updates.fetchOverride(url, opts));
+    const r = await require('electron').session.defaultSession.fetch(url, {
+      method: opts.method || 'GET', body: opts.body, headers: { 'content-type': 'application/json', accept: 'application/json' },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!r.ok) throw new Error(`${new URL(url).hostname} answered ${r.status}`);
+    return r.json();
+  };
   // Update preview: the notes of every release since the installed one, fetched once per new version.
   let notes = null; // { version, list }
   const loadNotes = () => {
@@ -487,7 +498,9 @@ function registerIpc(ctx) {
     const { ytdlp, ffmpeg, aria2 } = getManagers();
     const [checked, addons] = await Promise.all([
       runCheck(),
-      addonUpdates.check({ ytdlp, ffmpeg, aria2, electron: process.versions.electron, fetchText }).catch(() => []),
+      addonUpdates.check({ ytdlp, ffmpeg, aria2, electron: process.versions.electron, fetchText })
+        .then((items) => addonVulns.addSecurity(items, fetchJson)) // known security problems, installed and newest
+        .catch(() => []),
     ]);
     if (notes && notes.ready) await notes.ready; // the update preview, when a new version was just found
     return { ...handlers['about.info'](), checked, addons };
