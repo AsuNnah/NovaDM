@@ -30,9 +30,13 @@ class Browser extends EventEmitter {
     // size and parent view. `cur` is the window being worked on (main.js switches it); methods that
     // act on one tab switch to that tab's window themselves (see the end of this file).
     // tabGroups: the window's tab groups, id -> { id, title, color, collapsed } (tab-groups.js).
-    const group = () => ({ order: [], activeId: null, bounds: { x: 0, y: 0, width: 800, height: 600 }, parentView: null, onRestack: null, closing: false, tabGroups: new Map() });
-    this.groups = { normal: group(), private: group() };
+    // 1.6: one entry per window, keyed by window id: 'normal' (the first normal window), 'n2', 'n3' …
+    // for more normal windows, and 'private'. A tab knows its window (tab.win).
+    this.newGroup = () => ({ order: [], activeId: null, bounds: { x: 0, y: 0, width: 800, height: 600 }, parentView: null, onRestack: null, closing: false, tabGroups: new Map() });
+    this.groups = { normal: this.newGroup(), private: this.newGroup() };
     this.cur = 'normal';
+    this.lastNormal = 'normal'; // the normal window used last (main.js keeps it up to date)
+    this.newWindow = null; // set by main: ({ bounds, empty }) => id of a new normal window
     this.ensureWindow = null; // set by main: (kind) => opens the window for that kind of tab if needed
     this._seq = 0;
     // WebRTC: local network addresses hidden; with a proxy, nothing bypasses it (setWebRTCPolicy).
@@ -143,14 +147,24 @@ class Browser extends EventEmitter {
   set onRestack(v) { this.groups[this.cur].onRestack = v; }
   get tabGroups() { return this.groups[this.cur].tabGroups; }
 
-  kindOf(tab) { return tab && tab.incognito ? 'private' : 'normal'; }
-  /** Run fn with `kind`'s window as the current one. */
+  /** The id of the window a tab is in. */
+  kindOf(tab) { return tab ? tab.win || (tab.incognito ? 'private' : 'normal') : 'normal'; }
+  /** The normal window to open things in: the one used last, else any open one, else the first. */
+  normalWindow() {
+    const open = (k) => k !== 'private' && this.groups[k] && this.groups[k].parentView;
+    if (open(this.lastNormal)) return this.lastNormal;
+    return Object.keys(this.groups).find(open) || 'normal';
+  }
+  /** Normal windows that are open, by id. */
+  normalWindows() { return Object.keys(this.groups).filter((k) => k !== 'private' && this.groups[k].parentView); }
+  /** Run fn with window `kind` as the current one. */
   inGroup(kind, fn) {
     const prev = this.cur;
     this.cur = kind;
     try { return fn(); } finally {
       this.cur = prev;
-      if (this.cur === 'private' && !this.groups.private.order.length) this.cur = 'normal'; // its last tab just closed
+      // Its last tab just closed (private) or the window is gone: the normal window used last.
+      if (!this.groups[this.cur] || (this.cur === 'private' && !this.groups.private.order.length)) this.cur = this.normalWindow();
     }
   }
   isActive(tab) { return this.groups[this.kindOf(tab)].activeId === tab.id; }
@@ -160,7 +174,13 @@ class Browser extends EventEmitter {
    * (restored tabs), like an unloaded tab.
    */
   createTab(opts = {}) {
-    const kind = opts.incognito ? 'private' : 'normal';
+    // Private tabs: the private window. Others: the given window, the opener's (links), the current
+    // normal window, or the normal window used last.
+    const opener = opts.openerPartition != null ? this.tabs.get(opts.openerPartition) : null;
+    const usable = (k) => k && k !== 'private' && this.groups[k];
+    const kind = opts.incognito ? 'private'
+      : usable(opts.win) ? opts.win : opener && !opener.incognito && usable(opener.win) ? opener.win
+        : usable(this.cur) && this.groups[this.cur].parentView ? this.cur : this.normalWindow();
     if (this.ensureWindow) this.ensureWindow(kind); // a private tab opens the private window
     return this.inGroup(kind, () => this._createTab(opts));
   }
@@ -171,7 +191,7 @@ class Browser extends EventEmitter {
     const opener = openerPartition != null ? this.tabs.get(openerPartition) : null;
     if (groupId == null && opener && !opener.pinned) groupId = opener.groupId;
     const tab = {
-      id, view: null, wc: null, wcId: null, incognito, url: '', title: title || 'New tab', favicon: '',
+      id, win: incognito ? 'private' : this.cur, view: null, wc: null, wcId: null, incognito, url: '', title: title || 'New tab', favicon: '',
       loading: false, canGoBack: false, canGoForward: false, secure: false, muted: false,
       discarded: false, saved: null, hiddenAt: Date.now(), readable: false,
       pinned: !!pinned, groupId: !pinned && groupId != null && this.tabGroups.has(groupId) ? groupId : null,
@@ -383,6 +403,18 @@ class Browser extends EventEmitter {
   reopenClosed() {
     const last = this.closed.pop();
     if (!last) return null;
+    if (last.window) { // a closed window: back with its tabs and groups
+      if (!this.newWindow) return null;
+      const win = this.newWindow({ bounds: last.window.bounds, empty: true });
+      const gids = new Map(last.window.groups.map((g) => [g.id, this.restoreGroup(g, win)]));
+      const ids = last.window.tabs.map((t) => {
+        const id = this.createTab({ win, url: t.url, title: t.title, lazy: true, background: true, pinned: t.pinned, groupId: gids.get(t.group) ?? null });
+        this.tabs.get(id).saved = t.saved;
+        return id;
+      });
+      if (ids.length) this.selectTab(ids[0]);
+      return ids[0];
+    }
     const id = this.createTab({ url: last.url, lazy: true, background: true, title: last.title });
     this.tabs.get(id).saved = last.saved;
     this.selectTab(id);
@@ -518,7 +550,7 @@ class Browser extends EventEmitter {
 
   /** Show an internal page (e.g. 'downloads'): reuse its tab if one is open, else open a new tab. */
   openInternal(page) {
-    return this.inGroup('normal', () => this._openInternal(page)); // NovaDM's pages open in the normal window
+    return this.inGroup(this.normalWindow(), () => this._openInternal(page)); // NovaDM's pages: the normal window in use
   }
 
   _openInternal(page) {
@@ -583,7 +615,7 @@ class Browser extends EventEmitter {
     if (this.adblock && tab.wcId != null) this.adblock.removeTab(tab.wcId);
     this.media.removeTab(tab.id);
     this.emit('tab-closed', tab);
-    if (!tab.incognito && /^(https?|novadm):/i.test(tab.url || '')) {
+    if (!tab.incognito && !this.groups[this.cur].closing && /^(https?|novadm):/i.test(tab.url || '')) {
       let saved = tab.saved;
       try { if (tab.wc) saved = { entries: tab.wc.navigationHistory.getAllEntries(), index: tab.wc.navigationHistory.getActiveIndex() }; } catch {}
       this.closed.push({ url: tab.url, title: tab.title, saved });
@@ -599,7 +631,7 @@ class Browser extends EventEmitter {
       const next = this.order.slice(idx).find(shown) || this.order.slice(0, idx).reverse().find(shown) || this.order[idx] || this.order[idx - 1] || null;
       this.activeId = null;
       if (next != null) this.selectTab(next);
-      else if (this.cur === 'private') { this.emitTabs(); this.emit('group-empty', 'private'); return; } // last private tab: the window closes
+      else if (this.cur === 'private' || this.normalWindows().length > 1) { this.emitTabs(); this.emit('group-empty', this.cur); return; } // its last tab: the window closes
       else this.createTab({ url: NEWTAB });
     }
     this.emitTabs();
@@ -662,8 +694,8 @@ class Browser extends EventEmitter {
   }
   /** After pinning, grouping or moving: groups without tabs go, the order is tidied, the strip redrawn. */
   groupsChanged() { this.dropEmptyGroups(); this.tidyOrder(); this.emitTabs(); }
-  /** The window ('normal' / 'private') a tab group belongs to. */
-  groupKind(gid) { return this.groups.private.tabGroups.has(gid) ? 'private' : 'normal'; }
+  /** The window a tab group belongs to. */
+  groupKind(gid) { return Object.keys(this.groups).find((k) => this.groups[k].tabGroups.has(gid)) || this.cur; }
 
   setPinned(id, pinned) {
     const tab = this.tabs.get(id);
@@ -774,12 +806,94 @@ class Browser extends EventEmitter {
   }
 
   /** A group from a saved session; returns its new id. */
-  restoreGroup(saved) {
-    return this.inGroup('normal', () => {
+  restoreGroup(saved, win = 'normal') {
+    return this.inGroup(win, () => {
       const g = { id: 'g' + (++this._seq), ...cleanGroup(saved) };
       this.tabGroups.set(g.id, g);
       return g.id;
     });
+  }
+
+  // ---- several windows (1.6) ----
+  /**
+   * Move a tab to another normal window, its page kept loaded: at `index` of that window's order, in
+   * group `groupId` there (or none). The window it leaves closes when that was its last tab.
+   */
+  moveTabToWindow(id, to, index = Infinity, groupId = null) {
+    const tab = this.tabs.get(id);
+    const from = tab && this.kindOf(tab);
+    if (!tab || tab.incognito || to === 'private' || !this.groups[to] || from === to) return false;
+    const src = this.groups[from];
+    const dst = this.groups[to];
+    this.inGroup(from, () => {
+      const i = this.order.indexOf(id);
+      if (i >= 0) this.order.splice(i, 1);
+      if (tab.view) { try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {} }
+      if (this.activeId === id) {
+        this.activeId = null;
+        const next = this.order[i] || this.order[i - 1];
+        if (next != null) this.selectTab(next);
+      }
+      tab.groupId = null;
+      this.dropEmptyGroups();
+      this.emitTabs();
+    });
+    this.inGroup(to, () => {
+      tab.win = to;
+      tab.groupId = groupId != null && this.tabGroups.has(groupId) ? groupId : null;
+      tab.pinned = tab.pinned && !tab.groupId;
+      this.order.splice(Math.max(0, Math.min(Number(index), this.order.length)), 0, id);
+      this.tidyOrder();
+      if (tab.view && this.parentView) { try { this.parentView.addChildView(tab.view); tab.view.setVisible(false); } catch {} }
+      this.selectTab(id);
+    });
+    if (!src.order.length) this.emit('group-empty', from);
+    return true;
+  }
+
+  /** "Move tab to new window" / a tab dragged out of the strip. Not the only tab of a window. */
+  moveTabToNewWindow(id, bounds) {
+    const tab = this.tabs.get(id);
+    if (!tab || tab.incognito || !this.newWindow || this.groups[this.kindOf(tab)].order.length < 2) return null;
+    const win = this.newWindow({ bounds, empty: true });
+    this.moveTabToWindow(id, win, 0);
+    return win;
+  }
+
+  /** A whole tab group, with its name and colour, into another normal window at `index`. */
+  moveGroupToWindow(gid, to, index = Infinity) {
+    const from = this.groupKind(gid);
+    const g = this.groups[from] && this.groups[from].tabGroups.get(gid);
+    if (!g || from === 'private' || to === 'private' || !this.groups[to] || from === to) return false;
+    const ids = this.groups[from].order.filter((x) => this.tabs.get(x).groupId === gid);
+    const ng = this.restoreGroup({ title: g.title, color: g.color, collapsed: false }, to);
+    const at = Math.min(Number(index), this.groups[to].order.length);
+    ids.forEach((x, i) => this.moveTabToWindow(x, to, at + i, ng));
+    return true;
+  }
+
+  /** Tear off a tab group: all its tabs, with its name and colour, into a new window. */
+  moveGroupToNewWindow(gid, bounds) {
+    const from = this.groupKind(gid);
+    if (!this.groups[from] || !this.groups[from].tabGroups.has(gid) || from === 'private' || !this.newWindow) return null;
+    const win = this.newWindow({ bounds, empty: true });
+    this.moveGroupToWindow(gid, win, 0);
+    return win;
+  }
+
+  /** The tabs of a closing normal window, for Ctrl+Shift+T to bring the whole window back. */
+  rememberWindow(win, bounds) {
+    const g = this.groups[win];
+    if (!g || win === 'private') return;
+    const tabs = g.order.map((x) => this.tabs.get(x)).filter((t) => t && /^(https?|novadm):/i.test(t.url || '')).map((t) => {
+      let saved = t.saved;
+      try { if (t.wc) saved = { entries: t.wc.navigationHistory.getAllEntries(), index: t.wc.navigationHistory.getActiveIndex() }; } catch {}
+      return { url: t.url, title: t.title, saved, pinned: !!t.pinned, group: t.groupId };
+    });
+    if (!tabs.length) return;
+    const groups = [...g.tabGroups.values()].map((x) => ({ ...x }));
+    this.closed.push({ window: { bounds, tabs, groups } });
+    if (this.closed.length > 25) this.closed.shift();
   }
 
   duplicateTab(id) {

@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, dialog, session: electronSession, nativeTheme, safeStorage } = require('electron');
+const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, dialog, session: electronSession, nativeTheme, safeStorage, screen } = require('electron');
 const { Settings } = require('./settings');
 const { AdBlocker } = require('./adblock');
 const { PopupGuard } = require('./popup');
@@ -84,18 +84,19 @@ const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST && !app.isPackaged) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
 
-// Windows: 'normal' and, while one is open, 'private' (like Chrome's incognito window). win /
-// chromeView / overlayView / panelOpen above always point at the current window: the one being
-// used, or the one an event belongs to (inCtx).
+// Windows, by id: 'normal' (the first normal window), 'n2', 'n3' … (more normal windows, 1.6) and, while
+// one is open, 'private' (like Chrome's incognito window). win / chromeView / overlayView / panelOpen
+// above always point at the current window: the one being used, or the one an event belongs to (inCtx).
 const wins = {};
 let curKind = 'normal';
+let winSeq = 1;
 const viewKind = new Map(); // webContents id of a window's toolbar / panel view -> 'normal' | 'private'
 function useCtx(kind) {
   const c = wins[kind];
   if (!c) return;
   curKind = kind;
   ({ win, chromeView, overlayView, panelOpen } = c);
-  if (browser) browser.cur = kind;
+  if (browser) { browser.cur = kind; if (kind !== 'private') browser.lastNormal = kind; }
   if (browsing && c.find) browsing.useFind(c.find);
 }
 function inCtx(kind, fn) {
@@ -103,14 +104,16 @@ function inCtx(kind, fn) {
   const prev = curKind;
   useCtx(kind);
   // Back to the previous window, unless it is a private window whose last tab just closed.
-  try { return fn(); } finally { useCtx(wins[prev] && (prev !== 'private' || browser.groups.private.order.length) ? prev : 'normal'); }
+  try { return fn(); } finally { useCtx(wins[prev] && (prev !== 'private' || browser.groups.private.order.length) ? prev : browser.normalWindow()); }
 }
 // The window an event's tab (or tab id, or { tabId }, or { incognito }) belongs to.
 function kindOfArgs(args) {
   for (const a of args) {
-    if (a === 'normal' || a === 'private') return a;
+    if (typeof a === 'string' && (wins[a] || a === 'normal' || a === 'private')) return a;
     if (typeof a === 'number' && browser.tabs.has(a)) return browser.kindOf(browser.tabs.get(a));
     if (a && typeof a === 'object' && !Array.isArray(a)) {
+      if (typeof a.win === 'string' && browser.groups[a.win]) return a.win; // a tab
+      if (typeof a.id === 'number' && browser.tabs.has(a.id)) return browser.kindOf(browser.tabs.get(a.id)); // a tab as the UI sees it
       if (typeof a.incognito === 'boolean') return a.incognito ? 'private' : 'normal';
       if (a.tabId != null && browser.tabs.has(a.tabId)) return browser.kindOf(browser.tabs.get(a.tabId));
     }
@@ -162,19 +165,22 @@ function setPanel(open) {
 }
 
 function showWindow() {
-  if (app.isReady() && !wins.normal && wins.private) createWindow('normal'); // only a private window was open
-  const w = wins.normal && wins.normal.win;
+  if (app.isReady() && !browser.normalWindows().length && wins.private) createWindow('normal'); // only a private window was open
+  const n = wins[browser.normalWindow()];
+  const w = n && n.win;
   if (!app.isReady() || !w) return;
   if (w.isMinimized()) w.restore();
   w.show();
   w.focus();
 }
 
-function createWindow(kind = 'normal', { restore = true } = {}) {
+function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
   const priv = kind === 'private';
   const icon = path.join(__dirname, '..', '..', 'assets', priv ? 'icon-private.ico' : 'icon.ico');
+  if (!browser.groups[kind]) browser.groups[kind] = browser.newGroup();
+  const place = onScreen(bounds) ? bounds : {};
   const w = new BaseWindow({
-    width: 1280, height: 820, minWidth: 680, minHeight: 480, frame: false,
+    width: 1280, height: 820, ...place, minWidth: 680, minHeight: 480, frame: false,
     backgroundColor: priv ? '#120a1f' : '#08090b', title: priv ? 'NovaDM – Private' : 'NovaDM', show: priv || !startHidden, icon,
   });
   // Its own taskbar button with the private icon, so a private window is easy to tell apart.
@@ -230,15 +236,26 @@ function createWindow(kind = 'normal', { restore = true } = {}) {
   cv.webContents.setWindowOpenHandler(({ url }) => { if (/^(https?|mailto):/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
 
   if (priv) { w.on('closed', closePrivateWindow); return; }
+  // Moving or resizing a window: its place is saved with the tabs.
+  for (const ev of ['move', 'resize']) w.on(ev, () => browser.emit('windows-changed'));
+  const others = () => Object.keys(wins).filter((k) => k !== kind);
   w.on('close', (e) => {
-    // Downloads running: keep going in the tray instead of quitting (Settings → Background).
-    if (!wins.private && background && background.keepRunningOnClose()) { e.preventDefault(); background.hideToTray(); return; }
-    if (!wins.private) browser.shuttingDown = true;
+    // Another window stays open: only this one's tabs go (Ctrl+Shift+T brings the window back).
+    if (others().length) { browser.rememberWindow(kind, w.getBounds()); return; }
+    // The last window, with downloads running: keep going in the tray instead of quitting (Settings → Background).
+    if (background && background.keepRunningOnClose()) { e.preventDefault(); background.hideToTray(); return; }
+    browser.shuttingDown = true;
   });
   w.on('closed', () => {
-    // A private window stays open, as in Chrome: only the normal tabs close (NovaDM quits with the last window).
-    if (wins.private) { closeWindowTabs('normal', wins.normal); useCtx('private'); return; }
-    browser.shuttingDown = true; delete wins.normal; win = null;
+    if (others().length) {
+      closeWindowTabs(kind, wins[kind]);
+      if (kind !== 'normal') delete browser.groups[kind];
+      const next = browser.normalWindow();
+      useCtx(wins[next] ? next : others()[0]);
+      browser.emit('windows-changed');
+      return;
+    }
+    browser.shuttingDown = true; delete wins[kind]; win = null;
   });
 
   // The tabs from last time (Settings → Restore tabs), or a new tab. NOVADM_OPEN (debug) opens a
@@ -246,7 +263,21 @@ function createWindow(kind = 'normal', { restore = true } = {}) {
   if (restore) browsing.openStartTabs(process.env.NOVADM_OPEN || '');
 }
 
-// A window closed while the other stays open: its tabs, toolbar, panels and find bar go.
+/** A new normal window (Ctrl+N, a tab dragged out, a closed window reopened); returns its id. */
+function newWindow({ bounds = null, empty = false } = {}) {
+  const key = 'n' + (++winSeq);
+  createWindow(key, { restore: false, bounds });
+  if (!empty) browser.createTab({ win: key });
+  return key;
+}
+
+/** A saved or requested window position that is still on a screen (monitors change). */
+function onScreen(b) {
+  if (!b || !(b.width > 200 && b.height > 150)) return false;
+  return screen.getAllDisplays().some(({ workArea: d }) => b.x < d.x + d.width - 50 && b.x + b.width > d.x + 50 && b.y >= d.y - 10 && b.y < d.y + d.height - 50);
+}
+
+// A window closed while another stays open: its tabs, toolbar, panels and find bar go.
 function closeWindowTabs(kind, c) {
   const g = browser.groups[kind];
   g.closing = true;
@@ -262,7 +293,7 @@ function closePrivateWindow() {
   const c = wins.private;
   if (!c) return;
   closeWindowTabs('private', c);
-  useCtx('normal');
+  useCtx(browser.normalWindow());
   const ses = browser.incognitoSession;
   Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache()]).catch(() => {});
 }
@@ -318,10 +349,12 @@ function wireEvents() {
   on('download-video-request', (tabId) => downloadBestVideo(tabId));
   // After closeTab has finished: closing the window inside it would leave its window marker on the closed window.
   on('group-empty', (kind) => setImmediate(() => {
-    if (kind !== 'private' || !wins.private) return;
-    const w = wins.private.win;
-    useCtx('normal'); // the main window is current again right away, not only once this one has closed
-    w.close();
+    const c = wins[kind];
+    if (!c) return;
+    // Another window is current again right away, not only once this one has closed.
+    const next = kind === 'private' ? browser.normalWindow() : Object.keys(wins).find((k) => k !== kind && k !== 'private') || 'private';
+    if (wins[next]) useCtx(next);
+    c.win.close();
   }));
 
   media.on('changed', (tabId) => inCtx(kindOfArgs([tabId]), () => {
@@ -555,6 +588,7 @@ function handleShortcut(tab, action) {
     case 'downloads': return browser.openInternal('downloads');
     case 'clear-data': return browser.createTab({ url: 'novadm://history?clear=1' });
     case 'new-tab': return browser.createTab({ incognito: tab.incognito });
+    case 'new-window': return newWindow();
     case 'new-private': return browser.createTab({ incognito: true });
     case 'close-tab': return browser.closeTab(tab.id);
     case 'close-window': return win && win.close();
@@ -853,7 +887,11 @@ app.whenReady().then(async () => {
 
   // A private tab (Ctrl+Shift+N, a link from a private tab) opens the private window.
   // A normal tab with only a private window open (the Downloads page, a link) opens a normal window again.
-  browser.ensureWindow = (kind) => { if (!wins[kind] && (wins.normal || wins.private)) createWindow(kind, { restore: false }); };
+  browser.ensureWindow = (kind) => { if (!wins[kind] && Object.keys(wins).length) createWindow(kind, { restore: false }); };
+  browser.newWindow = newWindow;
+  browser.windowBounds = (key) => (wins[key] && !wins[key].win.isDestroyed() ? wins[key].win.getNormalBounds() : null);
+  browser.placeWindow = (key, b) => { if (wins[key] && onScreen(b)) wins[key].win.setBounds(b); };
+  browser.focusWindow = (key) => { if (wins[key]) { wins[key].win.focus(); useCtx(key); } };
   createWindow();
   wireEvents();
   settings.on('change', (c) => {
@@ -871,14 +909,14 @@ app.whenReady().then(async () => {
   scheduler = new Scheduler({ settings, downloads });
   downloads.scheduler = scheduler;
   scheduler.start();
-  background = new Background({ settings, downloads, getWindow: () => (wins.normal ? wins.normal.win : null), showWindow, notify, sendUI, setPanel }); // the tray hides the main window
+  background = new Background({ settings, downloads, getWindow: () => (wins[browser.normalWindow()] ? wins[browser.normalWindow()].win : null), showWindow, notify, sendUI, setPanel }); // the tray hides the main window
   background.start();
   // Extensions start after the window exists; tabs opened before that are registered now.
   extensions.init({ browser, getWindow: () => win })
     .then(() => {
-      for (const id of browser.order) {
-        const t = browser.tabs.get(id);
-        if (t && !t.incognito) extensions.addTab(t.wc, win);
+      for (const t of browser.tabs.values()) {
+        const w = wins[browser.kindOf(t)];
+        if (t && !t.incognito && w) extensions.addTab(t.wc, w.win);
       }
       const active = browser.activeTab();
       if (active && !active.incognito) extensions.selectTab(active.wc);

@@ -24,6 +24,8 @@ the SHA-256 of its files so you can check your download.
 ## What it does
 
 **Browser**
+- Several windows (Ctrl+N): drag a tab or a whole tab group out into a new window or onto another
+  window, and every window comes back when NovaDM starts
 - Tabs with **tab groups** (named, coloured, foldable; drag tabs in and out), pinned tabs and a
   right-click tab menu; private windows (their own purple look and taskbar icon), history, bookmarks (with a bookmarks bar and import/export from Chrome,
   Brave, Edge and Firefox), find in page, reader view, restore tabs on start

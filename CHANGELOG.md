@@ -6,6 +6,27 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.6.0] — 2026-10-12
+
+### Added
+- **Several windows.** **Ctrl+N** (and the menu's *New window*) opens a new window; **Ctrl+T** is
+  still a new tab. Each window has its own tabs, tab groups, find bar and panels.
+- **Drag a tab out of the tab strip** to put it in a new window where you drop it; drop a tab on
+  another window's tab strip to move it there (into the group it lands on). The page stays loaded:
+  nothing is reloaded or lost. Right-click a tab → *Move tab to new window* / *Move tab to another
+  window*.
+- **Tear off a tab group:** drag a group by its name out of the strip (or right-click it → *Move
+  group to new window*), and the whole group, with its name and colour, becomes a new window; drop
+  it on another window's strip to move it there.
+- **Closing a window** closes its tabs, and **Ctrl+Shift+T** brings the whole window back. Closing
+  the last tab of a window closes it (except the last window, as before).
+- **Every window comes back** with "Open the tabs from last time": its tabs, groups, pinned tabs,
+  and its place and size on screen (if that screen is still there). A session saved by 1.5 opens as
+  one window, and 1.5 can still read the main window of a 1.6 session.
+
+### Changed
+- **Ctrl+N opens a new window** (it opened a tab), as in Chrome, Edge and Brave.
+- NovaDM's own pages (Downloads, Settings, History…) open in the window you're using.
 ## [1.5.3] — 2026-10-12
 
 ### Added

@@ -41,24 +41,41 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   browser.on('title', (tab, title) => { if (tab.wc && !tab.wc.isDestroyed()) history.setTitle(tab.wc.getURL(), title); });
 
   // ---- restore tabs ----
+  // Every normal window (private windows are never kept), the main one first, with its place on screen.
   function saveSession() {
-    if (browser.shuttingDown || browser.groups.normal.closing || settings.get('restoreTabs') === false) return;
-    const { order, activeId } = browser.groups.normal; // private windows are never kept
-    const list = order.map((id) => browser.tabs.get(id)).filter((t) => t && !t.incognito && /^(https?|novadm):/i.test(t.url || ''));
-    const groups = [...browser.groups.normal.tabGroups.values()].filter((g) => list.some((t) => t.groupId === g.id));
-    tabSession.save(list, Math.max(0, list.findIndex((t) => t.id === activeId)), groups);
+    if (browser.shuttingDown || settings.get('restoreTabs') === false) return;
+    const keys = browser.normalWindows().sort((a, b) => (a === 'normal' ? -1 : b === 'normal' ? 1 : 0));
+    if (keys.some((k) => browser.groups[k].closing)) return;
+    const windows = keys.map((k) => {
+      const { order, activeId, tabGroups } = browser.groups[k];
+      const tabs = order.map((id) => browser.tabs.get(id)).filter((t) => t && !t.incognito && /^(https?|novadm):/i.test(t.url || ''));
+      const groups = [...tabGroups.values()].filter((g) => tabs.some((t) => t.groupId === g.id));
+      return { tabs, groups, active: Math.max(0, tabs.findIndex((t) => t.id === activeId)), bounds: browser.windowBounds ? browser.windowBounds(k) : null };
+    }).filter((w) => w.tabs.length);
+    if (windows.length) tabSession.save(windows);
   }
   browser.on('tabs', (_tabs, _active, kind) => { if (kind !== 'private') saveSession(); });
+  let placeTimer = null; // moving or resizing a window: saved once it has stopped
+  browser.on('windows-changed', () => { clearTimeout(placeTimer); placeTimer = setTimeout(saveSession, 500); });
 
   /** First tabs at start-up: the saved ones (only the active one loads right away), or a new tab. */
   function openStartTabs(openUrl) {
     if (openUrl) return browser.createTab({ url: openUrl });
-    const s = settings.get('restoreTabs') !== false ? tabSession.load() : { tabs: [] };
-    if (!s.tabs.length) return browser.createTab({ url: 'novadm://newtab' });
-    const gids = new Map(s.groups.map((g) => [g.id, browser.restoreGroup(g)])); // pinned tabs and groups come back too
-    const ids = s.tabs.map((t) => browser.createTab({ url: t.url, title: t.title, background: true, lazy: true, pinned: !!t.pinned, groupId: gids.get(t.group) ?? null }));
-    browser.selectTab(ids[s.active] || ids[0]);
-    return ids[s.active] || ids[0];
+    const s = settings.get('restoreTabs') !== false ? tabSession.load() : { windows: [] };
+    if (!s.windows.length) return browser.createTab({ url: 'novadm://newtab' });
+    // Every window from last time, each with its tabs, groups and place; the first is this one.
+    let first = null;
+    s.windows.forEach((w, i) => {
+      const win = i === 0 ? 'normal' : browser.newWindow({ bounds: w.bounds, empty: true });
+      if (i === 0 && browser.placeWindow) browser.placeWindow('normal', w.bounds);
+      const gids = new Map(w.groups.map((g) => [g.id, browser.restoreGroup(g, win)])); // pinned tabs and groups come back too
+      const ids = w.tabs.map((t) => browser.createTab({ win, url: t.url, title: t.title, background: true, lazy: true, pinned: !!t.pinned, groupId: gids.get(t.group) ?? null }));
+      const active = ids[w.active] || ids[0];
+      browser.selectTab(active);
+      if (i === 0) first = active;
+    });
+    if (s.windows.length > 1 && browser.focusWindow) browser.focusWindow('normal');
+    return first;
   }
 
   // ---- unload idle tabs ----
@@ -189,6 +206,23 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     return swatches.get(color);
   }
   const groupName = (g) => g.title || `${g.color[0].toUpperCase()}${g.color.slice(1)} group`;
+  // A new window where a tab was dropped (screen point from the strip), as big as the window it came from.
+  function boundsAt(a) {
+    const from = browser.windowBounds ? browser.windowBounds(browser.cur) : null;
+    const s = scale();
+    const x = Number(a.x);
+    const y = Number(a.y);
+    if (!from || !Number.isFinite(x) || !Number.isFinite(y) || (x === 0 && y === 0)) return from ? { ...from, x: from.x + 40, y: from.y + 40 } : null;
+    return { x: Math.round(x * s) - 120, y: Math.round(y * s) - 16, width: from.width, height: from.height };
+  }
+  // "Move tab to window ▸": each other normal window, named after its open tab.
+  function otherWindows(kind) {
+    return browser.normalWindows().filter((k) => k !== kind).map((k) => {
+      const g = browser.groups[k];
+      const t = browser.tabs.get(g.activeId);
+      return { key: k, label: `${(t && t.title) || 'Window'} (${g.order.length} tab${g.order.length === 1 ? '' : 's'})`.slice(0, 70) };
+    });
+  }
   function bookmarkItems(list) {
     return list.map((b) => ({ label: (b.title || b.url).slice(0, 60), click: () => openBookmark(b, 'here') }));
   }
@@ -306,6 +340,10 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
         { label: 'Reload', accelerator: 'CmdOrCtrl+R', registerAccelerator: false, click: () => browser.reload(t.id) },
         { label: 'Duplicate', click: () => browser.duplicateTab(t.id) },
         { label: t.pinned ? 'Unpin' : 'Pin', click: () => browser.setPinned(t.id, !t.pinned) },
+        ...(t.incognito ? [] : [
+          { label: 'Move tab to new window', enabled: browser.groups[kind].order.length > 1, click: () => browser.moveTabToNewWindow(t.id, boundsAt({})) },
+          ...(otherWindows(kind).length ? [{ label: 'Move tab to another window', submenu: otherWindows(kind).map((w) => ({ label: w.label, click: () => browser.moveTabToWindow(t.id, w.key) })) }] : []),
+        ]),
         { label: t.muted ? 'Unmute tab' : 'Mute tab', enabled: !!t.wc, click: () => browser.toggleMute(t.id) },
         { type: 'separator' },
         { label: 'Close', accelerator: 'CmdOrCtrl+W', registerAccelerator: false, click: () => browser.closeTab(t.id) },
@@ -326,6 +364,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
         { label: g.collapsed ? 'Expand' : 'Collapse', accelerator: 'CmdOrCtrl+Shift+L', registerAccelerator: false, click: () => browser.updateGroup(g.id, { collapsed: !g.collapsed }) },
         { type: 'separator' },
         { label: 'New tab in group', click: () => browser.createTab({ incognito: kind === 'private', openerPartition: last }) },
+        ...(kind === 'private' ? [] : [{ label: 'Move group to new window', click: () => browser.moveGroupToNewWindow(g.id, boundsAt({})) }]),
         { label: 'Ungroup', click: () => browser.ungroup(g.id) },
         { label: 'Close group', click: () => browser.closeGroup(g.id) },
       ], a.x, a.y);
@@ -333,6 +372,13 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'tabs.groupUpdate': (a) => browser.updateGroup(String(a.id), { ...(a.title != null ? { title: String(a.title) } : {}), ...(a.collapsed != null ? { collapsed: !!a.collapsed } : {}) }),
     'tabs.move': (a) => browser.moveTab(Number(a.id), Number(a.index), a.groupId != null ? String(a.groupId) : null),
     'tabs.addToGroup': (a) => browser.addToGroup(Number(a.id), String(a.groupId)),
+    // ---- several windows (1.6): new window, drag a tab or group out of the strip or into another window ----
+    'window.new': () => browser.newWindow && browser.newWindow(),
+    'tabs.detach': (a) => browser.moveTabToNewWindow(Number(a.id), boundsAt(a)),
+    'tabs.detachGroup': (a) => browser.moveGroupToNewWindow(String(a.id), boundsAt(a)),
+    // Dropped on this window's strip (the call comes from it, so browser.cur is this window).
+    'tabs.moveHere': (a) => browser.moveTabToWindow(Number(a.id), browser.cur, Number(a.index), a.groupId != null ? String(a.groupId) : null),
+    'tabs.moveGroupHere': (a) => browser.moveGroupToWindow(String(a.id), browser.cur, Number(a.index)),
     'tabs.moveGroup': (a) => browser.moveGroup(String(a.id), Number(a.index)),
     'bookmarks.listMenu': (a) => {
       const list = a.folder ? bookmarks.items.filter((b) => b.folder === a.folder) : bookmarks.items.filter((b) => (a.ids || []).includes(b.id));

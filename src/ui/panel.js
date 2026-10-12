@@ -345,6 +345,7 @@ function renderMenu() {
   // [label, icon, shortcut, method, arg]; null draws a divider between groups (like Chrome and Brave).
   const items = [
     ['New tab', 'newtab', 'Ctrl+T', 'tabs.new', {}],
+    ['New window', 'window', 'Ctrl+N', 'window.new', {}],
     ['New private window', 'private', 'Ctrl+Shift+N', 'tabs.new', { incognito: true }],
     null,
     ['Downloads', 'download', 'Ctrl+J', 'downloads.openPageTab', {}],
@@ -374,6 +375,7 @@ function renderMenu() {
 // Menu icons: 24×24 outlines in the text colour.
 const MENU_ICONS = {
   newtab: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M12 9v6M9 12h6"/>',
+  window: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M3.5 9h17"/>',
   private: '<path d="M3 11h18M6.5 11l1.8-5.5h7.4l1.8 5.5"/><circle cx="7.5" cy="16" r="2.8"/><circle cx="16.5" cy="16" r="2.8"/><path d="M10.3 16h3.4"/>',
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
   history: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
