@@ -37,6 +37,15 @@ h2{font-size:13px;font-weight:600;color:var(--fg2);margin:22px 0 8px;}
 .empty{padding:50px 16px;text-align:center;color:var(--fg3);}
 .note{color:var(--fg3);font-size:12.5px;margin:6px 2px 0;}
 .sw{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg2);}
+.caret{width:14px;flex:none;color:var(--fg3);cursor:default;text-align:center;font-size:12px;}
+.empty.small{padding:18px 16px;}
+.imp{padding:10px 12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.imp-title{width:100%;font-size:13px;color:var(--fg2);}
+.msg{margin:0 2px 12px;font-size:13px;color:var(--fg2);}
+.msg.bad{color:var(--danger);}
+.row.drop-before{box-shadow:inset 0 2px 0 var(--accent);}
+.row.drop-after{box-shadow:inset 0 -2px 0 var(--accent);}
+.row.drop-into{background:rgba(59,110,245,.16);}
 </style>
 <link rel="stylesheet" href="theme.css" />
 </head>
@@ -45,12 +54,15 @@ h2{font-size:13px;font-weight:600;color:var(--fg2);margin:22px 0 8px;}
   <div class="top">
     <h1>Bookmarks</h1>
     <input type="search" id="q" placeholder="Search bookmarks" spellcheck="false" />
+    <button id="newFolder">New folder</button>
     <button id="import">Import…</button>
-    <button id="export">Export…</button>
+    <button id="export" title="Saves an HTML file that Chrome, Edge, Brave and Firefox can import">Export for other browsers…</button>
   </div>
+  <div id="imp" class="card imp" hidden></div>
+  <div id="msg" class="msg" hidden></div>
   <label class="sw"><input type="checkbox" id="showBar"> Show the bookmarks bar (Ctrl+Shift+B)</label>
   <div id="list"></div>
-  <p class="note">Import takes the bookmarks file that Chrome, Brave, Edge and Firefox export ("Export bookmarks" → HTML). The star in the address bar (Ctrl+D) adds the page you're on. Private tabs can use bookmarks too, but never add history.</p>
+  <p class="note">Import reads the bookmarks of Chrome, Edge, Brave, Vivaldi and Firefox straight from this PC (a copy is read; nothing is sent anywhere), or a bookmarks file. Export saves an HTML file that all of them import. The star in the address bar (Ctrl+D) adds the page you're on; drag bookmarks on the bar or here to rearrange them. Private tabs can use bookmarks too, but never add history.</p>
 </div>
 <script src="bookmarks.js"></script>
 </body>

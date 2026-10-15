@@ -102,7 +102,7 @@ module.exports = async ({ app, browser, settings, ipc, chromeView, downloads }) 
     result.shortcuts.devtools = tab.wc.isDevToolsOpened();
     tab.wc.closeDevTools();
     key('D', ['control', 'shift']); await sleep(300);
-    result.shortcuts.bookmarkAll = (await ipc['bookmarks.state']()).items.filter((x) => /^Tabs /.test(x.folder)).length;
+    result.shortcuts.bookmarkAll = (await ipc['bookmarks.state']()).nodes.filter((x) => x.type === 'folder' && /^Tabs /.test(x.title)).length;
     // From the toolbar: Ctrl+T opens a tab there too.
     const n = browser.order.length;
     chromeView.webContents.focus();

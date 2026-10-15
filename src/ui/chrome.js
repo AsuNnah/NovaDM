@@ -260,44 +260,71 @@ function setActive(tab) {
 }
 
 // ---- bookmarks bar ----
-let marks = { items: [], showBar: false };
+let marks = { nodes: [], showBar: false };
 function folderSvg() { return '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h5l2 2h8A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>'; }
+const kidsOf = (parent) => marks.nodes.filter((n) => n.parent === parent);
+let bmDragId = null; // the bookmark being dragged along the bar
+function clearDrop() { for (const el of document.querySelectorAll('#bmbar .drop-before, #bmbar .drop-after, #bmbar .drop-into')) el.classList.remove('drop-before', 'drop-after', 'drop-into'); }
+// Where a drop on a chip lands: before it, after it, or (on a folder's middle) inside it.
+function dropZone(el, e, isFolder) {
+  const r = el.getBoundingClientRect();
+  const f = (e.clientX - r.left) / Math.max(1, r.width);
+  if (isFolder && f > 0.25 && f < 0.75) return 'into';
+  return f < 0.5 ? 'before' : 'after';
+}
+function moveOnBar(id, zone, target) {
+  if (zone === 'into') return call('bookmarks.move', { id, parent: target.id, index: 1e6 });
+  const order = kidsOf('bar').map((n) => n.id);
+  let at = order.indexOf(target.id) + (zone === 'after' ? 1 : 0);
+  const from = order.indexOf(id);
+  if (from !== -1 && from < at) at--; // the node leaves its old place first
+  return call('bookmarks.move', { id, parent: 'bar', index: at });
+}
+function barChip(n) {
+  const el = document.createElement('div');
+  el.className = 'bm';
+  const isFolder = n.type === 'folder';
+  const ico = document.createElement('div');
+  ico.className = 'ico';
+  if (isFolder) ico.innerHTML = folderSvg();
+  else if (n.icon) ico.style.backgroundImage = `url("${cssUrl(n.icon)}")`;
+  else ico.innerHTML = globeSvg();
+  const t = document.createElement('span');
+  t.textContent = n.title || n.url;
+  el.append(ico, t);
+  el.title = isFolder ? n.title : `${n.title}\n${n.url}`;
+  el.addEventListener('mousedown', (e) => {
+    if (isFolder) { if (e.button === 0) { const r = el.getBoundingClientRect(); call('bookmarks.listMenu', { parent: n.id, x: r.left, y: r.bottom }); } return; }
+    if (e.button === 0) call('bookmarks.open', { id: n.id, how: e.ctrlKey ? 'tab' : 'here' });
+    else if (e.button === 1) { e.preventDefault(); call('bookmarks.open', { id: n.id, how: 'tab' }); }
+  });
+  el.addEventListener('contextmenu', (e) => { e.preventDefault(); call('bookmarks.contextMenu', { id: n.id, x: e.clientX, y: e.clientY }); });
+  el.draggable = true;
+  el.addEventListener('dragstart', (e) => { bmDragId = n.id; e.dataTransfer.setData('text/plain', String(n.id)); e.dataTransfer.effectAllowed = 'move'; });
+  el.addEventListener('dragend', () => { bmDragId = null; clearDrop(); });
+  el.addEventListener('dragover', (e) => {
+    if (bmDragId == null || bmDragId === n.id) return;
+    e.preventDefault();
+    clearDrop();
+    el.classList.add('drop-' + dropZone(el, e, isFolder));
+  });
+  el.addEventListener('dragleave', () => el.classList.remove('drop-before', 'drop-after', 'drop-into'));
+  el.addEventListener('drop', (e) => {
+    if (bmDragId == null || bmDragId === n.id) return;
+    e.preventDefault();
+    moveOnBar(bmDragId, dropZone(el, e, isFolder), n);
+    bmDragId = null;
+    clearDrop();
+  });
+  return el;
+}
 function renderBar() {
   const bar = $('bmbar');
   bar.classList.toggle('hidden', !marks.showBar);
   if (!marks.showBar) return;
   const host = $('bm-items');
   host.innerHTML = '';
-  const chips = [];
-  for (const b of marks.items.filter((x) => !x.folder)) {
-    const el = document.createElement('div');
-    el.className = 'bm';
-    el.title = `${b.title}\n${b.url}`;
-    const ico = document.createElement('div');
-    ico.className = 'ico';
-    if (b.icon) ico.style.backgroundImage = `url("${cssUrl(b.icon)}")`; else ico.innerHTML = globeSvg();
-    const t = document.createElement('span');
-    t.textContent = b.title || b.url;
-    el.append(ico, t);
-    el.addEventListener('mousedown', (e) => {
-      if (e.button === 0) call('bookmarks.open', { id: b.id, how: e.ctrlKey ? 'tab' : 'here' });
-      else if (e.button === 1) { e.preventDefault(); call('bookmarks.open', { id: b.id, how: 'tab' }); }
-    });
-    el.addEventListener('contextmenu', (e) => { e.preventDefault(); call('bookmarks.contextMenu', { id: b.id, x: e.clientX, y: e.clientY }); });
-    host.append(el);
-    chips.push({ el, id: b.id });
-  }
-  const folders = [...new Set(marks.items.map((x) => x.folder).filter(Boolean))];
-  for (const f of folders) {
-    const el = document.createElement('div');
-    el.className = 'bm';
-    el.innerHTML = `<div class="ico">${folderSvg()}</div>`;
-    const t = document.createElement('span');
-    t.textContent = f;
-    el.append(t);
-    el.addEventListener('mousedown', (e) => { if (e.button === 0) { const r = el.getBoundingClientRect(); call('bookmarks.listMenu', { folder: f, x: r.left, y: r.bottom }); } });
-    host.append(el);
-  }
+  const chips = kidsOf('bar').map((n) => { const el = barChip(n); host.append(el); return { el, id: n.id }; });
   // Bookmarks that don't fit go into the » menu.
   const limit = host.getBoundingClientRect().right;
   const hidden = chips.filter((c) => c.el.getBoundingClientRect().right > limit + 0.5);
@@ -305,7 +332,17 @@ function renderBar() {
   const more = $('bm-more');
   more.classList.toggle('hidden', !hidden.length);
   more.onmousedown = (e) => { if (e.button === 0) { const r = more.getBoundingClientRect(); call('bookmarks.listMenu', { ids: hidden.map((c) => c.id), x: r.left, y: r.bottom }); } };
+  // "Other bookmarks": everything that isn't on the bar.
+  const other = $('bm-other');
+  other.classList.toggle('hidden', !kidsOf('other').length);
+  other.onmousedown = (e) => { if (e.button === 0) { const r = other.getBoundingClientRect(); call('bookmarks.listMenu', { parent: 'other', x: Math.max(0, r.right - 220), y: r.bottom }); } };
 }
+// Dropping on empty space at the end of the bar puts the bookmark last; on "Other bookmarks", inside it.
+$('bm-items').addEventListener('dragover', (e) => { if (bmDragId != null && e.target === $('bm-items')) e.preventDefault(); });
+$('bm-items').addEventListener('drop', (e) => { if (bmDragId != null && e.target === $('bm-items')) { e.preventDefault(); call('bookmarks.move', { id: bmDragId, parent: 'bar', index: 1e6 }); bmDragId = null; clearDrop(); } });
+$('bm-other').addEventListener('dragover', (e) => { if (bmDragId != null) { e.preventDefault(); clearDrop(); $('bm-other').classList.add('drop-into'); } });
+$('bm-other').addEventListener('dragleave', () => $('bm-other').classList.remove('drop-into'));
+$('bm-other').addEventListener('drop', (e) => { if (bmDragId != null) { e.preventDefault(); call('bookmarks.move', { id: bmDragId, parent: 'other', index: 1e6 }); bmDragId = null; clearDrop(); } });
 api.on('bookmarks', (d) => { marks = d; renderBar(); });
 window.addEventListener('resize', () => renderBar());
 $('star-btn').onclick = () => call('bookmarks.toggleActive');

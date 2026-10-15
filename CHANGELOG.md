@@ -6,6 +6,30 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-10-15
+
+### Added
+- **Import bookmarks straight from your other browsers.** *Bookmarks → Import…* lists Chrome, Edge,
+  Brave, Vivaldi and Firefox found on this PC (each profile); pick one and its bookmarks come in with
+  their folders. NovaDM reads a copy of the browser's own file on this PC; nothing is sent anywhere,
+  and cookies or saved passwords are not touched. Firefox is read while it is open too. *From a file…*
+  still takes the HTML export of any browser, or a Chrome-style bookmarks file. Bookmarks already here
+  are skipped, and a folder with the same name is merged, so importing twice adds nothing.
+- **Folders inside folders**, and two parts like other browsers: the **Bookmarks bar** and **Other
+  bookmarks** (a button at the right end of the bar). Folders open as menus with sub-folders; right-click
+  a folder for *Open all in new tabs*.
+- **Drag to rearrange.** On the bar, drag a bookmark or folder to reorder it, onto a folder to put it
+  inside, or onto *Other bookmarks*; the Bookmarks page does the same, with a *New folder* button.
+- **Export for other browsers** keeps the whole tree and both parts; Chrome, Edge, Brave and Firefox
+  all import the file.
+
+### Changed
+- Your bookmarks are converted automatically the first time 1.7.0 starts: plain bookmarks stay on the
+  bar, and each old folder becomes a folder on the bar. A copy of the old file is kept as
+  `bookmarks.v1.json` in NovaDM's data folder. (1.6 and older cannot read the new file; use the copy to
+  go back.)
+- *Bookmark all tabs* (Ctrl+Shift+D) now makes a real folder on the bar, named with the date.
+
 ## [1.6.1] — 2026-10-15
 
 ### Fixed
