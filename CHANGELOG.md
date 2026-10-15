@@ -6,6 +6,15 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-10-15
+
+### Fixed
+- **Fullscreen is now really full.** A page's own fullscreen button (a video player, for example)
+  made the video fill only the page area, with NovaDM's tab strip and address bar still on screen.
+  Now the window goes fullscreen, the toolbar hides, and the page gets the whole screen. Esc or the
+  player's button brings everything back, and so does switching to another tab or closing the tab.
+  Each window is handled on its own.
+
 ## [1.6.0] — 2026-10-12
 
 ### Added
