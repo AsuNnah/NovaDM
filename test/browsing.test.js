@@ -4,7 +4,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { History, Bookmarks, TabSession } = require('../src/main/library');
+const { History, TabSession } = require('../src/main/library');
 const { Shields, debounce, stripTrackingParams, deAmpUrl, isLocalHost } = require('../src/main/shields');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'novadm-lib-'));
@@ -48,43 +48,6 @@ test('history: kept 90 days, saved to disk', () => {
   h.flush();
   const again = new History(dir, () => now);
   assert.deepStrictEqual(again.visits.map((v) => v.title), ['New']);
-});
-
-test('bookmarks: star toggle, edit, import and export (Chrome / Firefox HTML)', () => {
-  const b = new Bookmarks(tmp());
-  assert.strictEqual(b.toggle('https://a.example/', 'A'), true);
-  assert.strictEqual(b.has('https://a.example/'), true);
-  assert.strictEqual(b.toggle('https://a.example/', 'A'), false);
-  assert.strictEqual(b.add({ url: 'javascript:alert(1)' }), null);
-  const x = b.add({ url: 'https://x.example/', title: 'X' });
-  b.add({ url: 'https://y.example/', title: 'Y' });
-  assert.deepStrictEqual(b.list().map((i) => i.title), ['X', 'Y']);
-  b.update(x.id, { title: 'Ex', folder: 'Work', url: 'javascript:bad' });
-  assert.strictEqual(b.find('https://x.example/').title, 'Ex');
-  assert.strictEqual(b.find('https://x.example/').folder, 'Work');
-
-  const html = `<!DOCTYPE NETSCAPE-Bookmark-file-1>
-<DL><p>
-  <DT><H3 PERSONAL_TOOLBAR_FOLDER="true">Bookmarks bar</H3>
-  <DL><p>
-    <DT><A HREF="https://news.example/" ADD_DATE="1">News &amp; more</A>
-    <DT><H3>Recipes</H3>
-    <DL><p>
-      <DT><A HREF="https://food.example/soup">Soup</A>
-    </DL><p>
-    <DT><A HREF="https://y.example/">Y again</A>
-    <DT><A HREF="javascript:void(0)">Bookmarklet</A>
-  </DL><p>
-</DL><p>`;
-  const r = b.importHtml(html);
-  assert.deepStrictEqual(r, { added: 2, skipped: 2 });
-  assert.strictEqual(b.find('https://news.example/').title, 'News & more');
-  assert.strictEqual(b.find('https://news.example/').folder, '');
-  assert.strictEqual(b.find('https://food.example/soup').folder, 'Recipes');
-  // Export and import into an empty list gives the same bookmarks back.
-  const b2 = new Bookmarks(tmp());
-  b2.importHtml(b.exportHtml());
-  assert.deepStrictEqual(b2.list().map((i) => [i.url, i.title, i.folder]).sort(), b.list().map((i) => [i.url, i.title, i.folder]).sort());
 });
 
 test('tab session: web and NovaDM pages saved, others dropped', () => {

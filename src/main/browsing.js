@@ -9,6 +9,7 @@ const { app, WebContentsView, Menu, dialog, nativeImage } = require('electron');
 const diagnostics = require('./diagnostics');
 const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeeping');
 const { History, Bookmarks, TabSession } = require('./library');
+const bookmarkImport = require('./bookmarks-import');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
 
@@ -149,7 +150,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // ---- bookmarks ----
   function bookmarkState() {
     return {
-      items: bookmarks.list().map(({ id, url, title, folder, icon }) => ({ id, url, title, folder, icon: icon || '' })),
+      nodes: bookmarks.nodes.map(({ id, type, url, title, parent, icon }) => ({ id, type, url: url || '', title, parent, icon: icon || '' })),
       showBar: barVisible(),
     };
   }
@@ -231,9 +232,13 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       return { key: k, label: `${(t && t.title) || 'Window'} (${g.order.length} tab${g.order.length === 1 ? '' : 's'})`.slice(0, 70) };
     });
   }
-  function bookmarkItems(list) {
-    return list.map((b) => ({ label: (b.title || b.url).slice(0, 60), click: () => openBookmark(b, 'here') }));
+  // A folder's contents as a menu: bookmarks open here, folders open as submenus.
+  function bookmarkItems(nodes) {
+    return nodes.map((n) => (n.type === 'folder'
+      ? { label: (n.title || 'Folder').slice(0, 60), submenu: bookmarkItems(bookmarks.children(n.id)).concat(bookmarks.children(n.id).length ? [] : [{ label: '(empty)', enabled: false }]) }
+      : { label: (n.title || n.url).slice(0, 60), click: () => openBookmark(n, 'here') }));
   }
+  const openAll = (parent) => { for (const b of bookmarks.urlsIn(parent)) openBookmark(b, 'tab'); };
 
   // ---- reader view ----
   async function openReader(tabId) {
@@ -317,11 +322,22 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'bookmarks.state': () => bookmarkState(),
     'bookmarks.toggleActive': () => toggleActiveBookmark(),
     'bookmarks.update': (a) => ({ ok: !!bookmarks.update(Number(a.id), a) }),
+    'bookmarks.move': (a) => ({ ok: bookmarks.move(Number(a.id), /^\d+$/.test(String(a.parent)) ? Number(a.parent) : String(a.parent), Number(a.index)) }),
+    'bookmarks.newFolder': (a) => ({ ok: true, id: bookmarks.addFolder(String(a.title || ''), /^\d+$/.test(String(a.parent)) ? Number(a.parent) : String(a.parent || 'bar')).id }),
     'bookmarks.remove': (a) => { bookmarks.remove(Number(a.id)); return { ok: true }; },
     'bookmarks.open': (a) => openBookmark(bookmarks.items.find((b) => b.id === Number(a.id)), a.how),
     'bookmarks.contextMenu': (a) => {
-      const b = bookmarks.items.find((x) => x.id === Number(a.id));
+      const b = bookmarks.node(Number(a.id));
       if (!b) return;
+      if (b.type === 'folder') {
+        popup([
+          { label: 'Open all in new tabs', click: () => openAll(b.id) },
+          { type: 'separator' },
+          { label: 'Rename…', click: () => browser.openInternal('bookmarks') },
+          { label: 'Delete folder', click: () => bookmarks.remove(b.id) },
+        ], a.x, a.y);
+        return;
+      }
       popup([
         { label: 'Open in new tab', click: () => openBookmark(b, 'tab') },
         { label: 'Open in private window', click: () => openBookmark(b, 'private') },
@@ -389,19 +405,32 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'tabs.moveGroupHere': (a) => browser.moveGroupToWindow(String(a.id), browser.cur, Number(a.index)),
     'tabs.moveGroup': (a) => browser.moveGroup(String(a.id), Number(a.index)),
     'bookmarks.listMenu': (a) => {
-      const list = a.folder ? bookmarks.items.filter((b) => b.folder === a.folder) : bookmarks.items.filter((b) => (a.ids || []).includes(b.id));
+      // A folder (or 'other'), or the bookmarks that did not fit on the bar (the » menu).
+      const parent = /^\d+$/.test(String(a.parent)) ? Number(a.parent) : a.parent;
+      const list = a.ids ? a.ids.map((id) => bookmarks.node(Number(id))).filter(Boolean) : bookmarks.isContainer(parent) ? bookmarks.children(parent) : [];
       if (list.length) popup(bookmarkItems(list), a.x, a.y);
     },
     'bookmarks.addAllTabs': () => {
       const folder = 'Tabs ' + new Date().toISOString().slice(0, 10);
-      for (const id of browser.order) { const t = browser.tabs.get(id); if (t && !t.incognito && /^https?:/i.test(t.url || '')) bookmarks.add({ url: t.url, title: t.title, folder }); }
+      const f = bookmarks.addFolder(folder, 'bar');
+      for (const id of browser.order) { const t = browser.tabs.get(id); if (t && !t.incognito && /^https?:/i.test(t.url || '')) bookmarks.add({ url: t.url, title: t.title, parent: f.id }); }
+      if (!bookmarks.children(f.id).length) bookmarks.remove(f.id);
       return { ok: true, folder };
     },
     'bookmarks.setBar': (a) => { settings.set({ showBookmarksBar: !!a.show }); relayout(); pushBookmarks(); return { ok: true }; },
+    // The browsers found on this PC (name and profile only; the page asks by position, never by path).
+    'bookmarks.browsers': () => ({ list: bookmarkImport.detectBrowsers().map(({ browser, profile }) => ({ browser, profile })) }),
+    'bookmarks.importFrom': (a) => {
+      const entry = bookmarkImport.detectBrowsers()[Number(a.index)];
+      if (!entry) return { ok: false, error: 'That browser is not there any more.' };
+      try { return { ok: true, ...bookmarks.importTree(bookmarkImport.readBrowser(entry)) }; } catch (e) {
+        return { ok: false, error: entry.kind === 'firefox' ? "Could not read Firefox's bookmarks. In Firefox, export them (Bookmarks → Manage bookmarks → Import and Backup → Export to HTML) and use \"From a file\"." : e.message };
+      }
+    },
     'bookmarks.import': async () => {
-      const r = await dialog.showOpenDialog(getWindow(), { title: 'Import bookmarks', properties: ['openFile'], filters: [{ name: 'Bookmarks (HTML)', extensions: ['html', 'htm'] }] });
+      const r = await dialog.showOpenDialog(getWindow(), { title: 'Import bookmarks', properties: ['openFile'], filters: [{ name: 'Bookmarks (HTML or Chrome file)', extensions: ['html', 'htm', '*'] }] });
       if (r.canceled || !r.filePaths[0]) return { ok: false };
-      try { return { ok: true, ...bookmarks.importHtml(fs.readFileSync(r.filePaths[0], 'utf8')) }; } catch (e) { return { ok: false, error: e.message }; }
+      try { return { ok: true, ...bookmarks.importTree(bookmarkImport.fromFileText(fs.readFileSync(r.filePaths[0], 'utf8'))) }; } catch (e) { return { ok: false, error: e.message }; }
     },
     'bookmarks.export': async () => {
       const r = await dialog.showSaveDialog(getWindow(), { title: 'Export bookmarks', defaultPath: 'NovaDM bookmarks.html', filters: [{ name: 'Bookmarks (HTML)', extensions: ['html'] }] });

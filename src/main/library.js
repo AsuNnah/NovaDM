@@ -4,13 +4,13 @@
 const path = require('path');
 const { EventEmitter } = require('events');
 const { JsonStore } = require('./store');
+const { Bookmarks } = require('./bookmarks');
 
 const MAX_HISTORY = 20000;
 const HISTORY_DAYS = 90;
 const MERGE_MS = 60 * 1000; // the same address again within a minute updates the last visit
 
 function recordable(url) { return /^https?:\/\//i.test(url || '') && url.length <= 4096; }
-function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } }
 
 class History extends EventEmitter {
   constructor(dir, now = () => Date.now()) {
@@ -106,103 +106,6 @@ class History extends EventEmitter {
 
   changed() { this.store.save(2000); this.emit('changed'); }
   flush() { this.store.flush(); }
-}
-
-class Bookmarks extends EventEmitter {
-  constructor(dir, now = () => Date.now()) {
-    super();
-    this.now = now;
-    this.store = new JsonStore(path.join(dir, 'bookmarks.json'), { seq: 0, items: [] });
-    if (!Array.isArray(this.store.data.items)) this.store.data = { seq: 0, items: [] };
-  }
-
-  get items() { return this.store.data.items; }
-  list() { return this.items.slice(); }
-  find(url) { return this.items.find((b) => b.url === url) || null; }
-  has(url) { return !!this.find(url); }
-  folders() { return [...new Set(this.items.map((b) => b.folder).filter(Boolean))]; }
-
-  add({ url, title = '', folder = '' }) {
-    if (!/^(https?|file|novadm):/i.test(url || '')) return null;
-    const old = this.find(url);
-    if (old) return old;
-    const b = { id: ++this.store.data.seq, url, title: String(title || hostOf(url) || url).slice(0, 300), folder: String(folder || '').slice(0, 100), added: this.now() };
-    this.items.push(b);
-    this.changed();
-    return b;
-  }
-
-  /** Star button: bookmark the page, or remove it if it's already bookmarked. Returns the new state. */
-  toggle(url, title) {
-    const old = this.find(url);
-    if (old) { this.remove(old.id); return false; }
-    return !!this.add({ url, title });
-  }
-
-  update(id, patch) {
-    const b = this.items.find((x) => x.id === id);
-    if (!b) return null;
-    if (typeof patch.title === 'string') b.title = patch.title.slice(0, 300);
-    if (typeof patch.url === 'string' && /^(https?|file):/i.test(patch.url)) b.url = patch.url;
-    if (typeof patch.folder === 'string') b.folder = patch.folder.slice(0, 100);
-    this.changed();
-    return b;
-  }
-
-  remove(id) {
-    const before = this.items.length;
-    this.store.data.items = this.items.filter((b) => b.id !== id);
-    if (this.items.length !== before) this.changed();
-  }
-
-  /** Bookmarks file from Chrome / Brave / Edge / Firefox ("Export bookmarks" -> HTML). */
-  importHtml(html) {
-    let added = 0;
-    let skipped = 0;
-    const stack = [];
-    const re = /<(\/?)(DL|H3|A)\b([^>]*)>([^<]*)/gi;
-    let m;
-    let pendingFolder = null;
-    while ((m = re.exec(String(html || '')))) {
-      const [, close, tag, attrs, text] = m;
-      const t = tag.toUpperCase();
-      if (t === 'H3' && !close) pendingFolder = decodeEntities(text.trim());
-      else if (t === 'DL' && !close) { stack.push(pendingFolder); pendingFolder = null; }
-      else if (t === 'DL' && close) stack.pop();
-      else if (t === 'A' && !close) {
-        const href = /\bHREF\s*=\s*"([^"]*)"/i.exec(attrs);
-        if (!href) continue;
-        const url = decodeEntities(href[1]);
-        // The browser's own bar is the top level here; other folders keep their (innermost) name.
-        const folder = [...stack].reverse().find((f) => f && !/^(bookmarks bar|bookmarks toolbar|favorites bar)$/i.test(f)) || '';
-        if (this.has(url) || !/^https?:/i.test(url)) { skipped++; continue; }
-        this.add({ url, title: decodeEntities(text.trim()), folder });
-        added++;
-      }
-    }
-    return { added, skipped };
-  }
-
-  exportHtml() {
-    const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-    const line = (b) => `        <DT><A HREF="${esc(b.url)}" ADD_DATE="${Math.floor((b.added || 0) / 1000)}">${esc(b.title)}</A>\n`;
-    let out = '<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n';
-    out += '    <DT><H3 PERSONAL_TOOLBAR_FOLDER="true">Bookmarks bar</H3>\n    <DL><p>\n';
-    for (const b of this.items.filter((x) => !x.folder)) out += line(b);
-    for (const f of this.folders()) {
-      out += `        <DT><H3>${esc(f)}</H3>\n        <DL><p>\n`;
-      for (const b of this.items.filter((x) => x.folder === f)) out += '    ' + line(b);
-      out += '        </DL><p>\n';
-    }
-    return out + '    </DL><p>\n</DL><p>\n';
-  }
-
-  changed() { this.store.save(500); this.emit('changed'); }
-  flush() { this.store.flush(); }
-}
-
-function decodeEntities(s) {
-  return String(s).replace(/&(amp|lt|gt|quot|#39|#x27);/g, (_m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'" }[e]));
 }
 
 /** Open tabs (not private ones), saved often so a crash or power cut can restore them too. */
