@@ -6,6 +6,12 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.2] — 2026-10-15
+
+### Security
+- **Browser engine updated to Electron 44.7.2** (Chromium 152.0.7977.149, from 44.7.0), which carries the
+  latest Chromium security fixes backported by the Electron team. No changes to how NovaDM works.
+
 ## [1.7.1] — 2026-10-15
 
 ### Fixed
