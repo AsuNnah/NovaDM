@@ -1,0 +1,158 @@
+# Stages 8–9 of docs/pipeline.md, automatic: when a pull request that raises the version in package.json
+# is merged into main and every check passes, this builds the installer and the portable version,
+# verifies them, tags the version and publishes the GitHub release as the latest one.
+# Nothing is released when the version is already released (tag or release exists), is not newer than the
+# latest tag, or CHANGELOG.md has no section for it. The free security scanners and Strix are not part of
+# this gate: only the required checks are (tests, dependency audit, privacy check, CodeQL, build checks).
+# Run by hand (Actions → Auto release → Run workflow) it does a dry run by default: everything except
+# the tag and the release. The tag-triggered release.yml still makes a draft for a hand-made tag.
+name: Auto release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run: build and verify, but publish nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false # a release in progress is never cut short by the next merge
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+      dry: ${{ steps.v.outputs.dry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Is there a new version to release?
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        shell: bash
+        run: |
+          v="$(node -p "require('./package.json').version")"
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "dry=$DRY" >> "$GITHUB_OUTPUT"
+          say() { echo "release=$1" >> "$GITHUB_OUTPUT"; echo "::notice::$2"; }
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { say false "package.json version '$v' is not x.y.z: nothing released"; exit 0; }
+          if [ "$DRY" = "true" ]; then say true "Dry run of $v: nothing will be published"; exit 0; fi
+          if git rev-parse -q --verify "refs/tags/v$v" >/dev/null || gh release list --limit 200 --json tagName -q '.[].tagName' | grep -qx "v$v"; then
+            say false "v$v is already released (tag or release exists): nothing to do"; exit 0
+          fi
+          latest="$(git tag --list 'v[0-9]*' | sed 's/^v//' | sort -V | tail -1)"
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$v" | sort -V | tail -1)" != "$v" ]; then
+            say false "$v is not newer than the latest tag v$latest: nothing released"; exit 0
+          fi
+          if ! awk -v h="## [$v]" 'index($0, h) == 1 { f = 1 } END { exit !f }' CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$v]' section: write the release notes first"; exit 1
+          fi
+          say true "Releasing v$v (latest tag: ${latest:-none})"
+
+  test:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: [plan, test]
+    if: needs.plan.outputs.release == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      DRY: ${{ needs.plan.outputs.dry }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Build installer and portable
+        run: npm run dist -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Security checks on the built app
+        run: node tools/check-build-security.js
+      - name: No personal data in the build
+        run: node tools/check-private.js --build
+      # CodeQL runs as its own workflow on main; wait for its result on this exact commit (up to 25 minutes).
+      - name: CodeQL passed on this commit
+        shell: bash
+        run: |
+          for i in $(seq 1 50); do
+            r="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs" --jq '[.check_runs[] | select(.name=="analyze")] | last | "\(.status)/\(.conclusion)"')"
+            echo "analyze: $r"
+            case "$r" in
+              completed/success) exit 0 ;;
+              completed/*) echo "::error::CodeQL did not pass on this commit ($r): not releasing"; exit 1 ;;
+            esac
+            sleep 30
+          done
+          echo "::error::CodeQL did not finish in 25 minutes: not releasing (run this workflow again later)"; exit 1
+      - name: Release notes from the changelog, with checksums
+        shell: bash
+        run: |
+          awk -v h="## [$VERSION]" 'index($0, h) == 1 { on = 1; next } on && /^## \[/ { exit } on' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::The changelog section for $VERSION is empty"; exit 1; }
+          {
+            echo
+            echo "The files are not code-signed yet, so Windows SmartScreen may warn on first run (\"More info\" → \"Run anyway\")."
+            echo
+            echo "| File | SHA-256 |"
+            echo "|---|---|"
+            for f in "NovaDM-Setup-$VERSION.exe" "NovaDM-Portable-$VERSION.exe"; do echo "| $f | \`$(sha256sum "dist/$f" | cut -d' ' -f1)\` |"; done
+          } >> notes.md
+      # What the updater of installed copies checks: latest.yml names this version and the installer's SHA-512.
+      - name: The update files match the installer
+        shell: bash
+        run: |
+          node -e "
+            const fs = require('fs'), c = require('crypto'), v = process.env.VERSION;
+            const yml = fs.readFileSync('dist/latest.yml', 'utf8');
+            const fail = (m) => { console.error('::error::' + m); process.exit(1); };
+            if ((yml.match(/^version: (.+)\$/m) || [])[1].trim() !== v) fail('latest.yml names another version');
+            const want = (yml.match(/^sha512: (.+)\$/m) || [])[1].trim();
+            const got = c.createHash('sha512').update(fs.readFileSync('dist/NovaDM-Setup-' + v + '.exe')).digest('base64');
+            if (got !== want) fail('installer SHA-512 does not match latest.yml');
+            if (!fs.existsSync('dist/NovaDM-Setup-' + v + '.exe.blockmap')) fail('the blockmap is missing');
+            console.log('latest.yml, installer and blockmap match for ' + v);
+          "
+      - name: Tag and publish the release
+        if: env.DRY != 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # A draft first (it creates no tag), so a failed upload never leaves a half-made release.
+          gh release create "v$VERSION" "dist/NovaDM-Setup-$VERSION.exe" "dist/NovaDM-Setup-$VERSION.exe.blockmap" dist/latest.yml "dist/NovaDM-Portable-$VERSION.exe" \
+            --draft --target "$GITHUB_SHA" --title "NovaDM $VERSION" --notes-file notes.md
+          # Annotated tag with the notes, then publish as the latest release (installed copies update from it).
+          git tag -a "v$VERSION" "$GITHUB_SHA" -F notes.md
+          git push origin "v$VERSION"
+          gh release edit "v$VERSION" --draft=false --latest
+          echo "::notice::Published NovaDM $VERSION"
+      - name: Dry run, nothing published
+        if: env.DRY == 'true'
+        shell: bash
+        run: |
+          echo "::notice::Dry run for $VERSION passed: build, build checks, CodeQL, notes and update files are fine. Nothing was tagged or published."
+          cat notes.md
