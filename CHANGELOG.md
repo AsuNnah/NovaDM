@@ -6,6 +6,17 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.1] — 2026-10-15
+
+### Fixed
+- **Keyboard shortcuts sometimes did nothing.** Ctrl+Tab, Ctrl+W, Ctrl+N, Ctrl+J and the others worked
+  once and then stopped until you clicked somewhere, or worked only after several tries. Cause: when you
+  switched tabs, closed a tab or opened one in the background, the page you left was hidden while it still
+  had the keyboard, so nothing was listening for the next shortcut. Now the keyboard goes straight back to
+  the page you are on (or the open panel or find bar) after each of these, when you come back to the
+  window, and on a short check in between. In a test, Ctrl+Tab pressed 12 times in a row worked once
+  before and 12 times now.
+
 ## [1.7.0] — 2026-10-15
 
 ### Added
