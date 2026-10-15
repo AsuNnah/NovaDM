@@ -123,14 +123,42 @@ function kindOfArgs(args) {
 
 function contentBounds() {
   const [w, h] = win.getContentSize();
-  const top = browsing.chromeHeight();
+  const top = pageFs[curKind] ? 0 : browsing.chromeHeight();
   return { x: 0, y: top, width: w, height: Math.max(0, h - top) };
+}
+
+// A page that asks for fullscreen (a video's fullscreen button) gets the whole window: the toolbar and
+// panels are hidden until it leaves. Per window: kind -> { tabId, was: window already fullscreen }.
+const pageFs = {};
+
+function setPageFs(tab, on) {
+  const s = pageFs[curKind];
+  if (on) {
+    if (!s) pageFs[curKind] = { tabId: tab.id, was: win.isFullScreen() };
+    else s.tabId = tab.id;
+    win.setFullScreen(true);
+  } else {
+    if (!s || s.tabId !== tab.id) return;
+    delete pageFs[curKind];
+    if (!s.was) win.setFullScreen(false);
+  }
+  chromeView.setVisible(!on);
+  overlayView.setVisible(!on);
+  layout();
+}
+
+// The tab left fullscreen's tab (switched away or closed): end the page's fullscreen too.
+function endPageFs(tab, closed) {
+  const s = pageFs[curKind];
+  if (!s || s.tabId !== tab.id) return;
+  if (!closed && tab.wc && !tab.wc.isDestroyed()) tab.wc.executeJavaScript('document.fullscreenElement && document.exitFullscreen()', true).catch(() => {});
+  setPageFs(tab, false);
 }
 
 function layout() {
   if (!win || win.isDestroyed() || !chromeView) return;
   const [w] = win.getContentSize();
-  chromeView.setBounds({ x: 0, y: 0, width: w, height: browsing.chromeHeight() });
+  chromeView.setBounds({ x: 0, y: 0, width: w, height: pageFs[curKind] ? 0 : browsing.chromeHeight() });
   const cb = contentBounds();
   overlayView.setBounds(cb);
   browser.setBounds(cb);
@@ -215,13 +243,13 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
     });
   }
   // Its own find bar (Ctrl+F).
-  const find = browsing.createFindView(w.contentView);
-  wins[kind].find = find;
-  find.view.webContents.on('before-input-event', (e, input) => {
-    const action = shortcutFor(input);
-    if (!action || action === 'stop' || action.startsWith('zoom')) return;
-    e.preventDefault();
-    inCtx(kind, () => handleShortcut(browser.activeTab(), action));
+  wins[kind].find = browsing.createFindView(w.contentView, (view) => {
+    view.webContents.on('before-input-event', (e, input) => {
+      const action = shortcutFor(input);
+      if (!action || action === 'stop' || action.startsWith('zoom')) return;
+      e.preventDefault();
+      inCtx(kind, () => handleShortcut(browser.activeTab(), action));
+    });
   });
   useCtx(kind);
 
@@ -283,7 +311,7 @@ function closeWindowTabs(kind, c) {
   g.closing = true;
   browser.inGroup(kind, () => { for (const id of [...g.order]) browser.closeTab(id); });
   Object.assign(g, { closing: false, parentView: null, onRestack: null, activeId: null });
-  for (const v of [c.chromeView, c.overlayView, c.find.view]) { viewKind.delete(v.webContents.id); try { v.webContents.close(); } catch {} }
+  for (const v of [c.chromeView, c.overlayView, c.find.view]) { if (!v) continue; viewKind.delete(v.webContents.id); try { v.webContents.close(); } catch {} }
   delete wins[kind];
 }
 
@@ -322,6 +350,8 @@ function wireEvents() {
   on('download', onPageDownload);
   on('page-loaded', (tab) => { runSiteExtensions(tab); if (/^novadm:\/\//.test(tab.url || '')) styleUi(tab.wc); });
   on('shortcut', (tab, action) => handleShortcut(tab, action));
+  on('fullscreen', (tab, isOn) => setPageFs(tab, isOn));
+  on('tab-closed', (tab) => endPageFs(tab, true));
   on('download-link', (tab, url) => addFlow.request(specFromUrl(url, { pageUrl: tab.url, incognito: tab.incognito }), { origin: 'page' }));
   on('magnet', (tab, url) => addFlow.requestLinks([url], { origin: 'page', pageUrl: tab.url, incognito: tab.incognito }));
   // Chrome extensions see normal (not private) tabs.
@@ -335,6 +365,8 @@ function wireEvents() {
   });
   on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
   on('tab-selected', (tab) => {
+    const fs = pageFs[curKind];
+    if (fs && fs.tabId !== tab.id && browser.tabs.has(fs.tabId)) endPageFs(browser.tabs.get(fs.tabId));
     if (extensions.ready && !tab.incognito) extensions.selectTab(tab.wc);
     // A tab opened for the other window (a private link, the Downloads page): bring that window forward.
     const w = wins[browser.kindOf(tab)];

@@ -376,6 +376,8 @@ class Browser extends EventEmitter {
     });
     wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons && icons[0] || ''; update(); });
     wc.on('media-started-playing', update);
+    wc.on('enter-html-full-screen', () => this.emit('fullscreen', tab, true));
+    wc.on('leave-html-full-screen', () => this.emit('fullscreen', tab, false));
     wc.on('render-process-gone', () => { tab.title = 'Page crashed'; tab.loading = false; update(); });
 
     wc.setWindowOpenHandler((details) => this.handleWindowOpen(tab, details));
