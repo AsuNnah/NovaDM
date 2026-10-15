@@ -1,0 +1,94 @@
+# https://docs.github.com/en/communities/using-templates-to-encourage-useful-issues-and-pull-requests/syntax-for-issue-forms
+name: Problem
+description: Something in NovaDM doesn't work
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        Have you searched the [existing issues](https://github.com/AsuNnah/NovaDM/issues?q=is%3Aissue)? Is the problem still there in the [latest version](https://github.com/AsuNnah/NovaDM/releases/latest) (Settings → About → Check for updates)?
+
+        **Security problem?** Don't open an issue: use [private reporting](https://github.com/AsuNnah/NovaDM/security/advisories/new).
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A brief description of the problem
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: A series of steps to reproduce the problem
+      value: |-
+        1. 
+        2. 
+        3. 
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: What happened
+      placeholder: include screenshots if needed
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      description: What should have happened
+    validations:
+      required: true
+  - type: dropdown
+    id: reproduces
+    attributes:
+      label: How often does it happen?
+      options:
+        - Always
+        - Sometimes
+        - Only once
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: NovaDM version
+      description: Settings → About (or the menu's "About NovaDM")
+      placeholder: "1.6.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installed how?
+      options:
+        - Installer (installed)
+        - Portable
+        - Run from source
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"
+  - type: textarea
+    id: report
+    attributes:
+      label: Problem report (optional, helps a lot)
+      description: |-
+        In NovaDM: menu → **Report a problem…**. Personal data is removed (web addresses keep only the site, folders and names are replaced), but **read it before you share it**. Paste it here or attach the file.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before sending
+      options:
+        - label: I looked for the same problem in the existing issues
+          required: true
+        - label: I did not include passwords, private web addresses or other personal data
+          required: true

@@ -1,0 +1,5 @@
+# Labels added to an issue when it is opened or edited (github.com/github/issue-labeler, as brave-browser does).
+# A pattern is matched against the title and the text. If several patterns are listed for a label they all
+# have to match; to label when any one matches, join them with "|" in a single pattern.
+problem-report:
+  - 'NovaDM problem report'

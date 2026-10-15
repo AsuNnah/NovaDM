@@ -1,0 +1,27 @@
+name: Idea
+description: Suggest a feature or a change
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        Ideas are collected and put in order by the maintainer; an idea here isn't a promise. Please search the [existing issues](https://github.com/AsuNnah/NovaDM/issues?q=is%3Aissue) first.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would it solve?
+      description: Who has it, and when?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like NovaDM to do?
+    validations:
+      required: true
+  - type: textarea
+    id: others
+    attributes:
+      label: How do other programs do it?
+      description: Chrome, Brave, Edge, Firefox, IDM, 1DM … with a link or a screenshot if you can

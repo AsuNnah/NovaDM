@@ -1,0 +1,7 @@
+# Issue forms, in the style of github.com/brave/brave-browser: structured fields, a version, and a way to
+# attach the app's own problem report. Security problems go to private reporting, not to an issue.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem (private)
+    url: https://github.com/AsuNnah/NovaDM/security/advisories/new
+    about: Please don't open a public issue for a security problem. See SECURITY.md.
