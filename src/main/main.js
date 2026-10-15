@@ -243,13 +243,13 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
     });
   }
   // Its own find bar (Ctrl+F).
-  const find = browsing.createFindView(w.contentView);
-  wins[kind].find = find;
-  find.view.webContents.on('before-input-event', (e, input) => {
-    const action = shortcutFor(input);
-    if (!action || action === 'stop' || action.startsWith('zoom')) return;
-    e.preventDefault();
-    inCtx(kind, () => handleShortcut(browser.activeTab(), action));
+  wins[kind].find = browsing.createFindView(w.contentView, (view) => {
+    view.webContents.on('before-input-event', (e, input) => {
+      const action = shortcutFor(input);
+      if (!action || action === 'stop' || action.startsWith('zoom')) return;
+      e.preventDefault();
+      inCtx(kind, () => handleShortcut(browser.activeTab(), action));
+    });
   });
   useCtx(kind);
 
@@ -311,7 +311,7 @@ function closeWindowTabs(kind, c) {
   g.closing = true;
   browser.inGroup(kind, () => { for (const id of [...g.order]) browser.closeTab(id); });
   Object.assign(g, { closing: false, parentView: null, onRestack: null, activeId: null });
-  for (const v of [c.chromeView, c.overlayView, c.find.view]) { viewKind.delete(v.webContents.id); try { v.webContents.close(); } catch {} }
+  for (const v of [c.chromeView, c.overlayView, c.find.view]) { if (!v) continue; viewKind.delete(v.webContents.id); try { v.webContents.close(); } catch {} }
   delete wins[kind];
 }
 

@@ -102,15 +102,21 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   }, 20000).unref();
 
   // ---- find in page ----
-  /** A find bar for a window: { view, open }, made current with useFind. */
-  function createFindView(parent) {
+  /** A find bar for a window: { view, open }, made current with useFind. Its page process (about 25 MB)
+   *  starts the first time Ctrl+F is used; onCreate(view) is called then. */
+  function createFindView(parent, onCreate) {
+    return { view: null, open: false, parent, onCreate };
+  }
+  function ensureFindView(f) {
+    if (f.view) return;
     const view = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
     view.setBackgroundColor('#00000000');
     view.webContents.loadFile(path.join(UI_DIR, 'find.html'));
     view.setVisible(false);
-    parent.addChildView(view);
+    f.parent.addChildView(view);
     view.webContents.on('did-finish-load', () => view.webContents.setZoomFactor(scale()));
-    return { view, open: false };
+    f.view = view;
+    if (f.onCreate) f.onCreate(view);
   }
   function sendFind(name, data) { if (find.view && !find.view.webContents.isDestroyed()) find.view.webContents.send('novadm:event', name, data); }
   function findBounds(content) {
@@ -119,13 +125,15 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     return { x: content.x + content.width - w - Math.round(12 * s), y: content.y + Math.round(6 * s), width: w, height: Math.round(FIND_H * s) };
   }
   function openFind(text) {
-    if (!find.view) return;
+    const fresh = !find.view;
+    ensureFindView(find);
     find.open = true;
     find.view.setVisible(true);
     relayout();
     restack();
     find.view.webContents.focus();
-    sendFind('find-open', { text: text || '' });
+    const send = () => sendFind('find-open', { text: text || '' });
+    if (fresh) find.view.webContents.once('did-finish-load', send); else send();
   }
   function closeFind() {
     if (!find.open) return;

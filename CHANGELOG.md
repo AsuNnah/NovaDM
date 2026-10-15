@@ -15,6 +15,10 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
   player's button brings everything back, and so does switching to another tab or closing the tab.
   Each window is handled on its own.
 
+### Changed
+- **Less memory at start.** The find bar's page process (about 25 MB for every window) now starts the
+  first time you press Ctrl+F instead of when the window opens.
+
 ## [1.6.0] — 2026-10-12
 
 ### Added
