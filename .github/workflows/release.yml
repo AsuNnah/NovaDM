@@ -1,6 +1,7 @@
-# Stages 8–9 of docs/pipeline.md: a version tag (vX.Y.Z) runs the CI tests again, builds the installer
-# and the portable version, checks the build and drafts the GitHub release (published by hand after
-# review). Only version tags start it, so pull requests don't list an empty "release" check.
+# Stages 8–9 of docs/pipeline.md, by hand: a version tag (vX.Y.Z) pushed by a person runs the CI tests
+# again, builds the installer and the portable version, checks the build and drafts the GitHub release
+# (published by hand after review). Normal releases are made by auto-release.yml when a new version is
+# merged into main; its tag is pushed with the workflow token and does not start this workflow.
 name: Release
 
 on:
