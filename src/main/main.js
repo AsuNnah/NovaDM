@@ -165,6 +165,23 @@ function layout() {
   if (browsing.findView) browsing.findView.setBounds(browsing.findBounds(cb));
 }
 
+// Shortcuts are caught by the view that has the keyboard: the toolbar, the open panel, the find bar or the
+// page. Hiding or closing the page that had it (a tab switch, Ctrl+W, a new tab) leaves no view with it, or a
+// hidden one, and the keys then went nowhere until a click. So the keyboard goes back to the open panel,
+// find bar or current page right after such changes, on the window's focus, and on a short timer.
+function ensureKeyboard() {
+  if (!win || win.isDestroyed() || !win.isFocused() || !chromeView || chromeView.webContents.isDestroyed()) return;
+  const live = (wc) => (wc && !wc.isDestroyed() ? wc : null);
+  const tab = browser.activeTab();
+  const page = live(tab && tab.wc);
+  const find = browsing.findOpen ? live(browsing.findView && browsing.findView.webContents) : null;
+  const panel = panelOpen ? live(overlayView.webContents) : null;
+  if (page && page.isDevToolsFocused()) return;
+  if ([chromeView.webContents, panel, find, page].some((wc) => wc && wc.isFocused())) return;
+  (panel || find || page || chromeView.webContents).focus();
+}
+const keyboardSoon = () => { const kind = curKind; setTimeout(() => inCtx(kind, ensureKeyboard), 30); };
+
 function restack() {
   // Keep z-order: page tab (bottom) < find bar < overlay < chrome (top). Nothing to do once the
   // window is gone (tabs are still being closed while NovaDM quits).
@@ -258,7 +275,7 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
 
   layout();
   w.on('resize', () => inCtx(kind, layout));
-  w.on('focus', () => useCtx(kind));
+  w.on('focus', () => { useCtx(kind); keyboardSoon(); });
   // Open links that must leave the app (none by default) in the OS browser.
   // Only web and mail links go to the default program: other schemes (file:, ms-*: …) can start programs.
   cv.webContents.setWindowOpenHandler(({ url }) => { if (/^(https?|mailto):/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
@@ -363,8 +380,10 @@ function wireEvents() {
     focus();
     if (tab.wc) tab.wc.once('did-finish-load', focus);
   });
+  on('tab-closed', keyboardSoon);
   on('tab-created', (tab) => { if (extensions.ready && !tab.incognito) extensions.addTab(tab.wc, win); });
   on('tab-selected', (tab) => {
+    keyboardSoon();
     const fs = pageFs[curKind];
     if (fs && fs.tabId !== tab.id && browser.tabs.has(fs.tabId)) endPageFs(browser.tabs.get(fs.tabId));
     if (extensions.ready && !tab.incognito) extensions.selectTab(tab.wc);
@@ -926,6 +945,8 @@ app.whenReady().then(async () => {
   browser.focusWindow = (key) => { if (wins[key]) { wins[key].win.focus(); useCtx(key); } };
   createWindow();
   wireEvents();
+  // The same check on a timer, for whatever else takes the keyboard away (a menu or dialog closing, a panel...).
+  setInterval(() => { const k = Object.keys(wins).find((x) => wins[x].win.isFocused()); if (k) inCtx(k, ensureKeyboard); }, 500).unref();
   settings.on('change', (c) => {
     if ('uiScale' in c) browsing.applyScale(Object.values(wins).flatMap((w) => [w.chromeView, w.overlayView, w.find.view]));
     if ('showBookmarksBar' in c) { layout(); sendUI('bookmarks', browsing.bookmarkState()); }
