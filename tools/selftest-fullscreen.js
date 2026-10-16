@@ -43,12 +43,37 @@ module.exports = async ({ app, browser }) => {
     browser.selectTab(B);
     const switched = await until(() => { const s = state(); return !s.win && s.stripVisible ? s : null; });
 
+    // 1.7.4: in a page's own fullscreen, F11 ends that fullscreen (it used to leave the toolbar hidden), and Ctrl+L
+    // brings the toolbar back before it takes the keyboard (it used to type into the hidden address bar).
+    browser.selectTab(A);
+    const key = (k, mods = []) => { tabA.wc.focus(); tabA.wc.sendInputEvent({ type: 'keyDown', keyCode: k, modifiers: mods }); tabA.wc.sendInputEvent({ type: 'keyUp', keyCode: k, modifiers: mods }); };
+    await sleep(300);
+    await tabA.wc.executeJavaScript("document.getElementById('v').requestFullscreen()", true);
+    await until(() => state().win && !state().stripVisible);
+    key('F11');
+    const f11 = await until(() => { const s = state(); return !s.win && s.stripVisible ? s : null; });
+    await sleep(500);
+    const f11Page = await tabA.wc.executeJavaScript('!!document.fullscreenElement');
+    await tabA.wc.executeJavaScript("document.getElementById('v').requestFullscreen()", true);
+    await until(() => state().win && !state().stripVisible);
+    key('l', ['control']);
+    const ctrlL = await until(() => { const s = state(); return !s.win && s.stripVisible && strip.webContents.isFocused() ? s : null; });
+    await sleep(300);
+    const ctrlLPage = await tabA.wc.executeJavaScript('!!document.fullscreenElement');
+    // F11 on an ordinary page still toggles the window.
+    key('F11');
+    const plainF11 = await until(() => state().win);
+    key('F11');
+    await until(() => !state().win);
     result.states = { before, entered, left, switched };
     result.checks = {
       startsNormal: !before.win && before.stripVisible && before.pageTop > 0,
       enterFillsWindow: !!entered,
       leaveRestores: !!left,
       tabSwitchEnds: !!switched,
+      f11EndsPageFullscreen: !!f11 && !f11Page,
+      ctrlLShowsToolbarFirst: !!ctrlL && !ctrlLPage,
+      f11StillTogglesWindow: !!plainF11,
     };
     result.ok = Object.values(result.checks).every(Boolean);
   } catch (e) {

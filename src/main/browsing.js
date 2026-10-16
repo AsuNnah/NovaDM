@@ -10,6 +10,7 @@ const diagnostics = require('./diagnostics');
 const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeeping');
 const { History, Bookmarks, TabSession } = require('./library');
 const bookmarkImport = require('./bookmarks-import');
+const { menuText } = require('./util');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
 
@@ -20,7 +21,7 @@ const BAR_HEIGHT = 32; // bookmarks bar
 const FIND_W = 400;
 const FIND_H = 52;
 
-function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, getWindow, relayout, restack, chromeRect }) {
+function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, getWindow, relayout, restack, starRect }) {
   const history = new History(userDataDir);
   const bookmarks = new Bookmarks(userDataDir);
   const tabSession = new TabSession(userDataDir);
@@ -170,10 +171,11 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   });
 
   // The site's icon, kept with the bookmark (fetched once through the browsing session).
-  async function addIcon(b, favicon) {
+  async function addIcon(b, favicon, incognito) {
     if (!b || !/^https?:\/\//i.test(favicon || '')) return;
     try {
-      const r = await net.fetchBuffer(favicon, { session: browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000 });
+      // A private tab's icon is asked for in the private session, never with the normal session's cookies.
+      const r = await net.fetchBuffer(favicon, { session: incognito ? browser.incognitoSession : browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000 });
       const type = String(r.headers['content-type'] || '').split(';')[0].trim();
       if (!/^image\/(png|x-icon|vnd\.microsoft\.icon|svg\+xml|gif|jpeg|webp)$/.test(type) || !r.body.length) return;
       b.icon = `data:${type};base64,${r.body.toString('base64')}`;
@@ -188,12 +190,12 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     if (!t || !/^https?:/i.test(t.url || '')) return { ok: false };
     let b = bookmarks.find(t.url);
     const fresh = !b;
-    if (!b) { b = bookmarks.add({ url: t.url, title: t.title }); addIcon(b, t.favicon); }
+    if (!b) { b = bookmarks.add({ url: t.url, title: t.title }); addIcon(b, t.favicon, t.incognito); }
     openBookmarkPopup(b, fresh);
     return { ok: true, bookmarked: true };
   }
   async function openBookmarkPopup(b, fresh) {
-    const anchor = chromeRect ? await chromeRect('star-btn').catch(() => null) : null;
+    const anchor = starRect ? await starRect().catch(() => null) : null;
     setPanel(true);
     sendUI('bookmark-popup', {
       id: b.id, title: b.title, url: b.url, parent: b.parent, fresh, anchor,
@@ -227,7 +229,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     }
     return swatches.get(color);
   }
-  const groupName = (g) => g.title || `${g.color[0].toUpperCase()}${g.color.slice(1)} group`;
+  const groupName = (g) => menuText(g.title || `${g.color[0].toUpperCase()}${g.color.slice(1)} group`); // used in menus only
   // A new window where a tab was dropped (screen point from the strip), as big as the window it came from.
   function boundsAt(a) {
     const from = browser.windowBounds ? browser.windowBounds(browser.cur) : null;
@@ -242,14 +244,14 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     return browser.normalWindows().filter((k) => k !== kind).map((k) => {
       const g = browser.groups[k];
       const t = browser.tabs.get(g.activeId);
-      return { key: k, label: `${(t && t.title) || 'Window'} (${g.order.length} tab${g.order.length === 1 ? '' : 's'})`.slice(0, 70) };
+      return { key: k, label: menuText(`${(t && t.title) || 'Window'} (${g.order.length} tab${g.order.length === 1 ? '' : 's'})`.slice(0, 70)) };
     });
   }
   // A folder's contents as a menu: bookmarks open here, folders open as submenus.
   function bookmarkItems(nodes) {
     return nodes.map((n) => (n.type === 'folder'
-      ? { label: (n.title || 'Folder').slice(0, 60), submenu: bookmarkItems(bookmarks.children(n.id)).concat(bookmarks.children(n.id).length ? [] : [{ label: '(empty)', enabled: false }]) }
-      : { label: (n.title || n.url).slice(0, 60), click: () => openBookmark(n, 'here') }));
+      ? { label: menuText((n.title || 'Folder').slice(0, 60)), submenu: bookmarkItems(bookmarks.children(n.id)).concat(bookmarks.children(n.id).length ? [] : [{ label: '(empty)', enabled: false }]) }
+      : { label: menuText((n.title || n.url).slice(0, 60)), click: () => openBookmark(n, 'here') }));
   }
   const openAll = (parent) => { for (const b of bookmarks.urlsIn(parent)) openBookmark(b, 'tab'); };
 
@@ -343,9 +345,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       if (a.action === 'move') {
         const parent = parentOf(a.parent);
         if (!bookmarks.isContainer(parent)) return { ok: false };
-        const count = bookmarks.moveMany(ids, parent);
-        bookmarks.useFolder(parent);
-        return { ok: true, count };
+        return { ok: true, count: bookmarks.moveMany(ids, parent) }; // not "the folder last used": only the star popup sets that
       }
       if (a.action === 'open' || a.action === 'private') {
         const list = bookmarks.urlsOf(ids).slice(0, 100);
@@ -444,7 +444,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     },
     'bookmarks.addAllTabs': () => {
       const folder = 'Tabs ' + new Date().toISOString().slice(0, 10);
-      const f = bookmarks.addFolder(folder, 'bar');
+      const f = bookmarks.children('bar').find((n) => n.type === 'folder' && n.title === folder) || bookmarks.addFolder(folder, 'bar');
       for (const id of browser.order) { const t = browser.tabs.get(id); if (t && !t.incognito && /^https?:/i.test(t.url || '')) bookmarks.add({ url: t.url, title: t.title, parent: f.id }); }
       if (!bookmarks.children(f.id).length) bookmarks.remove(f.id);
       return { ok: true, folder };

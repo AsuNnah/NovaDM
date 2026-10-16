@@ -48,8 +48,11 @@ function categoryOf(name, mime) {
 }
 
 const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+// Text-direction overrides and invisible characters would let `invoice<RLO>gpj.exe` look like `invoiceexe.jpg`.
+// (Not U+200C / U+200D: Persian and emoji need them.)
+const INVISIBLE = /[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
 function sanitizeFilename(name, fallback = 'download') {
-  let n = String(name || '').replace(/[\u0000-\u001f<>:"/\\|?*\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
+  let n = String(name || '').replace(INVISIBLE, '').replace(/[\u0000-\u001f<>:"/\\|?*\u007f]+/g, ' ').replace(/\s+/g, ' ').trim();
   n = n.replace(/[. ]+$/, '');
   if (!n) n = fallback;
   const ext = extOf(n);
@@ -66,7 +69,13 @@ function filenameFromDisposition(cd) {
   if (!cd) return '';
   let m = /filename\*\s*=\s*([^']*)'[^']*'([^;]+)/i.exec(cd);
   if (m) {
-    try { return decodeURIComponent(m[2].trim().replace(/^"|"$/g, '')); } catch {}
+    const raw = m[2].trim().replace(/^"|"$/g, '');
+    const charset = m[1].trim().toLowerCase();
+    if (charset && !/^utf-?8$/.test(charset)) {
+      // filename*=iso-8859-1''caf%E9.txt: the bytes are in that charset, not UTF-8.
+      try { return new TextDecoder(charset).decode(Buffer.from(raw.replace(/%([0-9a-f]{2})/gi, (_x, h) => String.fromCharCode(parseInt(h, 16))), 'latin1')); } catch {}
+    }
+    try { return decodeURIComponent(raw); } catch {}
   }
   m = /filename\s*=\s*"([^"]*)"/i.exec(cd) || /filename\s*=\s*([^;]+)/i.exec(cd);
   if (m) {
@@ -119,17 +128,31 @@ function hostOf(u) {
 }
 
 // Registrable-ish site key: last two labels (three for common second-level TLDs).
+// shortcut: a short list of hosts that hand sub-domains to unrelated sites (the Public Suffix List's private part has
+// thousands); each name under one of these is its own site. Add the next one that matters here.
+const SHARED_HOSTS = [
+  'github.io', 'gitlab.io', 'bitbucket.io', 'codeberg.page', 'pages.dev', 'workers.dev', 'netlify.app', 'vercel.app', 'now.sh',
+  'herokuapp.com', 'onrender.com', 'fly.dev', 'glitch.me', 'repl.co', 'replit.app', 'surge.sh', 'neocities.org', 'itch.io', 'notion.site',
+  'blogspot.com', 'wordpress.com', 'tumblr.com', 'substack.com', 'weebly.com', 'wixsite.com', 'webflow.io', 'myshopify.com', 'carrd.co',
+  'web.app', 'firebaseapp.com', 'appspot.com', 'azurewebsites.net', 'cloudfront.net', 'amazonaws.com', 'ngrok.io', 'ngrok-free.app',
+  'trycloudflare.com', '000webhostapp.com', 'infinityfreeapp.com',
+];
 function siteOf(u) {
   const host = hostOf(u);
   if (!host) return '';
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host === 'localhost') return host;
   const parts = host.split('.');
   if (parts.length <= 2) return host;
+  const shared = SHARED_HOSTS.find((s) => host.endsWith('.' + s));
+  if (shared) { const label = host.slice(0, -(shared.length + 1)).split('.').pop(); return label === 'www' ? shared : label + '.' + shared; }
   const sld = parts[parts.length - 2];
-  const twoLevel = ['co', 'com', 'net', 'org', 'gov', 'ac', 'edu', 'or', 'ne', 'go', 'my', 'web', 'sch'];
+  const twoLevel = ['co', 'com', 'net', 'org', 'gov', 'ac', 'edu', 'or', 'ne', 'go', 'my', 'web', 'sch', 'mil', 'ltd', 'plc', 'nom', 'gob'];
   if (twoLevel.includes(sld) && parts[parts.length - 1].length === 2) return parts.slice(-3).join('.');
   return parts.slice(-2).join('.');
 }
+
+/** Text for a native menu item: Windows reads "&" as a keyboard-shortcut mark, so a literal one is doubled. */
+function menuText(s) { return String(s == null ? '' : s).replace(/&/g, '&&'); }
 
 function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
@@ -192,6 +215,6 @@ function hashKind(hex) {
 
 module.exports = {
   CATEGORIES, CATEGORY_LABELS, MIME_EXT, extOf, categoryOf, sanitizeFilename, filenameFromDisposition,
-  filenameFromUrl, ensureExt, uniquePath, headerValue, hostOf, siteOf, delay, uid,
+  filenameFromUrl, ensureExt, uniquePath, headerValue, hostOf, siteOf, menuText, delay, uid,
   extractLinks, expandPattern, hashKind,
 };

@@ -63,10 +63,23 @@ function parseScanOutput(out) {
 }
 
 let defenderPath = null;
+let running = { at: 0, ok: true };
+/** Is Defender's service running? (With another antivirus active it is stopped, and MpCmdRun then only fails.) Cached for a minute. */
+function defenderRunning() {
+  if (Date.now() - running.at < 60000) return Promise.resolve(running.ok);
+  return new Promise((resolve) => {
+    execFile('sc.exe', ['query', 'WinDefend'], { timeout: 5000, windowsHide: true }, (err, stdout) => {
+      running = { at: Date.now(), ok: err ? true : /STATE\s*:\s*\d+\s+RUNNING/i.test(String(stdout)) }; // a failed query: try the scan anyway
+      resolve(running.ok);
+    });
+  });
+}
+
 /** Scan one file. Resolves { result: 'clean'|'threat'|'error'|'unavailable', detail }. */
-function scanFile(file, { timeoutMs = 5 * 60 * 1000 } = {}) {
+async function scanFile(file, { timeoutMs = 5 * 60 * 1000 } = {}) {
   if (defenderPath === null) defenderPath = findDefender();
-  if (!defenderPath) return Promise.resolve({ result: 'unavailable', detail: 'Microsoft Defender is not available' });
+  if (!defenderPath) return { result: 'unavailable', detail: 'Microsoft Defender is not available' };
+  if (!(await defenderRunning())) return { result: 'unavailable', detail: 'Microsoft Defender is turned off (another antivirus is in charge)' };
   return new Promise((resolve) => {
     execFile(defenderPath, ['-Scan', '-ScanType', '3', '-File', file], { timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
       const parsed = parseScanOutput(`${stdout || ''}\n${stderr || ''}`);

@@ -45,8 +45,8 @@ const SCAN_TEXT = {
   scanning: 'Scanning with Microsoft Defender…',
   clean: 'No threats found',
   threat: '<span class="err">Threat found by Microsoft Defender</span>',
-  error: '',
-  unavailable: '',
+  error: 'Scan did not finish',
+  unavailable: 'Not scanned: Microsoft Defender is turned off',
 };
 let queueInfo = { queues: [], afterAllDone: 'nothing' };
 const queueName = (id) => { const q = queueInfo.queues.find((x) => x.id === id); return q ? q.name : 'Main'; };
