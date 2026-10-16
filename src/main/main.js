@@ -783,7 +783,9 @@ function downloadBestVideo(tabId) {
   if (vid) { downloadItem(tabId, vid.id); setPanel(true); sendUI('open-panel', { name: 'media' }); sendMediaState(); }
 }
 
-if (process.platform === 'win32') app.setAppUserModelId('app.novadm.browser');
+// A copy run from source (npm start, the in-app tests) gets its own id: sharing the installed app's id made Windows
+// pick the development Electron's shortcut and show the Electron atom as NovaDM's taskbar icon.
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? 'app.novadm.browser' : 'app.novadm.browser.dev');
 
 app.whenReady().then(async () => {
   if (!isFirstInstance) return;
