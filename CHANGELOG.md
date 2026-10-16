@@ -6,6 +6,20 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.3] — 2026-10-16
+
+### Added
+- **Choose the folder when you bookmark.** The star (or Ctrl+D) now bookmarks the page and opens a small
+  popup under the star, as in Chrome: the **name**, the **folder** (your recent folders, *Bookmarks bar*,
+  *Other bookmarks* and *Choose another folder…*), **Done** and **Remove**. *Choose another folder…* shows
+  the whole folder tree and lets you make a new folder in it. The folder you pick is remembered, so the
+  next bookmark goes there. Press the star on a page that is already bookmarked to edit or remove it
+  (before, it removed it at once).
+- **Check boxes on the Bookmarks page.** Tick bookmarks and folders (a folder's box takes everything inside
+  it; Shift+click ticks a range), then **Move** them to a folder, **Delete** them, **Open in tabs** or
+  **Open private**. **Select all**, **Select none** and **Invert selection** work on everything, or on the
+  search results only when you have searched. Deleting or opening many asks first.
+
 ## [1.7.2] — 2026-10-15
 
 ### Security

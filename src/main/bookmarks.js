@@ -90,7 +90,17 @@ class Bookmarks extends EventEmitter {
   /** A folder's bookmarks and all folders below it, flattened (for "open all"). */
   urlsIn(parent) { return this.children(parent).flatMap((n) => (n.type === 'url' ? [n] : this.urlsIn(n.id))); }
 
-  add({ url, title = '', parent = 'bar' }) {
+  /** Where the star puts a new bookmark: the folder last chosen in the bookmark popup, else the bar. */
+  lastParent() { const l = this.store.data.last; return l != null && this.isContainer(l) ? l : 'bar'; }
+  /** The folders last chosen (newest first, at most 3), for the popup's folder list. */
+  recentFolders() { return (this.store.data.recent || []).map((id) => this.node(id)).filter((n) => n && n.type === 'folder'); }
+  useFolder(id) {
+    if (!this.isContainer(id)) return;
+    this.store.data.last = id;
+    if (typeof id === 'number') this.store.data.recent = [id, ...(this.store.data.recent || []).filter((x) => x !== id)].slice(0, 3);
+    this.store.save(500);
+  }
+  add({ url, title = '', parent = this.lastParent() }) {
     if (!URL_OK.test(url || '')) return null;
     const old = this.find(url);
     if (old) return old;
@@ -137,6 +147,24 @@ class Bookmarks extends EventEmitter {
     if (at < sibs.length) this.nodes.splice(this.nodes.indexOf(sibs[at]), 0, n); else this.nodes.push(n);
     this.changed();
     return true;
+  }
+
+  /** Several at once. A node whose folder is also in the list moves with that folder. Returns how many moved. */
+  moveMany(ids, parent) {
+    const set = new Set(ids);
+    const under = (n) => { for (let p = this.node(n.parent); p; p = this.node(p.parent)) if (set.has(p.id)) return true; return false; };
+    let moved = 0;
+    for (const id of ids) { const n = this.node(id); if (n && !under(n) && this.move(id, parent, 1e9)) moved++; }
+    return moved;
+  }
+
+  removeMany(ids) { for (const id of ids) this.remove(id); }
+
+  /** The bookmarks in these nodes (folders count with everything inside), without repeats. */
+  urlsOf(ids) {
+    const out = new Map();
+    for (const id of ids) { const n = this.node(id); if (!n) continue; for (const b of n.type === 'url' ? [n] : this.urlsIn(n.id)) out.set(b.id, b); }
+    return [...out.values()];
   }
 
   remove(id) {

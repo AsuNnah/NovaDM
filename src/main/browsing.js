@@ -20,7 +20,7 @@ const BAR_HEIGHT = 32; // bookmarks bar
 const FIND_W = 400;
 const FIND_H = 52;
 
-function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, getWindow, relayout, restack }) {
+function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, getWindow, relayout, restack, chromeRect }) {
   const history = new History(userDataDir);
   const bookmarks = new Bookmarks(userDataDir);
   const tabSession = new TabSession(userDataDir);
@@ -181,13 +181,26 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     } catch {}
   }
 
+  // The star / Ctrl+D: bookmark the page in the folder used last (a page already bookmarked is left as it is),
+  // and open the popup under the star: name, folder, Done, Remove.
   function toggleActiveBookmark() {
     const t = browser.activeTab();
     if (!t || !/^https?:/i.test(t.url || '')) return { ok: false };
-    const on = bookmarks.toggle(t.url, t.title);
-    if (on) addIcon(bookmarks.find(t.url), t.favicon);
-    return { ok: true, bookmarked: on };
+    let b = bookmarks.find(t.url);
+    const fresh = !b;
+    if (!b) { b = bookmarks.add({ url: t.url, title: t.title }); addIcon(b, t.favicon); }
+    openBookmarkPopup(b, fresh);
+    return { ok: true, bookmarked: true };
   }
+  async function openBookmarkPopup(b, fresh) {
+    const anchor = chromeRect ? await chromeRect('star-btn').catch(() => null) : null;
+    setPanel(true);
+    sendUI('bookmark-popup', {
+      id: b.id, title: b.title, url: b.url, parent: b.parent, fresh, anchor,
+      recent: bookmarks.recentFolders().map((f) => ({ id: f.id, title: f.title })),
+    });
+  }
+  const parentOf = (v) => (/^\d+$/.test(String(v)) ? Number(v) : String(v));
 
   function openBookmark(b, how) {
     if (!b) return;
@@ -322,7 +335,26 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'bookmarks.state': () => bookmarkState(),
     'bookmarks.toggleActive': () => toggleActiveBookmark(),
     'bookmarks.update': (a) => ({ ok: !!bookmarks.update(Number(a.id), a) }),
-    'bookmarks.move': (a) => ({ ok: bookmarks.move(Number(a.id), /^\d+$/.test(String(a.parent)) ? Number(a.parent) : String(a.parent), Number(a.index)) }),
+    'bookmarks.useFolder': (a) => { bookmarks.useFolder(parentOf(a.id)); return { ok: true }; },
+    // Several at once, from the check boxes on the Bookmarks page.
+    'bookmarks.bulk': (a) => {
+      const ids = (Array.isArray(a.ids) ? a.ids : []).map(Number).filter(Number.isFinite);
+      if (a.action === 'delete') { bookmarks.removeMany(ids); return { ok: true, count: ids.length }; }
+      if (a.action === 'move') {
+        const parent = parentOf(a.parent);
+        if (!bookmarks.isContainer(parent)) return { ok: false };
+        const count = bookmarks.moveMany(ids, parent);
+        bookmarks.useFolder(parent);
+        return { ok: true, count };
+      }
+      if (a.action === 'open' || a.action === 'private') {
+        const list = bookmarks.urlsOf(ids).slice(0, 100);
+        for (const b of list) openBookmark(b, a.action === 'open' ? 'tab' : 'private');
+        return { ok: true, count: list.length };
+      }
+      return { ok: false };
+    },
+    'bookmarks.move': (a) => ({ ok: bookmarks.move(Number(a.id), parentOf(a.parent), Number(a.index)) }),
     'bookmarks.newFolder': (a) => ({ ok: true, id: bookmarks.addFolder(String(a.title || ''), /^\d+$/.test(String(a.parent)) ? Number(a.parent) : String(a.parent || 'bar')).id }),
     'bookmarks.remove': (a) => { bookmarks.remove(Number(a.id)); return { ok: true }; },
     'bookmarks.open': (a) => openBookmark(bookmarks.items.find((b) => b.id === Number(a.id)), a.how),
