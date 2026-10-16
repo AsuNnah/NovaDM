@@ -1,6 +1,7 @@
 'use strict';
-// "Update available" notice: asks GitHub which NovaDM release is the newest. Nothing is downloaded
-// or installed automatically (the builds aren't code-signed yet); the notice opens the release page.
+// "Update available" notice: asks GitHub which NovaDM release is the newest. Used by the portable version
+// and runs from source, which don't update themselves; the notice opens the release page. The installed
+// app downloads and installs updates by itself (updater.js).
 const REPO = 'https://github.com/AsuNnah/NovaDM/';
 const LATEST = 'https://api.github.com/repos/AsuNnah/NovaDM/releases/latest'; // excludes drafts and pre-releases
 

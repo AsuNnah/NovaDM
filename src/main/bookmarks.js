@@ -14,8 +14,13 @@ const ROOTS = ['bar', 'other'];
 const URL_OK = /^(https?|file|novadm):/i;
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
+const NAMED = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0', copy: '\u00a9', reg: '\u00ae', hellip: '\u2026', ndash: '\u2013', mdash: '\u2014', lsquo: '\u2018', rsquo: '\u2019', ldquo: '\u201c', rdquo: '\u201d' };
 function decodeEntities(s) {
-  return String(s).replace(/&(amp|lt|gt|quot|#39|#x27);/g, (_m, e) => ({ amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'", '#x27': "'" }[e]));
+  return String(s).replace(/&(?:#(\d{1,7})|#x([0-9a-f]{1,6})|([a-z]+));/gi, (m, dec, hex, name) => {
+    if (name) return NAMED[name.toLowerCase()] || m;
+    const cp = dec ? Number(dec) : parseInt(hex, 16);
+    return cp > 0 && cp <= 0x10ffff ? String.fromCodePoint(cp) : m;
+  });
 }
 
 /** Bookmarks HTML ("Netscape" format, what every browser exports) -> { bar: [], other: [] } of
@@ -31,7 +36,7 @@ function parseHtml(html) {
     const t = tag.toUpperCase();
     const top = stack[stack.length - 1];
     if (t === 'H3' && !close) {
-      pending = { title: decodeEntities(text.trim()), children: [], toolbar: /PERSONAL_TOOLBAR_FOLDER\s*=\s*"true"/i.test(attrs), unfiled: /UNFILED_BOOKMARKS_FOLDER\s*=\s*"true"/i.test(attrs) };
+      pending = { title: decodeEntities(text.trim()), children: [], toolbar: /PERSONAL_TOOLBAR_FOLDER\s*=\s*["']?true/i.test(attrs), unfiled: /UNFILED_BOOKMARKS_FOLDER\s*=\s*["']?true/i.test(attrs) };
       top.children.push(pending);
     } else if (t === 'DL' && !close) {
       stack.push(pending || top); // a list with no folder name is the file's own top level
@@ -39,8 +44,9 @@ function parseHtml(html) {
     } else if (t === 'DL' && close) {
       if (stack.length > 1) stack.pop();
     } else if (t === 'A' && !close) {
-      const href = /\bHREF\s*=\s*"([^"]*)"/i.exec(attrs);
-      if (href) top.children.push({ title: decodeEntities(text.trim()), url: decodeEntities(href[1]) });
+      const href = /\bHREF\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attrs);
+      const target = href && (href[1] ?? href[2] ?? href[3]);
+      if (target) top.children.push({ title: decodeEntities(text.trim()), url: decodeEntities(target) });
     }
   }
   const out = { bar: [], other: [] };

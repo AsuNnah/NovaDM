@@ -102,9 +102,16 @@ function useCtx(kind) {
 function inCtx(kind, fn) {
   if (!wins[kind] || kind === curKind) return fn();
   const prev = curKind;
+  const was = browser && browser.cur; // set by Browser.inGroup when we are inside one of its methods
   useCtx(kind);
   // Back to the previous window, unless it is a private window whose last tab just closed.
-  try { return fn(); } finally { useCtx(wins[prev] && (prev !== 'private' || browser.groups.private.order.length) ? prev : browser.normalWindow()); }
+  try { return fn(); } finally {
+    const back = wins[prev] && (prev !== 'private' || browser.groups.private.order.length) ? prev : browser.normalWindow();
+    useCtx(back);
+    // A listener of an event raised inside Browser.closeTab (and the like) must not move that method to another
+    // window half way: it was closing a tab of the window it started in.
+    if (was && back === prev && browser.groups[was]) browser.cur = was;
+  }
 }
 // The window an event's tab (or tab id, or { tabId }, or { incognito }) belongs to.
 function kindOfArgs(args) {
@@ -145,6 +152,14 @@ function setPageFs(tab, on) {
   chromeView.setVisible(!on);
   overlayView.setVisible(!on);
   layout();
+}
+
+// F11 or Ctrl+L while a page is fullscreen: end the page's fullscreen first (the toolbar is hidden). True if one was.
+function leavePageFs() {
+  const s = pageFs[curKind];
+  const t = s && browser.tabs.get(s.tabId);
+  if (t) endPageFs(t);
+  return !!s;
 }
 
 // The tab left fullscreen's tab (switched away or closed): end the page's fullscreen too.
@@ -644,7 +659,7 @@ function handleShortcut(tab, action) {
     case 'close-tab': return browser.closeTab(tab.id);
     case 'close-window': return win && win.close();
     case 'reopen-tab': return browser.reopenClosed();
-    case 'focus-address': chromeView.webContents.focus(); return sendUI('focus-address', {});
+    case 'focus-address': leavePageFs(); chromeView.webContents.focus(); return sendUI('focus-address', {});
     case 'reload': return browser.reload(tab.id);
     case 'hard-reload': return wc && wc.reloadIgnoringCache();
     case 'stop': return browser.stop(tab.id);
@@ -666,7 +681,7 @@ function handleShortcut(tab, action) {
     case 'group-remove': return browser.removeFromGroup(tab.id);
     case 'group-fold': { const g = tab.groupId != null && browser.groups[browser.kindOf(tab)].tabGroups.get(tab.groupId); return g && browser.updateGroup(g.id, { collapsed: !g.collapsed }); }
     case 'tab-last': return pick(browser.order.length - 1);
-    case 'fullscreen': return win && win.setFullScreen(!win.isFullScreen());
+    case 'fullscreen': if (leavePageFs()) return; return win && win.setFullScreen(!win.isFullScreen()); // F11 in a page's own fullscreen ends that first
     case 'print': return wc && wc.print();
     case 'save-page': return wc && /^https?:/i.test(wc.getURL()) && wc.downloadURL(wc.getURL()); // to NovaDM's downloader
     case 'open-file': return openFileInTab();

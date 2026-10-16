@@ -6,6 +6,43 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.4] — 2026-10-16
+
+Fixes from a bug hunt through the code and the in-app tests.
+
+### Fixed
+- **Ctrl+Shift+T after closing a window brings the whole window back again** (since 1.6.1 it could bring back
+  a single tab in the window you were in). Closing a window that was not in front also listed each of its tabs
+  as separately closed.
+- **Sites that share a host name are no longer treated as one site.** Turning Shields or the site protection off,
+  allowing pop-ups, or choosing "Proceed anyway" on a phishing warning for one `*.github.io`, `*.pages.dev`,
+  `*.netlify.app`, `*.vercel.app`, `*.blogspot.com` … site no longer applies to every site under that name
+  (and their fingerprint noise is no longer shared).
+- **Bookmarking from a private tab no longer uses your normal cookies** when it fetches the site's icon.
+- **A download given with its own cookie keeps it across redirects on the same site** (browser extension, local
+  API, pasted curl command; it was dropped at the first redirect). **Sign-in headers** (`Authorization`, API keys)
+  of such a download are no longer sent on to another host after a redirect.
+- **In a page's own fullscreen, F11 and Ctrl+L work**: F11 ends the page's fullscreen, and Ctrl+L brings the toolbar
+  back before it takes the keyboard (the address bar was invisible but still typed into).
+- **`&` in menus**: a bookmark, tab group or window called "News & more" no longer shows as "News more" in NovaDM's
+  menus.
+- **Saved file names** no longer keep text-direction overrides or invisible characters, which could make
+  an `.exe` look like a `.jpg` in Explorer. Download names sent in other charsets (`filename*=iso-8859-1''…`)
+  are read correctly.
+- **Importing a bookmarks file** now reads titles with `&#8217;`-style and named entities, and bookmarks written with
+  single quotes or without quotes around the address (they were skipped).
+- **Right-click → Open link in new tab** puts the tab next to the page and in its tab group, as Ctrl+click does.
+- **Spell checking**: misspelled words now offer corrections, "Add to dictionary" and "No spelling suggestions" in
+  the right-click menu.
+- **Memory protection** counts each process's private memory, not its working set (which counts shared pages
+  again for every process), so tabs are not unloaded earlier than needed.
+- **After-download scan**: when Microsoft Defender is turned off because another antivirus is in charge, the
+  download says "Not scanned: Microsoft Defender is turned off" (and "Scan did not finish" for a failed scan) instead of
+  saying nothing.
+- Moving bookmarks with the Bookmarks page's **Move** button no longer changes the folder the star saves to next.
+- **Bookmark all tabs** (Ctrl+Shift+D) adds to today's "Tabs <date>" folder if it already exists instead of making a
+  second one with the same name.
+
 ## [1.7.3] — 2026-10-16
 
 ### Added

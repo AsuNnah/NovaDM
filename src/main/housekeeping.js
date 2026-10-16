@@ -19,9 +19,10 @@ function underPressure({ freeBytes, totalBytes, appBytes }) {
   return freeBytes / totalBytes < LOW_FREE || appBytes / totalBytes > APP_SHARE;
 }
 
-/** NovaDM's processes together (Electron reports kilobytes). */
+/** NovaDM's processes together (Electron reports kilobytes). Private memory, because a working set counts the pages
+ *  processes share once per process (a page process showed 73 MB working set but 24 MB private). */
 function appMemoryBytes(metrics) {
-  return (metrics || []).reduce((s, p) => s + ((p.memory && p.memory.workingSetSize) || 0) * 1024, 0);
+  return (metrics || []).reduce((s, p) => s + ((p.memory && (p.memory.privateBytes || p.memory.workingSetSize)) || 0) * 1024, 0);
 }
 
 /** Remove leftovers older than a day; returns their names. Nothing in use is that old. */

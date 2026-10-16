@@ -2,6 +2,7 @@
 // Right-click menu for web pages.
 const { Menu } = require('electron');
 const { copyText } = require('./clipboard-watch');
+const { menuText } = require('./util');
 
 function isHttp(u) { return /^https?:\/\//i.test(u || ''); }
 
@@ -27,7 +28,7 @@ function buildContextMenuTemplate({ tab, params, browser, downloads, settings, e
 
   if (isHttp(params.linkURL)) {
     items.push(
-      { label: 'Open link in new tab', click: () => browser.createTab({ url: params.linkURL, background: true, incognito: tab.incognito }) },
+      { label: 'Open link in new tab', click: () => browser.createTab({ url: params.linkURL, background: true, incognito: tab.incognito, openerPartition: tab.id }) },
       { label: 'Open link in private window', click: () => browser.createTab({ url: params.linkURL, incognito: true }) },
       { label: 'Download link with NovaDM', click: () => download(params.linkURL) },
       { label: 'Copy link address', click: () => copyText(params.linkURL) },
@@ -37,7 +38,7 @@ function buildContextMenuTemplate({ tab, params, browser, downloads, settings, e
   if (params.mediaType === 'image' && isHttp(params.srcURL)) {
     sep();
     items.push(
-      { label: 'Open image in new tab', click: () => browser.createTab({ url: params.srcURL, background: true, incognito: tab.incognito }) },
+      { label: 'Open image in new tab', click: () => browser.createTab({ url: params.srcURL, background: true, incognito: tab.incognito, openerPartition: tab.id }) },
       { label: 'Download image', click: () => download(params.srcURL, 'image') },
       { label: 'Copy image', click: () => wc.copyImageAt(params.x, params.y) },
       { label: 'Copy image address', click: () => copyText(params.srcURL) },
@@ -56,6 +57,14 @@ function buildContextMenuTemplate({ tab, params, browser, downloads, settings, e
   if (params.isEditable) {
     sep();
     const f = params.editFlags || {};
+    // A misspelled word: its corrections first, and "Add to dictionary".
+    if (params.misspelledWord) {
+      const word = params.misspelledWord;
+      const fixes = (params.dictionarySuggestions || []).slice(0, 5);
+      for (const s of fixes) items.push({ label: menuText(s), click: () => wc.replaceMisspelling(s) });
+      if (!fixes.length) items.push({ label: 'No spelling suggestions', enabled: false });
+      items.push({ label: 'Add to dictionary', click: () => wc.session.addWordToSpellCheckerDictionary(word) }, { type: 'separator' });
+    }
     items.push(
       { label: 'Undo', role: 'undo', enabled: !!f.canUndo },
       { label: 'Redo', role: 'redo', enabled: !!f.canRedo },
@@ -71,7 +80,7 @@ function buildContextMenuTemplate({ tab, params, browser, downloads, settings, e
     const short = text.length > 30 ? text.slice(0, 30) + '…' : text;
     items.push(
       { label: 'Copy', role: 'copy' },
-      { label: `Search for “${short}”`, click: () => browser.createTab({ url: settings.searchUrl(text), incognito: tab.incognito }) },
+      { label: `Search for “${menuText(short)}”`, click: () => browser.createTab({ url: settings.searchUrl(text), incognito: tab.incognito }) },
     );
     if (isHttp(text)) items.push({ label: 'Download this link with NovaDM', click: () => download(text) });
   }

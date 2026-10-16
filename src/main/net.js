@@ -60,12 +60,15 @@ function normHeaders(raw) {
   return out;
 }
 
+// Headers that carry a sign-in; they stay with the host they were given for.
+const SECRET_HEADER = /^(cookie|authorization|proxy-authorization|x-.*|.*(token|key|auth|secret).*)$/i;
+
 /**
  * Open a GET request and resolve when the response headers arrive.
  * Redirects are followed manually so the final URL is known.
  * Returns { res, req, status, headers, finalUrl, abort() }.
  */
-function open(url, { session, headers = {}, range, timeoutMs = 30000, method = 'GET' } = {}) {
+function open(url, { session, headers = {}, range, timeoutMs = 30000, method = 'GET', hops = 0 } = {}) {
   return new Promise((resolve, reject) => {
     let finalUrl = url;
     let redirects = 0;
@@ -73,6 +76,8 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
     // Cookies handed over with the download (browser extension, API) replace the session's, and only
     // go to the site they belong to: a redirect to another host continues without them.
     const explicitCookie = headers.cookie || headers.Cookie || '';
+    // Sign-in headers given with a download (Authorization, API keys, tokens) belong to the site they were given for.
+    const hasSecret = Object.keys(headers).some((k) => SECRET_HEADER.test(k) && headers[k]);
     const req = net.request({ url, method, session, useSessionCookies: !explicitCookie, redirect: 'manual', cache: 'no-store' });
     const ua = session ? session.getUserAgent() : null;
     const all = { ...headers };
@@ -94,14 +99,17 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
       reject(err);
     }
     req.on('redirect', (status, m, redirectUrl) => {
-      if (++redirects > 15) return fail(new Error('Too many redirects'));
-      if (explicitCookie && hostOfUrl(redirectUrl) !== hostOfUrl(url)) {
+      if (++redirects + hops > 15) return fail(new Error('Too many redirects'));
+      if (explicitCookie || hasSecret) {
+        // Chromium drops a Cookie header we set ourselves on any redirect, so these requests follow redirects by
+        // hand: the cookie and sign-in headers go on to the same host, and stop at another host.
         settled = true;
         clearTimeout(timer);
         try { req.abort(); } catch {}
-        const rest = { ...headers };
-        delete rest.cookie; delete rest.Cookie;
-        open(redirectUrl, { session, headers: rest, range, timeoutMs, method }).then(resolve, reject);
+        const crossHost = hostOfUrl(redirectUrl) !== hostOfUrl(url);
+        const next = {};
+        for (const [k, v] of Object.entries(headers)) if (!crossHost || !SECRET_HEADER.test(k)) next[k] = v;
+        open(redirectUrl, { session, headers: next, range, timeoutMs, method, hops: redirects + hops }).then(resolve, reject);
         return;
       }
       finalUrl = redirectUrl;
