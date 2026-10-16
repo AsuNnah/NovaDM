@@ -21,7 +21,7 @@ const BAR_HEIGHT = 32; // bookmarks bar
 const FIND_W = 400;
 const FIND_H = 52;
 
-function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, getWindow, relayout, restack, chromeRect }) {
+function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, getWindow, relayout, restack, starRect }) {
   const history = new History(userDataDir);
   const bookmarks = new Bookmarks(userDataDir);
   const tabSession = new TabSession(userDataDir);
@@ -195,7 +195,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     return { ok: true, bookmarked: true };
   }
   async function openBookmarkPopup(b, fresh) {
-    const anchor = chromeRect ? await chromeRect('star-btn').catch(() => null) : null;
+    const anchor = starRect ? await starRect().catch(() => null) : null;
     setPanel(true);
     sendUI('bookmark-popup', {
       id: b.id, title: b.title, url: b.url, parent: b.parent, fresh, anchor,

@@ -821,7 +821,8 @@ app.whenReady().then(async () => {
   adblock = new AdBlocker(settings);
   browser = new Browser({ settings, media, adblock, popup });
   browsing = setupBrowsing({
-    chromeRect: (id) => chromeView.webContents.executeJavaScript(`(() => { const r = document.getElementById(${JSON.stringify(id)}).getBoundingClientRect(); return { left: r.left, right: r.right, bottom: r.bottom }; })()`),
+    // Where the star button is in the toolbar (the bookmark popup opens under it). A fixed script: nothing is put into it.
+    starRect: () => chromeView.webContents.executeJavaScript("(() => { const r = document.getElementById('star-btn').getBoundingClientRect(); return { left: r.left, right: r.right, bottom: r.bottom }; })()"),
     settings, browser, net, userDataDir: app.getPath('userData'), sendUI, setPanel,
     getWindow: () => win, relayout: () => layout(), restack: () => restack(),
   });
