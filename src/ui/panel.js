@@ -17,6 +17,7 @@ const PLACE = {
   menu: { right: '12px', width: '290px' },
   prompt: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '420px' },
   dialog: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '480px', top: '40px' },
+  bookmark: { width: '340px' },
   tabsearch: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '520px', top: '8px' },
 };
 function place(name) {
@@ -25,12 +26,13 @@ function place(name) {
   Object.assign(pop.style, PLACE[name] || PLACE.menu);
   if (name === 'grabber') pop.classList.add('grab');
   if (name === 'prompt') pop.classList.add('prompt');
+  if (name === 'bookmark') pop.classList.add('bmp');
   if (name === 'dialog') pop.classList.add('prompt', 'dlg');
   void pop.offsetWidth; // restart the entrance animation
   pop.classList.add('in');
 }
 
-function close() { api.call('panel.close'); current = null; }
+function close() { if (current === 'bookmark') commitBookmark(); api.call('panel.close'); current = null; }
 document.getElementById('backdrop').addEventListener('mousedown', close);
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 
@@ -55,6 +57,99 @@ api.on('links-ask', (d) => showLinksAsk(d));
 api.on('afterdone-ask', (d) => showAfterDone(d));
 api.on('torrent-files', (d) => showTorrentFiles(d));
 api.on('password-warning', (d) => showPasswordWarning(d));
+
+// ---- bookmark popup (the star / Ctrl+D): name, folder, Done, Remove ----
+let bmPop = null; // { id, title, name input }
+let bmSeq = 0; // the newest popup wins when two open in quick succession
+api.on('bookmark-popup', (d) => showBookmarkPopup(d));
+function commitBookmark() {
+  if (!bmPop) return;
+  const { id, title, input } = bmPop;
+  bmPop = null;
+  const name = input.value.trim();
+  if (name && name !== title) api.call('bookmarks.update', { id, title: name });
+}
+async function showBookmarkPopup(d) {
+  current = 'bookmark'; place('bookmark');
+  const W = 340;
+  const right = d.anchor ? d.anchor.right : window.innerWidth - 150;
+  Object.assign(pop.style, { left: Math.max(8, Math.min(window.innerWidth - W - 8, right - W)) + 'px', right: 'auto', top: ((d.anchor ? d.anchor.bottom : 80) + 6) + 'px' });
+  content.innerHTML = '';
+  const mine = ++bmSeq;
+  const state = await api.call('bookmarks.state');
+  if (mine !== bmSeq || current !== 'bookmark') return;
+  let nodes = state.nodes;
+  let parent = d.parent;
+  const nameOf = (id) => (id === 'bar' ? 'Bookmarks bar' : id === 'other' ? 'Other bookmarks' : (nodes.find((n) => n.id === id) || {}).title || 'Folder');
+  content.append(el('div', 'hdr', `<div class="t">${d.fresh ? 'Bookmark added' : 'Edit bookmark'}</div>`));
+  const body = el('div', 'bmpop');
+  const input = el('input', 'inp');
+  input.value = d.title; input.spellcheck = false; input.placeholder = 'Name';
+  bmPop = { id: d.id, title: d.title, input };
+  const sel = el('select', 'bmsel');
+  const tree = el('div', 'bmtree'); tree.hidden = true;
+  const fill = () => {
+    sel.innerHTML = '';
+    const seen = new Set();
+    const opt = (v, label) => { if (seen.has(v)) return; seen.add(v); const o = el('option'); o.value = String(v); o.textContent = label; sel.append(o); };
+    for (const f of d.recent) if (nodes.some((n) => n.id === f.id)) opt(f.id, nameOf(f.id));
+    opt('bar', 'Bookmarks bar'); opt('other', 'Other bookmarks'); opt(parent, nameOf(parent));
+    const more = el('option'); more.value = '__choose'; more.textContent = 'Choose another folder…'; sel.append(more);
+    sel.value = String(parent);
+  };
+  const moveTo = (p) => {
+    parent = p; fill();
+    api.call('bookmarks.move', { id: d.id, parent: p, index: 1e6 });
+    api.call('bookmarks.useFolder', { id: p });
+  };
+  // The whole folder tree, to pick a folder or make a new one.
+  let picked = parent;
+  const drawTree = () => {
+    tree.innerHTML = '';
+    const row = (id, label, depth) => {
+      const r = el('div', 'bmrow' + (String(id) === String(picked) ? ' sel' : ''), esc(label));
+      r.style.paddingLeft = (10 + depth * 16) + 'px';
+      r.onclick = () => { picked = id; drawTree(); };
+      tree.append(r);
+    };
+    const walk = (p, depth) => { for (const f of nodes.filter((n) => n.parent === p && n.type === 'folder')) { row(f.id, f.title, depth); walk(f.id, depth + 1); } };
+    row('bar', 'Bookmarks bar', 0); walk('bar', 1);
+    row('other', 'Other bookmarks', 0); walk('other', 1);
+    const acts = el('div', 'bmnew');
+    const name = el('input', 'inp'); name.placeholder = 'New folder name';
+    const make = el('button', 'btn sm', 'Create');
+    make.onclick = async () => {
+      const t = name.value.trim();
+      if (!t) return name.focus();
+      const r = await api.call('bookmarks.newFolder', { title: t, parent: picked });
+      nodes = (await api.call('bookmarks.state')).nodes;
+      picked = r.id; drawTree();
+    };
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') make.click(); });
+    const use = el('button', 'btn sm pri', 'Choose');
+    use.onclick = () => { tree.hidden = true; moveTo(picked); };
+    acts.append(name, make, use);
+    tree.append(acts);
+  };
+  sel.onchange = () => {
+    if (sel.value === '__choose') { picked = parent; drawTree(); tree.hidden = false; sel.value = String(parent); return; }
+    tree.hidden = true;
+    moveTo(/^\d+$/.test(sel.value) ? Number(sel.value) : sel.value);
+  };
+  fill();
+  const field = (label, ctrl) => { const f = el('div', 'bmfield'); f.append(el('label', null, label), ctrl); return f; };
+  body.append(field('Name', input), field('Folder', sel), tree);
+  const acts = el('div', 'acts');
+  const rem = el('button', 'btn', 'Remove');
+  rem.style.color = 'var(--danger, #e2574c)';
+  rem.onclick = () => { bmPop = null; api.call('bookmarks.remove', { id: d.id }); current = null; api.call('panel.close'); };
+  const done = el('button', 'btn pri', 'Done');
+  done.onclick = () => { commitBookmark(); current = null; api.call('panel.close'); };
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') done.click(); });
+  acts.append(rem, el('div', 'sp'), done);
+  content.append(body, acts);
+  setTimeout(() => { input.focus(); input.select(); }, 30);
+}
 
 // ---- password warnings (breach.js) ----
 function showPasswordWarning(d) {

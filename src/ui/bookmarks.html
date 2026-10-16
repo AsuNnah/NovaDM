@@ -37,6 +37,14 @@ h2{font-size:13px;font-weight:600;color:var(--fg2);margin:22px 0 8px;}
 .empty{padding:50px 16px;text-align:center;color:var(--fg3);}
 .note{color:var(--fg3);font-size:12.5px;margin:6px 2px 0;}
 .sw{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg2);}
+.selbar{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 0;margin:10px 0 0;background:var(--bg);}
+.selbar .sp{flex:1;}
+.selbar button.sm{height:28px;padding:0 10px;font-size:12px;}
+.selbar select{height:28px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:inherit;font-size:12px;max-width:190px;}
+.selbar button:disabled{opacity:.45;}
+.selcount{font-size:12.5px;color:var(--fg2);margin:0 4px;}
+.cb{width:15px;height:15px;flex:none;margin:0;accent-color:var(--accent);}
+.row.picked{background:rgba(59,110,245,.10);}
 .caret{width:14px;flex:none;color:var(--fg3);cursor:default;text-align:center;font-size:12px;}
 .empty.small{padding:18px 16px;}
 .imp{padding:10px 12px;margin-bottom:12px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
@@ -61,6 +69,18 @@ h2{font-size:13px;font-weight:600;color:var(--fg2);margin:22px 0 8px;}
   <div id="imp" class="card imp" hidden></div>
   <div id="msg" class="msg" hidden></div>
   <label class="sw"><input type="checkbox" id="showBar"> Show the bookmarks bar (Ctrl+Shift+B)</label>
+  <div id="selbar" class="selbar">
+    <button id="selAll" class="sm">Select all</button>
+    <button id="selNone" class="sm">Select none</button>
+    <button id="selInvert" class="sm">Invert selection</button>
+    <span id="selcount" class="selcount">Nothing selected</span>
+    <span class="sp"></span>
+    <select id="moveTo" title="Folder to move the ticked bookmarks to"></select>
+    <button id="bulkMove" class="sm need" disabled>Move</button>
+    <button id="bulkOpen" class="sm need" disabled>Open in tabs</button>
+    <button id="bulkPrivate" class="sm need" disabled>Open private</button>
+    <button id="bulkDelete" class="sm need danger" disabled>Delete</button>
+  </div>
   <div id="list"></div>
   <p class="note">Import reads the bookmarks of Chrome, Edge, Brave, Vivaldi and Firefox straight from this PC (a copy is read; nothing is sent anywhere), or a bookmarks file. Export saves an HTML file that all of them import. The star in the address bar (Ctrl+D) adds the page you're on; drag bookmarks on the bar or here to rearrange them. Private tabs can use bookmarks too, but never add history.</p>
 </div>

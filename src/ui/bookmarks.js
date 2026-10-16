@@ -9,6 +9,9 @@ let editing = null;
 let pendingEdit = null; // a new folder: its name is typed as soon as it shows
 let drag = null; // id of the node being dragged
 const folded = new Set(); // folders closed in this page
+const sel = new Set(); // ticked nodes (check boxes)
+let lastTick = null; // the last box ticked, for Shift+click ranges
+let order = []; // node ids in the order they are shown
 
 const GLOBE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>';
 const FOLDER = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h5l2 2h8A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>';
@@ -27,18 +30,78 @@ async function refresh() {
 
 function say(text, bad) { const m = $('msg'); m.textContent = text; m.className = 'msg' + (bad ? ' bad' : ''); m.hidden = !text; }
 
+const below = (id) => kids(id).flatMap((n) => [n.id, ...(n.type === 'folder' ? below(n.id) : [])]); // everything inside a folder
+const search = () => $('q').value.trim().toLowerCase();
+const hits = () => state.nodes.filter((n) => n.type === 'url' && (n.title + ' ' + n.url).toLowerCase().includes(search())).map((n) => n.id);
+// Select all / none / invert act on what the search shows, or on everything.
+const scope = () => (search() ? hits() : state.nodes.map((n) => n.id));
+
+function tick(n, on, shift) {
+  let ids = [n.id, ...(n.type === 'folder' ? below(n.id) : [])];
+  const a = order.indexOf(lastTick);
+  const b = order.indexOf(n.id);
+  if (shift && a !== -1 && b !== -1) ids = order.slice(Math.min(a, b), Math.max(a, b) + 1);
+  for (const id of ids) { if (on) sel.add(id); else sel.delete(id); }
+  lastTick = n.id;
+  keepScroll(render);
+}
+function keepScroll(fn) { const y = window.scrollY; fn(); window.scrollTo(0, y); }
+
+// What the ticked nodes stand for: bookmarks and folders, folders counting what is inside.
+function chosen() {
+  const all = new Set();
+  for (const id of sel) if (byId(id)) { all.add(id); if (byId(id).type === 'folder') for (const x of below(id)) all.add(x); }
+  const nodes = [...all].map(byId);
+  return { ids: [...sel].filter(byId), urls: nodes.filter((n) => n.type === 'url').length, folders: nodes.filter((n) => n.type === 'folder').length };
+}
+
+function folderOptions() {
+  const res = [];
+  const walk = (parent, depth) => { for (const f of kids(parent).filter((n) => n.type === 'folder')) { res.push([f.id, '\u2003'.repeat(depth) + f.title]); walk(f.id, depth + 1); } };
+  for (const [root, label] of [['bar', 'Bookmarks bar'], ['other', 'Other bookmarks']]) { res.push([root, label]); walk(root, 1); }
+  return res;
+}
+
+function updateBar() {
+  for (const id of [...sel]) if (!byId(id)) sel.delete(id);
+  const n = sel.size;
+  $('selcount').textContent = n ? `${n} selected` : 'Nothing selected';
+  for (const b of document.querySelectorAll('#selbar .need')) b.disabled = !n;
+  const pick = $('moveTo');
+  const keep = pick.value;
+  pick.innerHTML = '';
+  for (const [v, label] of folderOptions()) pick.append(Object.assign(document.createElement('option'), { value: String(v), textContent: label }));
+  if ([...pick.options].some((o) => o.value === keep)) pick.value = keep;
+}
+
+async function bulk(action) {
+  const c = chosen();
+  if (!c.ids.length) return;
+  const what = `${c.folders ? `${c.folders} folder${c.folders === 1 ? '' : 's'} and ` : ''}${c.urls} bookmark${c.urls === 1 ? '' : 's'}`;
+  if (action === 'delete' && !confirm(`Delete ${what}?`)) return;
+  if ((action === 'open' || action === 'private') && c.urls > 10 && !confirm(`Open ${c.urls} ${action === 'open' ? 'tabs' : 'tabs in a private window'}?`)) return;
+  const parent = /^\d+$/.test($('moveTo').value) ? Number($('moveTo').value) : $('moveTo').value;
+  const r = await bridge.call('bookmarks.bulk', { action, ids: c.ids, parent });
+  if (action === 'delete') { say(`Deleted ${what}.`); sel.clear(); }
+  else if (action === 'move') { say(r.count ? `Moved ${r.count} item${r.count === 1 ? '' : 's'}.` : 'Nothing was moved (a folder cannot go inside itself).', !r.count); if (r.count) sel.clear(); }
+  else say(`Opened ${r.count} bookmark${r.count === 1 ? '' : 's'}.`);
+  await refresh();
+}
+
 function render() {
   if (editing != null) return;
   const list = $('list');
   list.innerHTML = '';
-  const q = $('q').value.trim().toLowerCase();
+  order = [];
+  const q = search();
   if (q) {
-    const hits = state.nodes.filter((n) => n.type === 'url' && (n.title + ' ' + n.url).toLowerCase().includes(q));
+    const found = hits().map(byId);
     const card = document.createElement('div');
     card.className = 'card';
-    if (!hits.length) card.innerHTML = '<div class="empty">No bookmarks match your search.</div>';
-    for (const n of hits) card.append(row(n, 0, true));
+    if (!found.length) card.innerHTML = '<div class="empty">No bookmarks match your search.</div>';
+    for (const n of found) card.append(row(n, 0, true));
     list.append(card);
+    updateBar();
     return;
   }
   for (const [root, title] of [['bar', 'Bookmarks bar'], ['other', 'Other bookmarks']]) {
@@ -60,6 +123,7 @@ function render() {
     card.addEventListener('drop', (e) => { if (drag != null && e.target === card) { e.preventDefault(); bridge.call('bookmarks.move', { id: drag, parent: root, index: 1e6 }).then(refresh); drag = null; } });
     list.append(h, card);
   }
+  updateBar();
 }
 
 // before / after a row, or inside a folder (its middle).
@@ -80,9 +144,12 @@ function dropOn(n, z) {
 
 function row(n, depth, flat) {
   const isFolder = n.type === 'folder';
+  order.push(n.id);
   const r = document.createElement('div');
-  r.className = 'row';
+  r.className = 'row' + (sel.has(n.id) ? ' picked' : '');
   r.style.paddingLeft = (14 + depth * 22) + 'px';
+  const cb = Object.assign(document.createElement('input'), { type: 'checkbox', className: 'cb', checked: sel.has(n.id), title: isFolder ? 'Select this folder and what is in it' : 'Select' });
+  cb.onclick = (e) => tick(n, cb.checked, e.shiftKey);
   const caret = document.createElement('span');
   caret.className = 'caret';
   if (isFolder) {
@@ -134,7 +201,7 @@ function row(n, depth, flat) {
     refresh();
   };
   acts.append(edit, del);
-  r.append(caret, ico, ttl, url, form, acts);
+  r.append(cb, caret, ico, ttl, url, form, acts);
   if (pendingEdit === n.id) { pendingEdit = null; setTimeout(begin, 0); }
   if (!flat) {
     r.draggable = true;
@@ -162,6 +229,13 @@ function row(n, depth, flat) {
 }
 
 $('q').addEventListener('input', render);
+$('selAll').onclick = () => { for (const id of scope()) sel.add(id); keepScroll(render); };
+$('selNone').onclick = () => { for (const id of scope()) sel.delete(id); keepScroll(render); };
+$('selInvert').onclick = () => { for (const id of scope()) { if (sel.has(id)) sel.delete(id); else sel.add(id); } keepScroll(render); };
+$('bulkMove').onclick = () => bulk('move');
+$('bulkOpen').onclick = () => bulk('open');
+$('bulkPrivate').onclick = () => bulk('private');
+$('bulkDelete').onclick = () => bulk('delete');
 $('showBar').onchange = () => bridge.call('bookmarks.setBar', { show: $('showBar').checked });
 $('newFolder').onclick = async () => {
   const r = await bridge.call('bookmarks.newFolder', { title: 'New folder', parent: 'bar' });

@@ -171,3 +171,51 @@ test('import: installed browsers are found by their usual folders', () => {
   assert.deepStrictEqual(found.map((f) => `${f.browser}/${f.profile}`), ['Chrome/Default', 'Chrome/Work', 'Edge/Default', 'Firefox/default-release']);
   assert.deepStrictEqual(detectBrowsers({}), []);
 });
+
+test('bookmarks: the folder used last is offered first, and new bookmarks go there', () => {
+  const dir = tmp();
+  const b = new Bookmarks(dir);
+  const a = b.addFolder('A');
+  const c = b.addFolder('C');
+  assert.strictEqual(b.lastParent(), 'bar');
+  assert.strictEqual(b.add({ url: 'https://one.example/' }).parent, 'bar');
+  b.useFolder(a.id);
+  b.useFolder(c.id);
+  b.useFolder(a.id);
+  assert.strictEqual(b.lastParent(), a.id);
+  assert.deepStrictEqual(b.recentFolders().map((f) => f.title), ['A', 'C']); // newest first, no repeats
+  assert.strictEqual(b.add({ url: 'https://two.example/' }).parent, a.id);
+  b.useFolder('other'); // a root: remembered as the last place, not listed as a folder
+  assert.strictEqual(b.add({ url: 'https://three.example/' }).parent, 'other');
+  assert.deepStrictEqual(b.recentFolders().map((f) => f.title), ['A', 'C']);
+  b.flush();
+  assert.strictEqual(new Bookmarks(dir).lastParent(), 'other');
+  // A folder that is gone is not offered, and the bar is used instead.
+  b.useFolder(c.id);
+  b.remove(c.id);
+  assert.strictEqual(b.lastParent(), 'bar');
+  assert.deepStrictEqual(b.recentFolders().map((f) => f.title), ['A']);
+  b.useFolder(999); // not a folder: ignored
+  assert.strictEqual(b.lastParent(), 'bar');
+});
+
+test('bookmarks: several at once (move, delete, open list)', () => {
+  const b = new Bookmarks(tmp());
+  const f = b.addFolder('F');
+  const g = b.addFolder('G', f.id);
+  const x = b.add({ url: 'https://x.example/', title: 'X', parent: f.id });
+  const y = b.add({ url: 'https://y.example/', title: 'Y', parent: g.id });
+  const z = b.add({ url: 'https://z.example/', title: 'Z' });
+  const w = b.add({ url: 'https://w.example/', title: 'W' });
+  // A folder and one of its own bookmarks both ticked: the bookmark moves with the folder, once.
+  assert.strictEqual(b.moveMany([f.id, x.id, z.id], 'other'), 2);
+  assert.deepStrictEqual(b.children('other').map((n) => n.title), ['F', 'Z']);
+  assert.strictEqual(b.node(x.id).parent, f.id);
+  // A folder can't go inside itself (or below itself); nothing moves.
+  assert.strictEqual(b.moveMany([f.id], g.id), 0);
+  // What "open" means for a folder: every bookmark inside, no repeats.
+  assert.deepStrictEqual(b.urlsOf([f.id, y.id, w.id]).map((n) => n.title).sort(), ['W', 'X', 'Y']);
+  b.removeMany([f.id, w.id]);
+  assert.deepStrictEqual(b.list().map((n) => n.title), ['Z']);
+  assert.strictEqual(b.node(g.id), null);
+});
