@@ -11,6 +11,8 @@ const { EventEmitter } = require('events');
 const { JsonStore } = require('./store');
 
 const ROOTS = ['bar', 'other'];
+const MAX_DEPTH = 64; // folders inside folders, when importing
+const MAX_IMPORT = 200000; // entries of one imported file
 const URL_OK = /^(https?|file|novadm):/i;
 const hostOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
 
@@ -186,18 +188,34 @@ class Bookmarks extends EventEmitter {
   importTree(tree) {
     let added = 0;
     let skipped = 0;
-    const walk = (list, parent) => {
-      for (const n of list || []) {
-        if (Array.isArray(n.children)) {
-          const same = this.children(parent).find((c) => c.type === 'folder' && c.title === n.title);
-          const f = same || this.addFolder(n.title || 'Folder', parent);
-          walk(n.children, f.id);
-        } else if (this.has(n.url) || !/^https?:/i.test(n.url || '')) skipped++;
-        else { this.add({ url: n.url, title: n.title, parent }); added++; }
+    let budget = MAX_IMPORT;
+    let changedAny = false;
+    const urls = new Set(this.items.map((b) => b.url)); // looked up once: a big file must not search the whole list for every line
+    const folders = new Map(); // `${parent}|${title}` -> folder, for merging folders of the same name
+    for (const n of this.nodes) if (n.type === 'folder') folders.set(`${n.parent}|${n.title}`, n);
+    const stack = [];
+    for (const [list, parent] of [[tree.other, 'other'], [tree.bar, 'bar']]) stack.push({ list: list || [], parent, depth: 0 }); // bar is popped first
+    // Folders are walked with a stack of their own, not by calling this function again: a file with thousands of
+    // nested folders can't use up the call stack, and it stops at MAX_DEPTH levels and MAX_IMPORT entries.
+    while (stack.length) {
+      const { list, parent, depth } = stack.pop();
+      for (const n of list) {
+        if (--budget < 0) { skipped++; continue; }
+        if (n && Array.isArray(n.children)) {
+          if (depth >= MAX_DEPTH) { skipped += 1; continue; }
+          const title = String(n.title || 'Folder').slice(0, 100);
+          const key = `${parent}|${title}`;
+          let f = folders.get(key);
+          if (!f) { f = { id: ++this.store.data.seq, type: 'folder', title, parent, added: this.now() }; this.nodes.push(f); folders.set(key, f); changedAny = true; }
+          stack.push({ list: n.children, parent: f.id, depth: depth + 1 });
+        } else if (!n || typeof n.url !== 'string' || urls.has(n.url) || !/^https?:/i.test(n.url)) skipped++;
+        else {
+          this.nodes.push({ id: ++this.store.data.seq, type: 'url', title: String(n.title || hostOf(n.url) || n.url).slice(0, 300), url: n.url, parent, added: this.now() });
+          urls.add(n.url); added++; changedAny = true;
+        }
       }
-    };
-    walk(tree.bar, 'bar');
-    walk(tree.other, 'other');
+    }
+    if (changedAny) this.changed();
     return { added, skipped };
   }
 
@@ -218,4 +236,4 @@ class Bookmarks extends EventEmitter {
   flush() { this.store.flush(); }
 }
 
-module.exports = { Bookmarks, parseHtml };
+module.exports = { Bookmarks, parseHtml, MAX_DEPTH, MAX_IMPORT };

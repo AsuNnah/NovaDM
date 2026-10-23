@@ -11,6 +11,7 @@ const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeepin
 const { History, Bookmarks, TabSession } = require('./library');
 const bookmarkImport = require('./bookmarks-import');
 const { menuText } = require('./util');
+const { guardFor } = require('./netguard');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
 
@@ -175,7 +176,9 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     if (!b || !/^https?:\/\//i.test(favicon || '')) return;
     try {
       // A private tab's icon is asked for in the private session, never with the normal session's cookies.
-      const r = await net.fetchBuffer(favicon, { session: incognito ? browser.incognitoSession : browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000 });
+      const guard = guardFor(b.url); // a page on the internet cannot point its icon at this PC or the home network
+      await guard(favicon);
+      const r = await net.fetchBuffer(favicon, { session: incognito ? browser.incognitoSession : browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000, guard });
       const type = String(r.headers['content-type'] || '').split(';')[0].trim();
       if (!/^image\/(png|x-icon|vnd\.microsoft\.icon|svg\+xml|gif|jpeg|webp)$/.test(type) || !r.body.length) return;
       b.icon = `data:${type};base64,${r.body.toString('base64')}`;

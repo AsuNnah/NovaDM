@@ -9,6 +9,7 @@ const { PopupGuard } = require('./popup');
 const { MediaRegistry } = require('./media/registry');
 const { DownloadManager } = require('./download/manager');
 const { Transport } = require('./transport');
+const { guardFor } = require('./netguard');
 const { AddFlow, specFromUrl } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
@@ -814,7 +815,12 @@ app.whenReady().then(async () => {
   media = new MediaRegistry({
     getSetting: (k) => settings.get(k),
     fetchText: async (url, opts) => {
-      const r = await net.fetchText(url, { session: browser.normalSession, headers: opts.headers, timeoutMs: 20000 });
+      // The playlist and its variants are named by the page: a page on the internet must not make NovaDM ask for an
+      // address on this PC or a private network (also not through a redirect).
+      const tab = browser.tabs.get(opts.tabId);
+      const guard = guardFor((tab && tab.url) || '');
+      await guard(url);
+      const r = await net.fetchText(url, { session: browser.normalSession, headers: opts.headers, timeoutMs: 20000, guard });
       return { text: r.text, finalUrl: r.finalUrl };
     },
   });

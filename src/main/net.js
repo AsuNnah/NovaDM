@@ -68,7 +68,7 @@ const SECRET_HEADER = /^(cookie|authorization|proxy-authorization|x-.*|.*(token|
  * Redirects are followed manually so the final URL is known.
  * Returns { res, req, status, headers, finalUrl, abort() }.
  */
-function open(url, { session, headers = {}, range, timeoutMs = 30000, method = 'GET', hops = 0 } = {}) {
+function open(url, { session, headers = {}, range, timeoutMs = 30000, method = 'GET', hops = 0, guard } = {}) {
   return new Promise((resolve, reject) => {
     let finalUrl = url;
     let redirects = 0;
@@ -98,22 +98,24 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
       try { req.abort(); } catch {}
       reject(err);
     }
+    // A redirect can only be followed from inside this event (Electron cancels it otherwise), so a request that needs
+    // an address check (`guard`, which may look a name up first) or that carries a cookie or sign-in header follows
+    // redirects by hand: a new request per hop. Chromium drops a Cookie header we set ourselves on any redirect, so
+    // the cookie and sign-in headers go on to the same host and stop at another host.
+    const byHand = !!(guard || explicitCookie || hasSecret);
     req.on('redirect', (status, m, redirectUrl) => {
       if (++redirects + hops > 15) return fail(new Error('Too many redirects'));
-      if (explicitCookie || hasSecret) {
-        // Chromium drops a Cookie header we set ourselves on any redirect, so these requests follow redirects by
-        // hand: the cookie and sign-in headers go on to the same host, and stop at another host.
-        settled = true;
-        clearTimeout(timer);
-        try { req.abort(); } catch {}
-        const crossHost = hostOfUrl(redirectUrl) !== hostOfUrl(url);
-        const next = {};
-        for (const [k, v] of Object.entries(headers)) if (!crossHost || !SECRET_HEADER.test(k)) next[k] = v;
-        open(redirectUrl, { session, headers: next, range, timeoutMs, method, hops: redirects + hops }).then(resolve, reject);
-        return;
-      }
-      finalUrl = redirectUrl;
-      req.followRedirect();
+      if (!byHand) { finalUrl = redirectUrl; req.followRedirect(); return; }
+      settled = true;
+      clearTimeout(timer);
+      try { req.abort(); } catch {}
+      const crossHost = hostOfUrl(redirectUrl) !== hostOfUrl(url);
+      const next = {};
+      for (const [k, v] of Object.entries(headers)) if (!crossHost || !SECRET_HEADER.test(k)) next[k] = v;
+      Promise.resolve()
+        .then(() => (guard ? guard(redirectUrl) : undefined)) // may refuse the address (throws)
+        .then(() => open(redirectUrl, { session, headers: next, range, timeoutMs, method, hops: redirects + hops, guard }))
+        .then(resolve, reject);
     });
     req.on('response', (res) => {
       if (settled) { try { req.abort(); } catch {} return; }
@@ -188,4 +190,4 @@ async function probe(url, opts = {}) {
   };
 }
 
-module.exports = { open, readBody, fetchBuffer, fetchText, probe, replayableHeaders, installRefererHook, HttpError, setProxyCredentials, setSiteCredentials };
+module.exports = { SECRET_HEADER, open, readBody, fetchBuffer, fetchText, probe, replayableHeaders, installRefererHook, HttpError, setProxyCredentials, setSiteCredentials };
