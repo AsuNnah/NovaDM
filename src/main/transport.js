@@ -146,9 +146,11 @@ class Transport {
     const host = (u) => { try { return new URL(u).host.toLowerCase(); } catch { return ''; } };
     for (let hop = 0; hop < 15; hop++) {
       const h = {};
+      const sameHost = host(current) === host(url);
       for (const [k, v] of Object.entries(headers)) {
         const key = k.toLowerCase();
         if (v == null || v === '' || HOP_HEADERS.has(key) || key === 'x-novadm-referer') continue;
+        if (!sameHost && net.SECRET_HEADER.test(key)) continue; // Authorization, API keys, tokens stay with the host they were given for
         h[key] = String(v);
       }
       if (!h['user-agent']) h['user-agent'] = ses.getUserAgent();

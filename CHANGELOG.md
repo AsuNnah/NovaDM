@@ -6,6 +6,25 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.5] — 2026-10-23
+
+Fixes for three issues found by a security review of the code.
+
+### Security
+- **A page on the internet can no longer make NovaDM ask for addresses on your PC or home network** (issue #33).
+  NovaDM checks the video playlists a page shows (and fetches a bookmarked page's icon). It now refuses
+  `127.0.0.1`, `localhost`, `192.168.x.x`, `10.x.x.x`, `169.254.x.x`, `172.16–31.x.x`, link-local and similar
+  addresses when the page that named them is on the internet, also when a redirect points there. A page that is
+  itself on your PC or home network (a media server at home) works as before.
+- **Fast (multi-connection) downloads no longer send sign-in headers to another site after a redirect** (issue #32):
+  `Authorization`, API keys and tokens given with a download stay with the host they were given for, as they
+  already did for the normal download path.
+
+### Fixed
+- **Importing a very large or very deeply nested bookmarks file no longer freezes or crashes NovaDM** (issue #34).
+  Folders nested more than 64 levels deep, and files beyond 200,000 entries, are cut off, and importing is far
+  faster (80,000 bookmarks: from over a minute to well under a second).
+
 ## [1.7.4] — 2026-10-16
 
 Fixes from a bug hunt through the code and the in-app tests.

@@ -5,7 +5,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { parseHtml } = require('./bookmarks');
+const { parseHtml, MAX_DEPTH } = require('./bookmarks');
 
 const CHROMIUM = [
   ['Chrome', 'LOCALAPPDATA', ['Google', 'Chrome', 'User Data']],
@@ -42,8 +42,11 @@ function detectBrowsers(env = process.env) {
 /** Chrome / Edge / Brave "Bookmarks" file text -> { bar, other }. */
 function fromChromiumJson(text) {
   const roots = (JSON.parse(text) || {}).roots || {};
-  const conv = (n) => (n.type === 'folder' ? { title: n.name || '', children: (n.children || []).map(conv) } : { title: n.name || '', url: n.url || '' });
-  const kids = (r) => ((r && r.children) || []).map(conv);
+  // Deeper than MAX_DEPTH folders are cut off (a real profile is a few levels deep).
+  const conv = (n, depth = 0) => (n && n.type === 'folder'
+    ? { title: n.name || '', children: depth >= MAX_DEPTH || !Array.isArray(n.children) ? [] : n.children.map((c) => conv(c, depth + 1)) }
+    : { title: (n && n.name) || '', url: (n && n.url) || '' });
+  const kids = (r) => (r && Array.isArray(r.children) ? r.children : []).map((c) => conv(c, 1));
   const out = { bar: kids(roots.bookmark_bar), other: kids(roots.other) };
   const mobile = kids(roots.synced);
   if (mobile.length) out.other.push({ title: 'Mobile bookmarks', children: mobile });
@@ -63,8 +66,11 @@ function fromFirefox(file) {
       const rows = db.prepare('SELECT b.id, b.type, b.parent, b.title, b.guid, p.url FROM moz_bookmarks b LEFT JOIN moz_places p ON p.id = b.fk ORDER BY b.parent, b.position').all();
       const kids = new Map();
       for (const r of rows) { if (!kids.has(r.parent)) kids.set(r.parent, []); kids.get(r.parent).push(r); }
-      const conv = (r) => (r.type === 2 ? { title: r.title || '', children: (kids.get(r.id) || []).map(conv).filter(Boolean) } : r.type === 1 && r.url ? { title: r.title || '', url: r.url } : null);
-      const under = (guid) => { const root = rows.find((r) => r.guid === guid); return root ? (kids.get(root.id) || []).map(conv).filter(Boolean) : []; };
+      // A damaged or hand-made file can have folders that contain themselves: the depth is limited.
+      const conv = (r, depth = 1) => (r.type === 2
+        ? { title: r.title || '', children: depth >= MAX_DEPTH ? [] : (kids.get(r.id) || []).map((c) => conv(c, depth + 1)).filter(Boolean) }
+        : r.type === 1 && r.url ? { title: r.title || '', url: r.url } : null);
+      const under = (guid) => { const root = rows.find((r) => r.guid === guid); return root ? (kids.get(root.id) || []).map((c) => conv(c, 1)).filter(Boolean) : []; };
       const out = { bar: under('toolbar_____'), other: under('unfiled_____') };
       for (const [guid, title] of [['menu________', 'Bookmarks menu'], ['mobile______', 'Mobile bookmarks']]) {
         const c = under(guid);
