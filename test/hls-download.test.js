@@ -495,3 +495,22 @@ test('pausing while a segment waits to be retried does not wait out the retry de
   assert.equal(dl.state, 'paused');
   assert.ok(Date.now() - t0 < 3000, 'paused in ' + (Date.now() - t0) + ' ms, not after the 60 s delay');
 });
+
+test('sleep() waits the next fixed step at or above what was asked, never more than 2 minutes', async (t) => {
+  const dl = new HlsDownload({ id: 's', savePath: tmp(), playlistUrl: 'http://127.0.0.1:9/x.m3u8' });
+  const seen = [];
+  const real = global.setTimeout;
+  global.setTimeout = (fn, ms, ...rest) => { seen.push(ms); return real(fn, 0, ...rest); }; // record the wait, don't spend it
+  try { for (const ms of [0, 3000, 12288, 60000, 1e9, NaN, -5, 'x']) await dl.sleep(ms); } finally { global.setTimeout = real; }
+  assert.equal(seen[0], 5, 'nothing asked: the shortest step');
+  assert.ok(seen[1] >= 3000 && seen[1] <= 3300, `3 s -> ${seen[1]}`);
+  assert.ok(seen[2] >= 12288 && seen[2] <= 13600, `12.3 s -> ${seen[2]}`);
+  assert.ok(seen[3] >= 60000 && seen[3] <= 66000, `60 s -> ${seen[3]}`);
+  assert.equal(seen[4], 120000, 'a huge value (a server\'s Retry-After) is cut to 2 minutes');
+  assert.deepEqual(seen.slice(5), [5, 5, 5], 'not a number / negative: the shortest step');
+  // and a stop wakes a sleeper at once
+  const slow = dl.sleep(100000);
+  dl.stop();
+  const t0 = Date.now(); await slow;
+  assert.ok(Date.now() - t0 < 500, 'woken by stop()');
+});

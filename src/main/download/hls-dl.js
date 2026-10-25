@@ -28,6 +28,10 @@ const START_WORKERS = 3;
 const TUNE_MS = 2000; // time to measure each growth step
 const BROWSER_H1_CAP = 6;
 const LIVE_START_SEGMENTS = 3; // a recording starts this close to the live edge
+// The waits sleep() can make: 5 ms up to 2 min in steps of about 10%.
+const WAIT_STEPS_MS = [];
+for (let s = 5; s < 120000; s = Math.ceil(s * 1.1)) WAIT_STEPS_MS.push(s);
+WAIT_STEPS_MS.push(120000);
 const PATIENCE_MS = 15 * 60 * 1000; // after the quick retries, a segment that keeps failing for a server reason is tried for this long
 
 class HlsDownload extends EventEmitter {
@@ -641,11 +645,15 @@ class HlsDownload extends EventEmitter {
     this.emitUpdate(true);
   }
 
-  // Never longer than 2 min, and cut short when the download is stopped (a pause must not wait out a long retry delay).
+  // Waits the next step at or above `ms` (see WAIT_STEPS_MS: never more than 2 min, and the timer only ever gets one of
+  // those fixed values, not a number that came from a server's Retry-After), and is cut short when the download is
+  // stopped: a pause must not wait out a long retry delay.
   sleep(ms) {
+    const want = Number(ms) || 0;
+    const delay = WAIT_STEPS_MS.find((s) => s >= want) || WAIT_STEPS_MS[WAIT_STEPS_MS.length - 1];
     return new Promise((resolve) => {
       const wake = () => { clearTimeout(timer); this._sleepers.delete(wake); resolve(); };
-      const timer = setTimeout(wake, Math.max(0, Math.min(Number(ms) || 0, 120000)));
+      const timer = setTimeout(wake, delay);
       this._sleepers.add(wake);
     });
   }
