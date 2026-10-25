@@ -43,6 +43,23 @@ test('report settings: personal values only say whether they are set', () => {
   assert.strictEqual(settingValue('sitePermissions', { a: 1, b: 2 }), '2 item(s)');
 });
 
+test('report: an advert the blocker stopped is not a problem; real failures still are', () => {
+  const { isExpectedNoise, add } = require('../src/main/diagnostics');
+  const warn = (url, code) => `(node:1234) electron: Failed to load URL: ${url} with error: ${code}\n(Use \`NovaDM --trace-warnings ...\` to show where the warning was created)`;
+  assert.ok(isExpectedNoise(warn('https://ads.example/x?y=1', 'ERR_BLOCKED_BY_CLIENT')));
+  assert.ok(isExpectedNoise(warn('https://ads.example/', 'ERR_ABORTED')));
+  assert.ok(!isExpectedNoise(warn('https://site.example/', 'ERR_CONNECTION_REFUSED')), 'a site that really failed to load stays in the report');
+  assert.ok(!isExpectedNoise('TypeError: Cannot read properties of null'));
+  assert.ok(!isExpectedNoise(undefined));
+  // add() leaves the noise out and keeps a real failure.
+  const { recent } = require('../src/main/diagnostics');
+  const n = recent().length;
+  add('error', [warn('https://ads.example/', 'ERR_BLOCKED_BY_CLIENT')]);
+  assert.strictEqual(recent().length, n, 'the stopped advert is not recorded');
+  add('error', [warn('https://site.example/', 'ERR_CONNECTION_REFUSED')]);
+  assert.strictEqual(recent().length, n + 1, 'a real failure is');
+});
+
 test('tab to search: site names', () => {
   assert.strictEqual(siteFor('youtube').name, 'YouTube');
   assert.strictEqual(siteFor('you').name, 'YouTube');

@@ -251,7 +251,10 @@ $('tabs').addEventListener('wheel', (e) => {
   host.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
   e.preventDefault();
 }, { passive: false });
-new ResizeObserver(() => afterTabsRender()).observe($('tabs')); // the window was resized
+// The window was resized. Not in the observer's own callback: showing or hiding the ▾ button changes the size being
+// observed, which Chromium reports as "ResizeObserver loop completed with undelivered notifications".
+let overflowFrame = 0;
+new ResizeObserver(() => { cancelAnimationFrame(overflowFrame); overflowFrame = requestAnimationFrame(afterTabsRender); }).observe($('tabs'));
 $('tablist').onclick = () => togglePanel('tabsearch');
 // Dragging a tab or a group toward either end of a scrolled strip scrolls it, to reach tabs that are out of sight.
 const stripEdge = { x: 0, at: 0, timer: 0 };

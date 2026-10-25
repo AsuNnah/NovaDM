@@ -8,8 +8,14 @@ const MAX_LINES = 500;
 const lines = [];
 const SENSITIVE_SETTING = /pass|token|secret|cookie|proxy|auth|login|home|folder|dir|path|site|rule|perm|agent|header|dns/i;
 
+// Not problems, so not in a report: Electron words an advert's page that the ad blocker stopped (or a load that was
+// cancelled) as "Failed to load URL … with error: ERR_BLOCKED_BY_CLIENT / ERR_ABORTED".
+const EXPECTED_NOISE = /electron: Failed to load URL: \S+ with error: (ERR_BLOCKED_BY_CLIENT|ERR_ABORTED)\b/;
+function isExpectedNoise(text) { return EXPECTED_NOISE.test(String(text)); }
+
 function add(level, args) {
   const text = args.map((a) => (a instanceof Error ? a.stack : typeof a === 'string' ? a : safeJson(a))).join(' ');
+  if (isExpectedNoise(text)) return;
   lines.push(`${new Date().toISOString()} ${level.padEnd(5)} ${text.slice(0, 2000)}`);
   if (lines.length > MAX_LINES) lines.shift();
 }
@@ -105,4 +111,5 @@ async function report({ app, settings, downloads, extensions, ffmpeg, ytdlp, ari
   ].join('\n') + '\n' + redact(out.join('\n'), { appPath: app.getAppPath() }) + '\n';
 }
 
-module.exports = { install, watchConsole, report, add, settingValue };
+const recent = () => lines.slice(); // for the tests
+module.exports = { install, watchConsole, report, add, settingValue, isExpectedNoise, recent };

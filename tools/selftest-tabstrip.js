@@ -23,8 +23,24 @@ module.exports = async ({ app, browser, chromeView, overlayView, getWindow }) =>
         activeVisible: !!ar && ar.left >= hr.left - 1 && ar.right <= hr.right + 1, tabs: h.querySelectorAll('.tab').length };
     })()`);
     const c = {};
+    const resizeErrors = []; // Chromium's "ResizeObserver loop completed with undelivered notifications" (1.7.7 logged it while tabs opened)
+    chromeView.webContents.on('console-message', (e) => { if (/ResizeObserver/.test(e.message)) resizeErrors.push(e.message.slice(0, 60)); });
 
     c.fewTabsNoButton = await state().then((s) => !s.over && !s.button);
+
+    // A resize that makes the tabs stop fitting, and fit again: the ▾ button is switched on and off by the strip's own
+    // size observer, the case where Chromium logs "ResizeObserver loop completed with undelivered notifications".
+    win.setContentSize(1400, 700); await sleep(700);
+    const more = [];
+    for (let i = 0; i < 14; i++) more.push(browser.createTab({ url: 'novadm://newtab', win: 'normal', background: true }));
+    await sleep(1500);
+    c.fitsWhenWide = await state().then((s) => !s.over && !s.button);
+    win.setContentSize(600, 700); await sleep(1000);
+    c.overflowsWhenNarrow = await state().then((s) => s.over && s.button);
+    win.setContentSize(1400, 700); await sleep(1000);
+    c.fitsAgainWhenWide = await state().then((s) => !s.over && !s.button);
+    for (const id of more) browser.closeTab(id);
+    win.setContentSize(1000, 700); await sleep(800);
 
     const first = browser.order[0];
     const ids = [];
@@ -58,6 +74,8 @@ module.exports = async ({ app, browser, chromeView, overlayView, getWindow }) =>
     for (const id of ids) browser.closeTab(id);
     await sleep(1200);
     c.buttonGoneWithFewTabs = await state().then((s) => !s.over && !s.button);
+    c.noResizeObserverErrors = resizeErrors.length === 0;
+    result.resizeErrors = resizeErrors.length;
 
     result.checks = c;
     result.ok = Object.values(c).every(Boolean);

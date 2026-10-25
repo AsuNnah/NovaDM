@@ -28,6 +28,11 @@ const START_WORKERS = 3;
 const TUNE_MS = 2000; // time to measure each growth step
 const BROWSER_H1_CAP = 6;
 const LIVE_START_SEGMENTS = 3; // a recording starts this close to the live edge
+// The waits sleep() can make: 5 ms up to 2 min in steps of about 10%.
+const WAIT_STEPS_MS = [];
+for (let s = 5; s < 120000; s = Math.ceil(s * 1.1)) WAIT_STEPS_MS.push(s);
+WAIT_STEPS_MS.push(120000);
+const PATIENCE_MS = 15 * 60 * 1000; // after the quick retries, a segment that keeps failing for a server reason is tried for this long
 
 class HlsDownload extends EventEmitter {
   /**
@@ -67,6 +72,10 @@ class HlsDownload extends EventEmitter {
     this.retries = opts.retries ?? 10;
     this.retryDelayMs = opts.retryDelayMs ?? 3000;
     this.timeoutMs = opts.timeoutMs ?? 30000;
+    this.patienceMs = opts.patienceMs ?? PATIENCE_MS;
+    this.waitNote = ''; // shown in the list while a segment is being retried after the quick retries
+    this._waiting = new Set(); // indexes of segments in that state
+    this._sleepers = new Set();
     this.convertTs = opts.convertTs !== false;
     this._openConn = opts.openConn || null;
     this._fetchText = opts.fetchText;
@@ -136,7 +145,10 @@ class HlsDownload extends EventEmitter {
       if (this._stopping) return;
       this.finish();
     } catch (err) {
-      if (!this._stopping) this.fail(err);
+      // A segment (or a write) that failed for good stops the workers too, which sets _stopping: that is still a failure
+      // to report. Before 1.7.8 only a pause or cancel was told apart that way, so such a download was left
+      // "downloading" with no connections and no message.
+      if (!this._stopping || this.error) this.fail(err);
     }
   }
 
@@ -410,8 +422,8 @@ class HlsDownload extends EventEmitter {
   async fetchSegment(idx) {
     const seg = this.segments[idx];
     const urls = this.srcFor(seg.url);
-    let lastErr;
-    for (let attempt = 0; attempt <= this.retries; attempt++) {
+    let firstFailAt = 0;
+    for (let attempt = 0; ; attempt++) {
       if (this._stopping) throw new Error('stopped');
       const url = urls[attempt % urls.length];
       try {
@@ -419,10 +431,22 @@ class HlsDownload extends EventEmitter {
         if (seg.key && seg.key.method === 'AES-128') data = await this.decrypt(seg, data);
         const clean = hls.stripImageDisguise(data);
         if (clean !== data && !this._disguised) { this._disguised = true; diagnostics.add('note', [`video download ${this.id}: segments disguised as pictures, picture header removed`]); }
+        if (this._waiting.delete(idx) && !this._waiting.size) this.setWaitNote('');
         return clean;
       } catch (err) {
-        lastErr = err;
-        if (err instanceof HttpError && err.fatal && attempt >= urls.length - 1) throw err;
+        if (err instanceof HttpError && err.fatal && attempt >= urls.length - 1) throw err; // "no" for good (403, 404, 410): expired or forbidden
+        firstFailAt = firstFailAt || Date.now();
+        // The quick retries are used up. A server that is only having a bad spell (HTTP 5xx, time-outs, dropped
+        // connections) gets more time before the whole download is given up: with a long video one segment answering
+        // HTTP 500 for a few minutes used to end it. The other connections keep going meanwhile.
+        if (attempt >= this.retries) {
+          if (Date.now() - firstFailAt >= this.patienceMs) {
+            if (this.patienceMs > 0) err.message = `${err.message} (the server kept failing for ${Math.max(1, Math.round((Date.now() - firstFailAt) / 60000))} min)`;
+            throw err;
+          }
+          this._waiting.add(idx);
+          this.setWaitNote(`Server problem (${err instanceof HttpError ? 'HTTP ' + err.status : String(err.message || 'connection lost').slice(0, 40)}), trying again`);
+        }
         if (err instanceof HttpError && (err.status === 429 || err.status === 503)) {
           this.throttled(err.retryAfter);
           await this.sleep(err.retryAfter || this.backoffMs(attempt));
@@ -431,7 +455,6 @@ class HlsDownload extends EventEmitter {
         await this.backoff(attempt);
       }
     }
-    throw lastErr;
   }
 
   async getBytes(url, range) {
@@ -615,10 +638,29 @@ class HlsDownload extends EventEmitter {
 
   async backoff(attempt) { await this.sleep(this.backoffMs(attempt)); }
 
-  sleep(ms) { return new Promise((r) => setTimeout(r, Math.max(0, Math.min(Number(ms) || 0, 120000)))); } // never longer than 2 min
+  /** The note in the list ("Server problem …, trying again"); the list is told at once, nothing else may be happening. */
+  setWaitNote(text) {
+    if (text === this.waitNote) return;
+    this.waitNote = text;
+    this.emitUpdate(true);
+  }
+
+  // Waits the next step at or above `ms` (see WAIT_STEPS_MS: never more than 2 min, and the timer only ever gets one of
+  // those fixed values, not a number that came from a server's Retry-After), and is cut short when the download is
+  // stopped: a pause must not wait out a long retry delay.
+  sleep(ms) {
+    const want = Number(ms) || 0;
+    const delay = WAIT_STEPS_MS.find((s) => s >= want) || WAIT_STEPS_MS[WAIT_STEPS_MS.length - 1];
+    return new Promise((resolve) => {
+      const wake = () => { clearTimeout(timer); this._sleepers.delete(wake); resolve(); };
+      const timer = setTimeout(wake, delay);
+      this._sleepers.add(wake);
+    });
+  }
 
   stop() {
     this._stopping = true;
+    for (const wake of [...this._sleepers]) wake();
     clearTimeout(this._livePoll);
     if (this._resolveWriter) { this._resolveWriter(); this._resolveWriter = null; }
     if (this._resolveWorkers && this._workers === 0) { this._resolveWorkers(); this._resolveWorkers = null; }
@@ -718,6 +760,7 @@ class HlsDownload extends EventEmitter {
       segments: this.totalSegments, doneSegments: this.doneSegments, connections: this.state === 'downloading' ? this._workers : 0,
       speed: this.state === 'downloading' ? this.speed() : 0,
       error: this.error ? String(this.error.message || this.error) : null,
+      waitNote: this.state === 'downloading' ? this.waitNote : '',
     };
   }
 }

@@ -108,7 +108,8 @@ class MergeDownload extends EventEmitter {
       if (this._stopping) return;
       await this.finish();
     } catch (err) {
-      if (!this._stopping) this.fail(err);
+      // A segment (or a write) that failed for good stops the workers too, which sets _stopping: still a failure to report.
+      if (!this._stopping || this.error) this.fail(err);
     }
   }
 
