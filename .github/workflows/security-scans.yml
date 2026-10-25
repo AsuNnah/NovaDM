@@ -34,7 +34,7 @@ jobs:
       #    (default-src 'none', script-src 'self'), the usual place for NovaDM's local pages.
       #  CustomArgumentsJSCheck: the Chromium switches are hardening on purpose (third-party cookies off, no JIT in Safer/Safest).
       - name: Electronegativity (pinned version)
-        run: npx --yes @doyensec/electronegativity@1.10.3 --input src --relative --electron-version 44.7.0 --exclude-checks CSPGlobalCheck,CSPHTMLCheck,CustomArgumentsJSCheck --output electronegativity.sarif
+        run: npx --yes @doyensec/electronegativity@1.10.3 --input src --relative --electron-version 45.0.0 --exclude-checks CSPGlobalCheck,CSPHTMLCheck,CustomArgumentsJSCheck --output electronegativity.sarif
       - name: Send the results to code scanning
         if: always() && hashFiles('electronegativity.sarif') != ''
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4
