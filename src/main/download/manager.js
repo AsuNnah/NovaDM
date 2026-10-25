@@ -354,6 +354,7 @@ class DownloadManager extends EventEmitter {
       if (p.segments) { rec.segments = p.segments; rec.doneSegments = p.doneSegments; }
       rec.connections = p.connections || 0; rec.directConnections = p.directConnections || 0;
       rec.joining = !!p.joining;
+      rec.waitNote = p.waitNote || ''; // a segment is being retried after the quick retries (HLS)
       if (p.live) { rec.live = true; rec.recording = !!p.recording; rec.recordedSeconds = p.recordedSeconds || 0; rec.liveGaps = p.liveGaps || 0; }
       rec.errorCode = p.errorCode || null;
       this.emitRecord(rec);
@@ -812,7 +813,7 @@ class DownloadManager extends EventEmitter {
       percent: r.state === 'done' ? 100 : hls ? (r.percent || 0) : r.size > 0 ? Math.min(100, (r.received / r.size) * 100) : (r.percent || 0),
       sizeIsEstimate: hls && r.state !== 'done', resumable: r.resumable,
       pageUrl: r.pageUrl, addedAt: r.addedAt, completedAt: r.completedAt, error: r.error,
-      segments: r.segments, doneSegments: r.doneSegments, activeMs: this.activeMs(r),
+      segments: r.segments, doneSegments: r.doneSegments, activeMs: this.activeMs(r), waitNote: r.state === 'downloading' ? r.waitNote || '' : '',
       errorCode: r.errorCode || null, verify: r.verify || '', native: !!r.native, incognito: !!r.incognito,
       queue: r.queue || 'main', scan: r.scan || '', optimizing: this.optimizing.has(r.id),
       live: !!r.live, recording: !!r.recording && r.state === 'downloading', recordedSeconds: r.recordedSeconds || 0,

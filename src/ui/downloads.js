@@ -81,7 +81,8 @@ function statusText(d) {
   switch (d.state) {
     case 'downloading': {
       const left = d.speed > 0 && d.size > 0 ? fmtDur(((d.size - d.received) / d.speed) * 1000) + ' left' : '';
-      return [pct + '%', sizeTxt, d.speed > 0 ? fmtSize(d.speed) + '/s' : '', left, parts].filter(Boolean).join(' · ');
+      const wait = d.waitNote ? `<span class="err">${esc(d.waitNote)}</span>` : ''; // the server is having a bad spell; NovaDM keeps trying
+      return [pct + '%', sizeTxt, d.speed > 0 ? fmtSize(d.speed) + '/s' : '', left, parts, wait].filter(Boolean).join(' · ');
     }
     case 'connecting': return ['Connecting…', parts].filter(Boolean).join(' · ');
     case 'queued': return ['Queued', d.received > 0 ? `${pct}% · ${sizeTxt}` : '', parts].filter(Boolean).join(' · ');

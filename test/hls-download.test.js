@@ -424,3 +424,74 @@ test('a recording ends by itself when the broadcast ends', async (t) => {
   const out = fs.readFileSync(save);
   assert.equal(out[out.length - 1], 9, 'the last segment of the broadcast is included');
 });
+
+// ---- 1.7.8: a server having a bad spell is waited out; a real "no" still stops at once ----
+
+/** N segments of 2 KB; `bad(path, nth)` says whether the nth request for a path answers HTTP `status` (default 500). */
+async function flaky(t, N, bad, status = 500) {
+  const hits = {};
+  let playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:1\n';
+  for (let i = 0; i < N; i++) playlist += `#EXTINF:1,\ns${i}.bin\n`;
+  playlist += '#EXT-X-ENDLIST\n';
+  const server = http.createServer((req, res) => {
+    const m = /^\/s(\d+)\.bin$/.exec(req.url);
+    if (!m) { res.writeHead(404); return res.end(); }
+    hits[req.url] = (hits[req.url] || 0) + 1;
+    if (bad(req.url, hits[req.url])) { res.writeHead(status); return res.end(); }
+    const body = Buffer.alloc(2048, Number(m[1]));
+    res.writeHead(200, { 'Content-Length': body.length });
+    res.end(body);
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  return { base, hits, make: (extra = {}) => new HlsDownload({
+    id: 'f1', savePath: tmp(), playlistUrl: base + '/t.m3u8', openConn: nodeOpen, convertTs: false, concurrency: 3, retryDelayMs: 5,
+    fetchText: async () => ({ text: playlist, finalUrl: base + '/t.m3u8' }), ...extra,
+  }) };
+}
+
+test('a segment that answers HTTP 500 more often than the quick retries is waited out, and the list says so', async (t) => {
+  const f = await flaky(t, 8, (p, nth) => p === '/s3.bin' && nth <= 7); // 7 failures in a row; the quick retries are 2 (3 tries)
+  const dl = f.make({ retries: 2, patienceMs: 20000 });
+  const notes = [];
+  dl.on('progress', (p) => { if (p.waitNote) notes.push(p.waitNote); });
+  await new Promise((res, rej) => { dl.on('done', res); dl.on('error', rej); dl.start(); });
+  const out = fs.readFileSync(dl.savePath);
+  assert.equal(out.length, 8 * 2048);
+  for (let i = 0; i < 8; i++) assert.equal(out[i * 2048], i, `block ${i}`);
+  assert.equal(f.hits['/s3.bin'], 8, 'tried again until the server answered');
+  assert.ok(notes.some((n) => /HTTP 500/.test(n)), 'the list was told: ' + JSON.stringify(notes.slice(0, 2)));
+  assert.equal(dl.progress().waitNote, '', 'cleared once it worked');
+});
+
+test('a server that never recovers ends the download after the patience time, with the reason', async (t) => {
+  const f = await flaky(t, 5, (p) => p === '/s2.bin');
+  const dl = f.make({ retries: 1, patienceMs: 400 });
+  const t0 = Date.now();
+  const err = await new Promise((res) => { dl.on('done', () => res(null)); dl.on('error', res); dl.start(); });
+  assert.ok(err, 'it failed');
+  assert.match(err.message, /HTTP 500 \(the server kept failing for \d+ min\)/);
+  assert.equal(dl.state, 'error');
+  assert.ok(Date.now() - t0 < 5000, 'and not forever: ' + (Date.now() - t0) + ' ms');
+});
+
+test('an answer that is a real "no" (403, expired or forbidden) still stops the download at once', async (t) => {
+  const f = await flaky(t, 5, (p) => p === '/s1.bin', 403);
+  const dl = f.make({ retries: 10, patienceMs: 600000 });
+  const t0 = Date.now();
+  const err = await new Promise((res) => { dl.on('done', () => res(null)); dl.on('error', res); dl.start(); });
+  assert.ok(err && /HTTP 403/.test(err.message) && !/kept failing/.test(err.message), String(err && err.message));
+  assert.ok(Date.now() - t0 < 2000, 'no waiting: ' + (Date.now() - t0) + ' ms');
+  assert.equal(f.hits['/s1.bin'], 1, 'not tried again');
+});
+
+test('pausing while a segment waits to be retried does not wait out the retry delay', async (t) => {
+  const f = await flaky(t, 5, (p) => p === '/s1.bin');
+  const dl = f.make({ retries: 0, retryDelayMs: 60000, patienceMs: 600000 });
+  dl.start();
+  await new Promise((r) => dl.on('progress', (p) => { if (p.waitNote) r(); })); // it is now in the long wait
+  const t0 = Date.now();
+  await dl.pause();
+  assert.equal(dl.state, 'paused');
+  assert.ok(Date.now() - t0 < 3000, 'paused in ' + (Date.now() - t0) + ' ms, not after the 60 s delay');
+});

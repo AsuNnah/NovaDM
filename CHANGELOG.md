@@ -6,6 +6,26 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.8] — 2026-10-25
+
+Fixes found in a problem report: a long video download that stopped halfway, and errors in the report itself.
+
+### Fixed
+- **A video download whose parts failed no longer freezes silently.** When one part of a streamed video failed for
+  good (or a write to disk failed), the download was left saying "downloading", with no connections, no speed and
+  no message, until you paused it. This affected streamed (HLS) videos and videos whose picture and sound are
+  downloaded separately and joined, in every version so far. It now ends as "Failed: …", with the reason and the
+  Retry button, and what was already saved is kept.
+- **A server having a bad spell no longer ends a long video download.** Servers sometimes answer "HTTP 500" for
+  a few minutes in a row. After the quick retries (about 3 minutes), a part that keeps failing for such a reason
+  (HTTP 5xx, time-outs, lost connections) is now tried for up to 15 minutes more while the other connections go on,
+  and the list says "Server problem (HTTP 500), trying again". An answer that is a real "no" (403, 404, 410:
+  the link has expired or is forbidden) still stops the download at once. Pausing no longer waits for a retry delay.
+- **The tab strip no longer logs "ResizeObserver loop completed with undelivered notifications"** (new in 1.7.7:
+  it happened while tabs were restored, or when the window was resized across the point where the tabs stop fitting).
+- **Problem reports no longer list adverts that the ad blocker stopped as errors** ("Failed to load URL … with error:
+  ERR_BLOCKED_BY_CLIENT" or "ERR_ABORTED"). Pages that really failed to load still appear.
+
 ## [1.7.7] — 2026-10-25
 
 Tabs you can reach when there are many, pop-ups you can block for good on one site, bookmarks you can drag, menu pages that open once, a clearer name for the Tor-style protection, a softer white, and a more honest FFmpeg line in Settings → About.

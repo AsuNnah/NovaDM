@@ -209,3 +209,26 @@ test('plain files are fetched in ranges and joined by FFmpeg; servers without ra
   const err = await new Promise((r) => { dl2.on('error', r); dl2.on('done', () => r(null)); dl2.start(); });
   assert.match(String(err && err.message), /parts of files/);
 });
+
+test('a segment that fails for good ends the merge download with an error, not a frozen "downloading"', async (t) => {
+  const routes = dashStream(3);
+  const server = http.createServer((req, res) => { // the second video segment is refused (403: expired or forbidden)
+    const u = req.url.split('?')[0];
+    if (u === '/v/2.m4s') { res.writeHead(403); return res.end(); }
+    const body = routes[u];
+    if (body == null) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Length': Buffer.byteLength(body) }); res.end(body);
+  });
+  t.after(() => server.close());
+  const base = await listen(server);
+  const dl = new MergeDownload({ id: 'f', savePath: tmp(), source: { type: 'dash', url: base + '/stream.mpd' }, openConn: nodeOpen, fetchText: async (u) => ({ text: routes[new URL(u).pathname], finalUrl: u }), concurrency: 3, retryDelayMs: 5 });
+  const t0 = Date.now();
+  const err = await Promise.race([
+    new Promise((r) => { dl.on('error', r); dl.on('done', () => r(null)); dl.start(); }),
+    new Promise((r) => setTimeout(() => r('TIMEOUT'), 8000)),
+  ]);
+  assert.notEqual(err, 'TIMEOUT', `no error was reported; the state stayed "${dl.state}" (error recorded: ${dl.error && dl.error.message})`);
+  assert.ok(err && /403/.test(err.message), String(err && err.message));
+  assert.equal(dl.state, 'error');
+  assert.ok(Date.now() - t0 < 6000);
+});
