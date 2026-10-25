@@ -682,6 +682,7 @@ class Browser extends EventEmitter {
       canGoBack: tab.canGoBack, canGoForward: tab.canGoForward, active: tab.id === this.activeId,
       discarded: !!tab.discarded, readable: !!tab.readable,
       bookmarked: this.isBookmarked ? this.isBookmarked(tab.url) : false,
+      bookmarkIn: this.bookmarkFolder ? this.bookmarkFolder(tab.url) : '', // where it is, for the star's tooltip
       pinned: !!tab.pinned, muted: !!tab.muted,
       group: tab.groupId != null && this.tabGroups.has(tab.groupId) ? { ...this.tabGroups.get(tab.groupId), hex: COLOR_HEX[this.tabGroups.get(tab.groupId).color] } : null,
     };

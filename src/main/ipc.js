@@ -358,12 +358,15 @@ function registerIpc(ctx) {
     'shields.state': () => shieldsState(),
     'shields.toggleSite': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { const on = getManagers().adblock.isWhitelisted(t.url); getManagers().adblock.setSiteEnabled(t.url, on); b.reload(t.id); } setTimeout(pushShields, 200); },
     'shields.toggleHardening': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { toggleSite(getManagers().settings, t.url); b.reload(t.id); } setTimeout(pushShields, 200); },
+    // The Guard panel's "always block pop-ups on this site" (and back to asking / the general setting).
+    'shields.togglePopupBlock': () => { const t = getManagers().browser.activeTab(); const p = getManagers().popup; if (t) p.blockSite(t.url, !p.siteBlocked(t.url)); setTimeout(pushShields, 100); },
     'shields.setGlobal': (a) => { getManagers().settings.set({ adblock: !!a.enabled }); pushShields(); },
 
     // ---- pop-up guard responses ----
     'popup.respond': (a) => {
       const b = getManagers().browser;
-      if (a.always && a.pageUrl) getManagers().popup.allowSite(a.pageUrl, a.allow);
+      // "Remember my choice": always allow this site's pop-ups, or always block them (without asking again).
+      if (a.always && a.pageUrl) { if (a.allow) getManagers().popup.allowSite(a.pageUrl, true); else getManagers().popup.blockSite(a.pageUrl, true); }
       if (a.allow && /^https?:/.test(a.url || '')) b.createTab({ url: a.url });
     },
     'popup.review': () => reviewBlockedPopup(),
@@ -522,6 +525,7 @@ function registerIpc(ctx) {
       site: t ? siteOf(t.url) : '',
       count: t ? adblock.count(t.wcId) : 0,
       protection: t && /^https?:/i.test(t.url || '') ? { siteOn: !(settings.get('hardeningOff') || []).includes(siteOf(t.url)), level: settings.get('securityLevel'), fingerprinting: settings.get('fingerprinting') } : null,
+      popups: t && /^https?:/i.test(t.url || '') ? (getManagers().popup.siteBlocked(t.url) ? 'blocked' : getManagers().popup.siteAllowed(t.url) ? 'allowed' : 'default') : null,
       ready: adblock.ready,
     };
   }

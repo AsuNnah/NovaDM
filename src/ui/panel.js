@@ -383,6 +383,15 @@ function renderShields() {
     p.onclick = () => api.call('shields.toggleHardening');
     wrap.append(p);
   }
+  // Pop-ups from this site: always blocked (no more questions), or as the general setting says.
+  if (s.popups) {
+    const pb = el('button', 'btn'); pb.style.cssText = 'width:100%;margin-top:8px;';
+    pb.textContent = s.popups === 'blocked' ? 'Pop-ups always blocked on this site' : s.popups === 'allowed' ? 'Pop-ups allowed on this site: always block them' : 'Always block pop-ups on this site';
+    if (s.popups === 'blocked') pb.classList.add('pri');
+    pb.title = s.popups === 'blocked' ? 'Click to stop always blocking: pop-ups from this site follow the general setting again.' : 'Pop-ups and new tabs this site opens on its own are blocked without asking. Your own clicks on its links still work.';
+    pb.onclick = () => api.call('shields.togglePopupBlock');
+    wrap.append(pb);
+  }
   if (!s.ready) wrap.append(el('div', 'note', 'Filter lists are still loading…'));
   content.append(wrap);
   const foot = el('div', 'foot');
@@ -704,7 +713,7 @@ function showPopupPrompt(d) {
   }
   content.append(el('div', 'hdr', `<div class="t">${title}</div>`));
   content.append(el('div', 'q', `${text}<br><b style="color:var(--accent)">${dest}</b>`));
-  const chk = el('label', 'chk', `<input type="checkbox" id="pp-remember"> Always allow pop-ups from ${page}`);
+  const chk = el('label', 'chk', `<input type="checkbox" id="pp-remember"> Remember my choice for ${page} (always open, or always block)`);
   content.append(chk);
   const acts = el('div', 'acts');
   const open = el('button', 'btn', 'Open'); open.onclick = () => { respondPopup(d, true); };

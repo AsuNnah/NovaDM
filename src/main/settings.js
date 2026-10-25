@@ -129,6 +129,7 @@ function defaults() {
     // Pop-ups
     popupMode: 'ask', // ask | block | allow
     popupAllow: [], // sites allowed to open pop-ups
+    popupBlock: [], // sites whose pop-ups are always blocked, without asking
 
     // Site permissions: { [origin]: { media, geolocation, notifications, ... : true|false } }
     sitePermissions: {},

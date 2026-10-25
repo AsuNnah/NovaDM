@@ -230,7 +230,44 @@ function renderTabs() {
       } else fav.innerHTML = globeSvg();
     }
   });
+  afterTabsRender();
 }
+
+// Too many tabs to fit: the strip scrolls sideways (mouse wheel, trackpad), the active tab is brought into view when it
+// changes, and the ▾ button (only shown then) lists every tab, with a search box.
+let shownActive = null;
+function afterTabsRender() {
+  const host = $('tabs');
+  if (activeId !== shownActive) {
+    shownActive = activeId;
+    const el = tabEls.get(activeId);
+    if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }
+  $('tablist').classList.toggle('hidden', host.scrollWidth <= host.clientWidth + 1);
+}
+$('tabs').addEventListener('wheel', (e) => {
+  const host = $('tabs');
+  if (host.scrollWidth <= host.clientWidth) return;
+  host.scrollLeft += Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  e.preventDefault();
+}, { passive: false });
+new ResizeObserver(() => afterTabsRender()).observe($('tabs')); // the window was resized
+$('tablist').onclick = () => togglePanel('tabsearch');
+// Dragging a tab or a group toward either end of a scrolled strip scrolls it, to reach tabs that are out of sight.
+const stripEdge = { x: 0, at: 0, timer: 0 };
+function stripEdgeStop() { clearInterval(stripEdge.timer); stripEdge.timer = 0; }
+$('tabs').addEventListener('dragover', (e) => {
+  if (dragId == null && dragGroup == null) return;
+  stripEdge.x = e.clientX; stripEdge.at = performance.now();
+  if (stripEdge.timer) return;
+  stripEdge.timer = setInterval(() => {
+    if ((dragId == null && dragGroup == null) || performance.now() - stripEdge.at > 800) return stripEdgeStop();
+    const host = $('tabs'); const r = host.getBoundingClientRect(); const zone = 48;
+    const d = stripEdge.x < r.left + zone ? stripEdge.x - (r.left + zone) : stripEdge.x > r.right - zone ? stripEdge.x - (r.right - zone) : 0; // negative = left
+    if (d) host.scrollLeft += Math.sign(d) * Math.max(2, Math.round(Math.abs(d) / 3));
+  }, 16);
+}, true); // capture: the tabs stop the event for themselves
+for (const type of ['dragend', 'drop']) document.addEventListener(type, stripEdgeStop, true);
 // A tab dropped on the empty part of the strip goes to the end, outside any group.
 $('tabs').addEventListener('dragover', (e) => { if (dragId != null || dragGroup != null || fromOtherWindow(e)) e.preventDefault(); });
 $('tabs').addEventListener('drop', (e) => {
@@ -254,7 +291,7 @@ function setActive(tab) {
   const web = /^https?:/i.test(tab.url || '');
   $('star-btn').classList.toggle('hidden', !web);
   $('star-btn').classList.toggle('on', !!tab.bookmarked);
-  $('star-btn').title = tab.bookmarked ? 'Remove bookmark (Ctrl+D)' : 'Bookmark this page (Ctrl+D)';
+  $('star-btn').title = tab.bookmarked ? `Bookmarked in ${tab.bookmarkIn || 'your bookmarks'}. Click to edit or remove it (Ctrl+D)` : 'Bookmark this page (Ctrl+D)';
   $('reader-btn').classList.toggle('hidden', !(web && tab.readable));
   renderTabs();
 }
@@ -293,11 +330,14 @@ function barChip(n) {
   t.textContent = n.title || n.url;
   el.append(ico, t);
   el.title = isFolder ? n.title : `${n.title}\n${n.url}`;
-  el.addEventListener('mousedown', (e) => {
-    if (isFolder) { if (e.button === 0) { const r = el.getBoundingClientRect(); call('bookmarks.listMenu', { parent: n.id, x: r.left, y: r.bottom }); } return; }
-    if (e.button === 0) call('bookmarks.open', { id: n.id, how: e.ctrlKey ? 'tab' : 'here' });
-    else if (e.button === 1) { e.preventDefault(); call('bookmarks.open', { id: n.id, how: 'tab' }); }
+  // A click opens it, not the press: a press may be the start of a drag to rearrange the bar (opening the page or
+  // a menu on the press got in the way of every drag). The middle button opens a tab.
+  el.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }); // no auto-scroll cursor
+  el.addEventListener('click', (e) => {
+    if (isFolder) { const r = el.getBoundingClientRect(); call('bookmarks.listMenu', { parent: n.id, x: r.left, y: r.bottom }); return; }
+    call('bookmarks.open', { id: n.id, how: e.ctrlKey ? 'tab' : 'here' });
   });
+  el.addEventListener('auxclick', (e) => { if (e.button === 1 && !isFolder) { e.preventDefault(); call('bookmarks.open', { id: n.id, how: 'tab' }); } });
   el.addEventListener('contextmenu', (e) => { e.preventDefault(); call('bookmarks.contextMenu', { id: n.id, x: e.clientX, y: e.clientY }); });
   el.draggable = true;
   el.addEventListener('dragstart', (e) => { bmDragId = n.id; e.dataTransfer.setData('text/plain', String(n.id)); e.dataTransfer.effectAllowed = 'move'; });
@@ -343,7 +383,9 @@ $('bm-items').addEventListener('drop', (e) => { if (bmDragId != null && e.target
 $('bm-other').addEventListener('dragover', (e) => { if (bmDragId != null) { e.preventDefault(); clearDrop(); $('bm-other').classList.add('drop-into'); } });
 $('bm-other').addEventListener('dragleave', () => $('bm-other').classList.remove('drop-into'));
 $('bm-other').addEventListener('drop', (e) => { if (bmDragId != null) { e.preventDefault(); call('bookmarks.move', { id: bmDragId, parent: 'other', index: 1e6 }); bmDragId = null; clearDrop(); } });
-api.on('bookmarks', (d) => { marks = d; renderBar(); });
+// An update that changes nothing is skipped: redrawing the chips under the mouse would cancel a click or a drag in progress.
+let marksKey = '';
+api.on('bookmarks', (d) => { const key = JSON.stringify(d); if (key === marksKey) return; marksKey = key; marks = d; renderBar(); });
 window.addEventListener('resize', () => renderBar());
 $('star-btn').onclick = () => call('bookmarks.toggleActive');
 $('reader-btn').onclick = () => call('reader.open');
