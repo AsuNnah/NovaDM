@@ -18,6 +18,12 @@ const INTERNAL_PAGES = new Map([
   ['bookmarks', 'Bookmarks'], ['reader', 'Reader view'],
 ]);
 
+// NovaDM's own pages that are open once per window; asking for one again goes to the open tab (the new-tab
+// page and the reader view are not in this list: those are new tabs every time).
+const ONE_PER_WINDOW = /^novadm:\/\/(downloads|settings|history|bookmarks)\/?(?:[?#].*)?$/i;
+/** 'settings' | 'downloads' | 'history' | 'bookmarks' for that page's address (with or without ?section=…), else ''. */
+function onePerWindow(url) { const m = ONE_PER_WINDOW.exec(String(url || '')); return m ? m[1].toLowerCase() : ''; }
+
 class Browser extends EventEmitter {
   constructor({ settings, media, adblock, popup }) {
     super();
@@ -74,7 +80,7 @@ class Browser extends EventEmitter {
     // Chrome Web Store refuse browsers that announce "Electron".
     ses.setUserAgent(cleanUserAgent(ses.getUserAgent()));
     net.installRefererHook(ses);
-    ses.registerPreloadScript({ type: 'frame', filePath: SHIELD_PRELOAD }); // Tor-style protections (hardening.js)
+    ses.registerPreloadScript({ type: 'frame', filePath: SHIELD_PRELOAD }); // Guard Extended (hardening.js)
     if (this.adblock) this.adblock.attach(ses);
     this.installSniffer(ses);
     // Downloads started by pages go to NovaDM (see main.js) instead of Chromium's downloader.
@@ -555,13 +561,19 @@ class Browser extends EventEmitter {
     return this.inGroup(this.normalWindow(), () => this._openInternal(page)); // NovaDM's pages: the normal window in use
   }
 
-  _openInternal(page) {
-    const url = 'novadm://' + page;
-    for (const id of this.order) {
-      const t = this.tabs.get(id);
-      if (t && t.url === url && !t.incognito) { this.selectTab(id); return id; }
-    }
-    return this.createTab({ url });
+  _openInternal(page) { return this.openPage('novadm://' + page); }
+
+  /**
+   * Open an address in a new tab, except NovaDM's own settings / downloads / history / bookmarks pages: those are
+   * open once per window, so a second request goes to the open tab (and to the section asked for, ?section=about).
+   */
+  openPage(url) {
+    const page = onePerWindow(url);
+    const open = page && this.order.map((id) => this.tabs.get(id)).find((t) => t && onePerWindow(t.url) === page);
+    if (!open) return this.createTab({ url });
+    this.selectTab(open.id);
+    if (/[?#]/.test(url)) this.loadInTab(open, url);
+    return open.id;
   }
 
   /** Tabs currently showing an internal page, for pushing live updates to them. */
@@ -670,6 +682,7 @@ class Browser extends EventEmitter {
       canGoBack: tab.canGoBack, canGoForward: tab.canGoForward, active: tab.id === this.activeId,
       discarded: !!tab.discarded, readable: !!tab.readable,
       bookmarked: this.isBookmarked ? this.isBookmarked(tab.url) : false,
+      bookmarkIn: this.bookmarkFolder ? this.bookmarkFolder(tab.url) : '', // where it is, for the star's tooltip
       pinned: !!tab.pinned, muted: !!tab.muted,
       group: tab.groupId != null && this.tabGroups.has(tab.groupId) ? { ...this.tabGroups.get(tab.groupId), hex: COLOR_HEX[this.tabGroups.get(tab.groupId).color] } : null,
     };
@@ -966,4 +979,4 @@ function internalUrl(u) {
 
 function displayUrl(u) { return (u || '').startsWith('novadm://') ? '' : (u || ''); }
 
-module.exports = { Browser, NEWTAB };
+module.exports = { Browser, NEWTAB, onePerWindow };

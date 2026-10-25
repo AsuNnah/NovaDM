@@ -53,6 +53,16 @@ test('installed and newest versions: problems found, most severe first; fixed in
   assert.deepEqual(by.ffmpeg, { source: 'NVD', installed: [{ id: 'CVE-2026-0001', severity: 'HIGH' }], latest: null }, 'date "ranges" and ranges that end earlier are ignored; the newest FFmpeg is a branch');
 });
 
+test('FFmpeg: when the installed release is the newest, the list says no release with a fix exists yet', async () => {
+  const note = async (extra) => (await addSecurity([{ id: 'ffmpeg', name: 'FFmpeg', installed: 'n9.0.2-24-gfd5d616c29', latest: '9.0', ...extra }], fake))[0].security.note;
+  assert.match(await note({ newestRelease: '9.0.2' }), /9\.0\.2 is still FFmpeg's newest release, so no release with a fix exists yet.*9\.0 branch can already contain fixes made after 9\.0\.2/);
+  assert.match(await note({ newestRelease: '9.0.1' }), /no release with a fix/, 'a release older than the installed one cannot hold a fix either');
+  assert.equal(await note({ newestRelease: '9.0.3' }), undefined, 'a newer release exists: updating is the answer');
+  assert.equal(await note({}), undefined, 'newest release unknown: nothing said');
+  const clean = await addSecurity([{ id: 'ffmpeg', installed: 'n9.1.0-3-gabc', latest: '9.1', newestRelease: '9.1.0' }], fake);
+  assert.equal(clean[0].security.note, undefined, 'no problems listed: no note');
+});
+
 test('a database that fails is reported, the other add-ons still get their answer', async () => {
   const items = await addSecurity([
     { id: 'ytdlp', installed: '2023.11.16', latest: '2026.08.19' },

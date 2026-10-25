@@ -83,7 +83,7 @@ function defaults() {
     deAmp: true, // open the publisher's page instead of its Google AMP copy
     fingerprinting: 'standard', // off | standard (noise, like Brave) | strict (blocked, like Tor)
     securityLevel: 'standard', // standard | safer | safest (Tor Browser's levels; JIT part after a restart)
-    hardeningOff: [], // sites where the Tor-style protections are off (shields panel)
+    hardeningOff: [], // sites where Guard Extended is off (Guard panel)
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
     ytdlpPath: '', // the user's own yt-dlp.exe
 
@@ -129,6 +129,7 @@ function defaults() {
     // Pop-ups
     popupMode: 'ask', // ask | block | allow
     popupAllow: [], // sites allowed to open pop-ups
+    popupBlock: [], // sites whose pop-ups are always blocked, without asking
 
     // Site permissions: { [origin]: { media, geolocation, notifications, ... : true|false } }
     sitePermissions: {},

@@ -29,6 +29,11 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   const shields = new Shields(settings);
   browser.shields = shields;
   browser.isBookmarked = (url) => !!url && bookmarks.has(url);
+  browser.bookmarkFolder = (url) => {
+    const b = url && bookmarks.find(url);
+    if (!b) return '';
+    return b.parent === 'bar' ? 'the bookmarks bar' : b.parent === 'other' ? 'Other bookmarks' : `the folder “${(bookmarks.node(b.parent) || {}).title || ''}”`;
+  };
 
   // The current window's find bar; each window has its own (main.js switches with useFind).
   let find = { view: null, open: false };

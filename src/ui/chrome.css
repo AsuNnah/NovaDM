@@ -5,7 +5,7 @@
   --danger: #e2574c; --ok: #35c28a; --radius: 8px; --tab-h: 40px; --bar-h: 48px;
 }
 @media (prefers-color-scheme: light) {
-  :root { color-scheme: light; --bg:#eceef2; --bg2:#f6f7f9; --bg3:#fff; --line:#d8dbe2; --fg:#1c1e24; --fg2:#5a6271; --fg3:#8b93a3; }
+  :root { color-scheme: light; --bg:#eceef2; --bg2:#f6f7f9; --bg3:#fafafa; --line:#d8dbe2; --fg:#1c1e24; --fg2:#5a6271; --fg3:#8b93a3; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
@@ -15,7 +15,8 @@ body { font: 13px/1.4 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; co
 /* tab strip */
 #tabstrip { height: var(--tab-h); display: flex; align-items: center; gap: 4px; padding: 4px 6px 0 8px; -webkit-app-region: drag; }
 /* Tabs take only the room they need; the empty space after them stays draggable. */
-#tabs { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; overflow: hidden; -webkit-app-region: no-drag; }
+/* Too many tabs to fit: the strip scrolls sideways (wheel, trackpad), without a scroll bar; the ▾ button lists them all. */
+#tabs { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; -webkit-app-region: no-drag; }
 #drag-space { flex: 1 1 40px; min-width: 40px; align-self: stretch; -webkit-app-region: drag; }
 .tab { -webkit-app-region: no-drag; display: flex; align-items: center; gap: 7px; height: 30px; flex: 0 1 220px; min-width: 56px; max-width: 220px; padding: 0 6px 0 10px; border-radius: var(--r); background: transparent; color: var(--fg2); cursor: default; position: relative; animation: nv-fade var(--dur-quick) var(--ease-out); }
 .tab:hover { background: var(--hover); color: var(--fg); }
@@ -28,8 +29,8 @@ body { font: 13px/1.4 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif; co
 .tab:hover .cls, .tab.active .cls { opacity: 1; }
 .tab .cls:hover { background: var(--active); color: var(--fg); }
 .tab .inc { font-size: 11px; color: var(--accent); }
-#newtab { -webkit-app-region: no-drag; width: 28px; height: 28px; border-radius: var(--r); display: flex; align-items: center; justify-content: center; color: var(--fg2); flex: none; }
-#newtab:hover { background: var(--hover); color: var(--fg); }
+#newtab, #tablist { -webkit-app-region: no-drag; width: 28px; height: 28px; border-radius: var(--r); display: flex; align-items: center; justify-content: center; color: var(--fg2); flex: none; }
+#newtab:hover, #tablist:hover { background: var(--hover); color: var(--fg); }
 
 /* window controls */
 #winctl { display: flex; -webkit-app-region: no-drag; margin-left: 4px; }

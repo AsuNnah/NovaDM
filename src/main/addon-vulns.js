@@ -78,6 +78,12 @@ async function addSecurity(items, fetchJson) {
       const a = it.installed && lookupFor(it.id, it.installed);
       const b = it.latest && it.latest !== it.installed && lookupFor(it.id, it.latest);
       [sec.installed, sec.latest] = await Promise.all([a ? a(fetchJson) : null, b ? b(fetchJson) : null]);
+      // The database goes by release number. When the installed release is the newest one, none has a fix yet;
+      // fixes made after it on the same branch (the daily builds) are not in the database's picture.
+      const base = it.id === 'ffmpeg' && sec.installed && sec.installed.length && it.newestRelease && (/^n?(\d+\.\d+\.\d+)/.exec(it.installed) || [])[1];
+      if (base && cmp(base, it.newestRelease) >= 0) {
+        sec.note = `${base} is still FFmpeg's newest release, so no release with a fix exists yet. The list goes by release number only: the daily builds of FFmpeg's ${base.split('.').slice(0, 2).join('.')} branch can already contain fixes made after ${base}.`;
+      }
     } catch (e) {
       sec.error = e.message;
     }

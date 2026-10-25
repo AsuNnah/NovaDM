@@ -47,6 +47,23 @@ function tick(n, on, shift) {
 }
 function keepScroll(fn) { const y = window.scrollY; fn(); window.scrollTo(0, y); }
 
+// Dragging near the top or bottom edge scrolls the page, so a bookmark can be dropped on a place that is out of
+// sight (the browser's own scrolling during a drag did not happen here). Stops when the drag ends or leaves the window.
+const edge = { y: 0, at: 0, timer: 0 };
+function edgeStop() { clearInterval(edge.timer); edge.timer = 0; }
+document.addEventListener('dragover', (e) => {
+  if (drag == null) return;
+  edge.y = e.clientY; edge.at = performance.now();
+  if (edge.timer) return;
+  edge.timer = setInterval(() => {
+    if (drag == null || performance.now() - edge.at > 800) return edgeStop();
+    const zone = 80; const h = window.innerHeight;
+    const d = edge.y < zone ? edge.y - zone : edge.y > h - zone ? edge.y - (h - zone) : 0; // pixels into the edge zone; negative = up
+    if (d) window.scrollBy(0, Math.sign(d) * Math.max(2, Math.round(Math.abs(d) / 3)));
+  }, 16);
+}, true);
+for (const type of ['dragend', 'drop']) document.addEventListener(type, edgeStop, true);
+
 // What the ticked nodes stand for: bookmarks and folders, folders counting what is inside.
 function chosen() {
   const all = new Set();

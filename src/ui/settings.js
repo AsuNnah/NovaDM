@@ -436,6 +436,7 @@ async function initAbout() {
           bad = true;
           text = `No known security problems in ${a.installed}. ⚠ The newest, ${a.latest}, has ${sec.latest.length} (${list(sec.latest)}): better to wait for a fix.`;
         } else if (sec.installed) text = `No known security problems (${sec.source}).`;
+        if (text && sec.note) text += ` ${sec.note}`;
         if (text) lbl.append(node('div', text, `status${bad ? ' warn' : sec.error ? '' : ' ok'}`));
       }
       row.append(lbl);

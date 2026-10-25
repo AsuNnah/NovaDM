@@ -1,6 +1,6 @@
 'use strict';
 // Runs in every frame before the page's scripts (registered on the browsing sessions). Applies the
-// Tor-style protections that hardening.js chose for this page, inside the page's own JavaScript.
+// Guard Extended: the protections that hardening.js chose for this page, inside the page's own JavaScript.
 const { ipcRenderer, contextBridge } = require('electron');
 
 let cfg = null;

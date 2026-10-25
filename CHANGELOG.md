@@ -6,6 +6,46 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.7] — 2026-10-25
+
+Tabs you can reach when there are many, pop-ups you can block for good on one site, bookmarks you can drag, menu pages that open once, a clearer name for the Tor-style protection, a softer white, and a more honest FFmpeg line in Settings → About.
+
+### Added
+- **Always block pop-ups on one site.** The Guard button has a new choice, "Always block pop-ups on this site":
+  the pop-ups and new tabs that site opens on its own, and its links that open another site (the usual click-under
+  trick), are blocked without asking. Your own Ctrl or middle clicks and links within the site still work, and the
+  button undoes it. The question NovaDM asks now remembers "Block" too (before, "Remember" only worked for "Open"),
+  and Settings → Privacy explains it.
+- **Too many tabs: the strip scrolls, and a ▾ button lists them all.** Before, tabs that did not fit were cut off
+  behind the + button and could not be reached. The mouse wheel or a trackpad scrolls the strip, the tab you switch to
+  is always brought into view, and the ▾ button (shown only when tabs don't fit) opens the list of all tabs with a
+  search box (Ctrl+Shift+A, as before).
+
+### Fixed
+- **Dragging a bookmark on the bookmarks bar to rearrange it works with a real mouse.** A bookmark opened (and a
+  folder's menu appeared) the moment the button went down, in the way of every drag; they now open on click.
+- **Dragging scrolls.** Dragging a bookmark toward the top or bottom of the Bookmarks page scrolls the page, and dragging
+  a tab toward either end of the tab strip scrolls the strip, so you can drop on a place that is out of sight.
+
+### Changed
+- **The bookmark star says where the bookmark is** (its tooltip: the bookmarks bar, Other bookmarks, or the folder), so
+  a page that is already in your bookmarks, for example imported from another browser or added with "Bookmark all
+  tabs", is easy to recognise.
+- **The light theme uses #FAFAFA instead of pure white** for cards, menus, panels and the find bar (softer on the
+  eyes). The page background and the dark theme are unchanged, and white text on buttons stays white.
+- **Settings, Downloads, Bookmarks and History open once per window.** Choosing one from the menu while it is
+  already open now goes to that tab instead of opening a second one (the keyboard shortcuts and the
+  notifications already did). Asking for Settings → About or Add-ons while Settings is open takes that tab to the
+  section. Real web pages and the new-tab page still open a new tab every time.
+- **"Tor-style protection" is now called Guard Extended** (the button in the Guard panel, Settings, the README):
+  the fingerprinting protection and the Standard / Safer / Safest security levels, working as before, and your
+  choices are kept. Settings now says the levels are modelled on Tor Browser's and that NovaDM does not use the
+  Tor network.
+- **Settings → About says more about FFmpeg.** "Up to date" no longer hides that FFmpeg's branch (9.0) has newer
+  bug fixes than your build: it says how many, and offers the update (the newest daily build). When the known
+  problems listed for FFmpeg are against the newest release, it says that no release with a fix exists yet and that
+  the list goes by release number only.
+
 ## [1.7.6] — 2026-10-25
 
 Security update: a new browser engine and a network library fix. No changes to how NovaDM works.

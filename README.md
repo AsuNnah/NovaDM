@@ -1,7 +1,7 @@
 # NovaDM
 
 **A Windows web browser with a fast download manager built in.** Browse with an ad blocker, a
-pop-up guard and Tor-style privacy protections; download files, videos, live streams and torrents
+pop-up guard and Guard Extended privacy protections; download files, videos, live streams and torrents
 with up to 32 connections, resume after crashes, and schedule everything.
 
 NovaDM is free and open source (GPL-3.0). It is built on Electron (Chromium). Its feature set was
@@ -47,7 +47,7 @@ the SHA-256 of its files so you can check your download.
 - Several windows (Ctrl+N): drag a tab or a whole tab group out into a new window or onto another
   window, and every window comes back when NovaDM starts
 - Tabs with **tab groups** (named, coloured, foldable; drag tabs in and out), pinned tabs and a
-  right-click tab menu; private windows (their own purple look and taskbar icon), history, bookmarks (a bookmarks bar, nested folders, drag to rearrange, import from and export to Chrome,
+  right-click tab menu; with many tabs the strip scrolls and a ▾ button lists them all; private windows (their own purple look and taskbar icon), history, bookmarks (a bookmarks bar, nested folders, drag to rearrange, import from and export to Chrome,
   Brave, Edge and Firefox), find in page, reader view, restore tabs on start
 - Chrome Web Store extensions
 - Brave's keyboard shortcuts (Ctrl+/ lists them), dark/light theme and accent colours
@@ -62,11 +62,13 @@ the SHA-256 of its files so you can check your download.
 
 **Privacy and safety**
 - Ad and tracker blocker (EasyList, EasyPrivacy, uBlock Origin lists, OISD), off per site
-- Pop-up guard: asks before a site opens a pop-up; ad pop-ups are blocked
+- Pop-up guard: asks before a site opens a pop-up; ad pop-ups are blocked; a site can be set to always
+  block (or always allow) its pop-ups
 - Third-party cookies blocked; tracking redirects skipped; tracking codes removed from addresses;
   http:// upgraded to HTTPS; AMP pages opened on the publisher's site
-- Fingerprinting protection (Brave-style noise, or Tor-style blocking) and Tor Browser's Standard /
-  Safer / Safest security levels, with an off switch per site
+- **Guard Extended**: fingerprinting protection (Brave-style noise, or strict blocking) and Standard /
+  Safer / Safest security levels modelled on Tor Browser's (NovaDM does not use the Tor network), with an
+  off switch per site
 - Secure DNS (DNS over HTTPS), proxy support, Microsoft Defender scan of downloaded programs,
   Mark of the Web on downloads
 - Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
