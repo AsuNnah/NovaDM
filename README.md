@@ -8,6 +8,26 @@ NovaDM is free and open source (GPL-3.0). It is built on Electron (Chromium). It
 inspired by the Android download manager 1DM, and its download engine borrows ideas from Motrix,
 Gopeed, AB Download Manager and XDM. No code from any of them is included.
 
+## Screenshots
+
+<table>
+<tr>
+<td width="50%"><a href="screenshots/browser.png"><img src="screenshots/browser.png" alt="NovaDM's main window: tabs with a tab group, an address bar with the shield, a bookmarks bar and a page"></a><br><sub><b>Browser.</b> Tabs and tab groups, a bookmarks bar, the shield for the ad and tracker blocker, and buttons for videos, images, downloads and the menu.</sub></td>
+<td width="50%"><a href="screenshots/video.png"><img src="screenshots/video.png" alt="The detected media panel listing a video found on the page, with a choice of quality"></a><br><sub><b>Video.</b> Videos and streams are found as a page plays them, with a choice of quality, and saved as one MP4.</sub></td>
+</tr>
+<tr>
+<td width="50%"><a href="screenshots/downloads.png"><img src="screenshots/downloads.png" alt="The Downloads page with two downloads in progress and four finished"></a><br><sub><b>Downloads.</b> Up to 32 connections per file, pause and resume, speed, filters by type, queues and schedules.</sub></td>
+<td width="50%"><a href="screenshots/bookmarks.png"><img src="screenshots/bookmarks.png" alt="The Bookmarks page with a folder tree"></a><br><sub><b>Bookmarks.</b> Folders, drag and drop, and import from and export to other browsers.</sub></td>
+</tr>
+<tr>
+<td width="50%"><a href="screenshots/settings.png"><img src="screenshots/settings.png" alt="The Settings page at Privacy and security: secure DNS, ad blocker, pop-ups, cookies, fingerprinting, security level"></a><br><sub><b>Privacy and security.</b> Secure DNS, ad and tracker blocking, a pop-up guard, third-party cookies, fingerprinting protection and security levels.</sub></td>
+<td width="50%"><a href="screenshots/menu.png"><img src="screenshots/menu.png" alt="The menu open: windows, downloads, history, bookmarks, find, reader view, detected media, grab page content, extensions, settings"></a><br><sub><b>Menu.</b> Windows and private windows, history, reader view, grabbing a page's images and files, Chrome Web Store extensions.</sub></td>
+</tr>
+</table>
+
+The pictures show made-up pages and downloads on a clean profile, so no personal data is in them.
+`tools/make-screenshots.js` makes them again (how to run it is at the top of that file).
+
 ## Download
 
 Get the latest version from [Releases](../../releases):
@@ -168,7 +188,8 @@ src/ui/            toolbar, panels and NovaDM's own pages (downloads, settings, 
 browser-extension/ the Chrome / Edge / Brave extension
 site-extensions/   an example site extension
 test/              unit tests
-tools/             in-app self-tests, benchmark, icon generator
+tools/             in-app self-tests, benchmark, icon generator, the screenshot maker
+screenshots/       the pictures in this README (made by tools/make-screenshots.js; not part of the app)
 build/             installer customisation
 ```
 
