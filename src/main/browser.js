@@ -952,7 +952,7 @@ function certKey(incognito, url) {
 
 function originOf(u) { try { return new URL(u).origin; } catch { return u || ''; } }
 
-// "… Chrome/152.0.0.0 novadm/0.1.0 Electron/44.7.0 Safari/537.36" -> "… Chrome/152.0.0.0 Safari/537.36"
+// "… Chrome/156.0.0.0 novadm/0.1.0 Electron/45.0.0 Safari/537.36" -> "… Chrome/156.0.0.0 Safari/537.36"
 function cleanUserAgent(ua) {
   return String(ua || '').replace(/\s+Electron\/\S+/i, '').replace(/\s+novadm\/\S+/i, '').replace(/\s{2,}/g, ' ').trim();
 }
