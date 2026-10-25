@@ -12,8 +12,13 @@ const { choicesFrom } = require('../src/main/ytdlp');
 const sums = (...versions) => versions.map((v, i) => `${String(i).repeat(64).slice(0, 64)}  ffmpeg-n${v}-latest-win64-lgpl-shared-${v}.zip`).join('\n');
 
 /** GitHub stand-in: latest release tags per repo, Electron's release list, FFmpeg's checksum list. */
-function github({ ytdlp = '2026.09.30', aria2 = 'release-1.37.0', electron = ['44.8.0', '45.2.0', '46.1.0'], ffmpeg = sums('9.0', '9.1') } = {}) {
+function github({ ytdlp = '2026.09.30', aria2 = 'release-1.37.0', electron = ['44.8.0', '45.2.0', '46.1.0'], ffmpeg = sums('9.0', '9.1'),
+  compare = 0, tags = ['n9.1-dev', 'n9.0.2', 'n9.0.1', 'n9.0', 'n8.2-dev', 'n8.1.3'], calls = [] } = {}) {
   return async (url) => {
+    calls.push(url);
+    // compare: how many commits the release branch is ahead of the installed build; null = GitHub doesn't know the commit (404)
+    if (url.includes('/FFmpeg/FFmpeg/compare/')) { if (compare === null) throw new Error('GitHub answered 404'); return JSON.stringify({ ahead_by: compare }); }
+    if (url.includes('/FFmpeg/FFmpeg/tags')) return JSON.stringify(tags.map((name) => ({ name })));
     if (url.includes('/yt-dlp/yt-dlp/releases/latest')) return JSON.stringify({ tag_name: ytdlp });
     if (url.includes('/aria2/aria2/releases/latest')) return JSON.stringify({ tag_name: aria2 });
     if (url.includes('/electron/electron/releases')) return JSON.stringify([...electron.map((v) => ({ tag_name: 'v' + v })), { tag_name: 'v99.0.0-alpha.1', prerelease: true }]);
@@ -62,6 +67,27 @@ test('up to date, own copies, a newer aria2, an unsupported Electron, and a fail
   assert.match(later.electron.warn, /no longer gets security fixes/);
   const broken = Object.fromEntries((await check({ ...addons(), fetchText: async () => { throw new Error('offline'); } })).map((x) => [x.id, x]));
   assert.deepEqual(Object.values(broken).map((x) => x.error), ['offline', 'offline', 'offline', 'offline']);
+});
+
+test('FFmpeg on the newest branch: says how many bug fixes the branch has that this build lacks', async () => {
+  const calls = [];
+  const behind = (await run({}, { ffmpeg: sums('9.0'), compare: 12, calls })).ffmpeg;
+  assert.deepEqual([behind.update, behind.action], [true, 'ffmpeg.install']);
+  assert.match(behind.note, /9\.0 branch has 12 newer bug fixes than your build \(made 9 Oct 2026\)/);
+  assert.ok(calls.some((u) => u.endsWith('/FFmpeg/FFmpeg/compare/fd5d616c29...release/9.0')), 'asked about the build\'s own commit and its branch');
+  assert.match((await run({}, { ffmpeg: sums('9.0'), compare: 1 })).ffmpeg.note, /has 1 newer bug fix than/, 'singular');
+  const current = (await run({}, { ffmpeg: sums('9.0'), compare: 0 })).ffmpeg;
+  assert.ok(!current.update && !current.note && !current.action, 'nothing newer on the branch: up to date');
+  const unknown = (await run({}, { ffmpeg: sums('9.0'), compare: null })).ffmpeg;
+  assert.ok(!unknown.update && !unknown.error, 'a commit GitHub does not know is left out, not an error');
+  const own = await run({ ff: { installed: true, version: 'n9.0.2-24-gfd5d616c29-20261009', custom: true } }, { ffmpeg: sums('9.0'), compare: 12 });
+  assert.ok(!own.ffmpeg.action && !/newer bug fix/.test(own.ffmpeg.note || ''), 'the user\'s own copy is not told to update');
+});
+
+test('FFmpeg: the newest release is read from the tags, development tags ignored', async () => {
+  assert.equal((await run({}, { ffmpeg: sums('9.0') })).ffmpeg.newestRelease, '9.0.2');
+  assert.equal((await run({}, { ffmpeg: sums('9.0'), tags: ['n9.1-dev', 'n9.0', 'n8.1.3'] })).ffmpeg.newestRelease, '9.0');
+  assert.equal((await run({}, { ffmpeg: sums('9.0'), tags: [] })).ffmpeg.newestRelease, '');
 });
 
 const BODY = [

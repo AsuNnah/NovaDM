@@ -373,13 +373,13 @@ function renderShields() {
   if (s.siteEnabled) toggle.classList.add('pri');
   toggle.onclick = () => api.call('shields.toggleSite');
   wrap.append(toggle);
-  // Tor-style protections (fingerprinting, security level): off for one site if it breaks.
+  // Guard Extended (fingerprinting protection, security level): off for one site if it breaks.
   if (s.protection) {
     const level = { standard: 'Standard', safer: 'Safer', safest: 'Safest' }[s.protection.level] || 'Standard';
     const p = el('button', 'btn'); p.style.cssText = 'width:100%;margin-top:8px;';
-    p.textContent = s.protection.siteOn ? `Tor-style protection ON (${level})` : 'Tor-style protection OFF for this site';
+    p.textContent = s.protection.siteOn ? `Guard Extended is ON for this site (${level})` : 'Guard Extended is OFF for this site';
     if (s.protection.siteOn) p.classList.add('pri');
-    p.title = "Fingerprinting protection and the security level. Turn it off for a site that doesn't work; the page reloads.";
+    p.title = "Guard Extended: fingerprinting protection and the security level. Turn it off for a site that doesn't work; the page reloads.";
     p.onclick = () => api.call('shields.toggleHardening');
     wrap.append(p);
   }

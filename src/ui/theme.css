@@ -18,7 +18,7 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg: #f5f5f7; --bg2: #ebebef; --bg3: #fff; --card: #fff; --card2: #f1f1f4; --pop: #fff;
+    --bg: #f5f5f7; --bg2: #ebebef; --bg3: #fafafa; --card: #fafafa; --card2: #f1f1f4; --pop: #fafafa;
     --line: rgba(0, 0, 0, .09); --ring: inset 0 0 0 1px rgba(0, 0, 0, .09);
     --fg: #111214; --fg2: #55575f; --fg3: #8a8c94;
     --hover: rgba(0, 0, 0, .05); --active: rgba(0, 0, 0, .08);

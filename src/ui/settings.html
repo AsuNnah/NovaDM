@@ -6,7 +6,7 @@
 <title>Settings</title>
 <style>
 :root{color-scheme:dark;--bg:#1b1d22;--card:#24272e;--line:#3a3f4b;--fg:#e6e8ec;--fg2:#a6adbb;--fg3:#767d8c;--accent:#3b6ef5;--ok:#35c28a;--warn:#e6a23c;}
-@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fff;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
+@media (prefers-color-scheme: light){:root{color-scheme:light;--bg:#f4f6f9;--card:#fafafa;--line:#e2e5ea;--fg:#1c1e24;--fg2:#5a6271;--fg3:#8b93a3;}}
 *{box-sizing:border-box;}
 [hidden]{display:none !important;}
 html,body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 'Segoe UI Variable','Segoe UI',system-ui,sans-serif;}
@@ -122,11 +122,11 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
       <label class="sw"><input type="checkbox" id="blockThirdPartyCookies"><i></i></label>
     </div>
     <div class="row">
-      <div class="lbl"><b>Fingerprinting protection</b><span>Standard (like Brave): canvas and audio read-outs get tiny noise, different on every site. Strict (like Tor Browser): those read-outs are blocked, WebGL is off, and CPU, memory, screen and device APIs look the same for everyone; drawing apps, some games and some sites' “are you human” checks may not work. Turn it off for one site from the shield.</span></div>
+      <div class="lbl"><b>Guard Extended: fingerprinting protection</b><span>Standard (like Brave): canvas and audio read-outs get tiny noise, different on every site. Strict (like Tor Browser): those read-outs are blocked, WebGL is off, and CPU, memory, screen and device APIs look the same for everyone; drawing apps, some games and some sites' “are you human” checks may not work. Turn Guard Extended off for one site from the Guard button.</span></div>
       <select id="fingerprinting"><option value="standard">Standard</option><option value="strict">Strict</option><option value="off">Off</option></select>
     </div>
     <div class="row">
-      <div class="lbl"><b>Security level</b><span>Tor Browser's levels. Safer: no JIT compiler (scripts about 2× slower; WebAssembly off), JavaScript off on http:// sites, no web fonts, audio and video play when clicked, strict fingerprinting. Safest: JavaScript off everywhere; many sites break. The JIT part applies after NovaDM restarts and can't be turned off per site.</span></div>
+      <div class="lbl"><b>Guard Extended: security level</b><span>Levels modelled on Tor Browser's (NovaDM does not use the Tor network). Safer: no JIT compiler (scripts about 2× slower; WebAssembly off), JavaScript off on http:// sites, no web fonts, audio and video play when clicked, strict fingerprinting. Safest: JavaScript off everywhere; many sites break. The JIT part applies after NovaDM restarts and can't be turned off per site.</span></div>
       <select id="securityLevel"><option value="standard">Standard</option><option value="safer">Safer</option><option value="safest">Safest</option></select>
     </div>
     <div class="row">

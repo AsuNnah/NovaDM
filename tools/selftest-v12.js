@@ -1,5 +1,5 @@
 'use strict';
-// In-app self-test for 1.2 (shortcuts, Tor-style protections), against a local server only.
+// In-app self-test for 1.2 (shortcuts, Guard Extended), against a local server only.
 // Two runs on one profile: NOVADM_V1_PHASE=1 checks everything and chooses the Safer level;
 // phase 2 checks that Safer turned the JIT compiler off after the restart.
 const fs = require('fs');

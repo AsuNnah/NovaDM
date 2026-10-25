@@ -1,6 +1,6 @@
 'use strict';
-// Tor-style protections for normal tabs: fingerprinting protection, security levels (Tor Browser's
-// Standard / Safer / Safest), and a per-site off switch in the shields panel for sites that break.
+// Guard Extended, for normal tabs: fingerprinting protection, security levels (modelled on Tor Browser's
+// Standard / Safer / Safest), and a per-site off switch in the Guard panel for sites that break.
 // Pages get their settings from shield-preload.js; fonts and scripts are blocked in adblock.js.
 const crypto = require('crypto');
 const { ipcMain } = require('electron');

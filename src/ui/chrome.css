@@ -5,7 +5,7 @@
   --danger: #e2574c; --ok: #35c28a; --radius: 8px; --tab-h: 40px; --bar-h: 48px;
 }
 @media (prefers-color-scheme: light) {
-  :root { color-scheme: light; --bg:#eceef2; --bg2:#f6f7f9; --bg3:#fff; --line:#d8dbe2; --fg:#1c1e24; --fg2:#5a6271; --fg3:#8b93a3; }
+  :root { color-scheme: light; --bg:#eceef2; --bg2:#f6f7f9; --bg3:#fafafa; --line:#d8dbe2; --fg:#1c1e24; --fg2:#5a6271; --fg3:#8b93a3; }
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; }

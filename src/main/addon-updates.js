@@ -20,6 +20,9 @@ function cmp(a, b) {
 }
 const major = (v) => nums(v)[0] || 0;
 const branch = (v) => nums(v).slice(0, 2).join('.'); // FFmpeg 9.0, 9.1 …
+/** "n9.0.2-24-gfd5d616c29-20261009": release 9.0.2, 24 commits later, at commit fd5d616c29, built on 2026-10-09. */
+const FFMPEG_BUILD = /^n?(\d+\.\d+)(?:\.\d+)?-\d+-g([0-9a-f]{7,40})(?:-(\d{4})(\d{2})(\d{2}))?/;
+const shortDate = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 /**
  * [{ id, name, installed, latest, update?, action?, args?, warn?, note?, error? }]
@@ -61,6 +64,23 @@ async function check({ ytdlp, ffmpeg, aria2, electron, fetchText }) {
         Object.assign(r, { update: true, action: 'ffmpeg.install', args: { newest: true } });
         r.warn = `This NovaDM is tested with FFmpeg ${FFMPEG_TESTED}. FFmpeg ${major(r.latest)} may change options NovaDM uses to join picture and sound, save sound and repair videos. Waiting for a NovaDM update is safer.`;
       }
+      // Same release, but the branch keeps getting bug fixes between releases: how many are missing from this build?
+      // (A date would say nothing: the builds are made every day.) Any failure here just leaves this out.
+      const build = FFMPEG_BUILD.exec(st.version);
+      if (build && !r.update) {
+        try {
+          const n = Number((await json(`${API}FFmpeg/FFmpeg/compare/${build[2]}...release/${build[1]}`)).ahead_by) || 0;
+          if (n > 0) {
+            const made = build[3] ? ` (made ${shortDate(+build[3], +build[4], +build[5])})` : '';
+            Object.assign(r, { update: true, action: 'ffmpeg.install', note: `FFmpeg's ${build[1]} branch has ${n} newer bug fix${n === 1 ? '' : 'es'} than your build${made}. Update installs the newest daily build.` });
+          }
+        } catch { /* offline, or a commit GitHub doesn't know: nothing to add */ }
+      }
+      // The newest release, for the security note (a problem "through 9.0.2" while 9.0.2 is the newest has no fixed release yet).
+      try {
+        const tags = await json(`${API}FFmpeg/FFmpeg/tags?per_page=40`);
+        r.newestRelease = (Array.isArray(tags) ? tags : []).map((t) => (/^n(\d+\.\d+(?:\.\d+)?)$/.exec(String(t.name)) || [])[1]).filter(Boolean).sort((a, b) => cmp(b, a))[0] || '';
+      } catch { /* optional */ }
       return r;
     }),
     item('aria2', 'aria2', async () => {

@@ -653,7 +653,7 @@ function handleShortcut(tab, action) {
     case 'bookmarks': return browser.openInternal('bookmarks');
     case 'history': return browser.openInternal('history');
     case 'downloads': return browser.openInternal('downloads');
-    case 'clear-data': return browser.createTab({ url: 'novadm://history?clear=1' });
+    case 'clear-data': return browser.openPage('novadm://history?clear=1');
     case 'new-tab': return browser.createTab({ incognito: tab.incognito });
     case 'new-window': return newWindow();
     case 'new-private': return browser.createTab({ incognito: true });

@@ -6,6 +6,26 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.7] — 2026-10-25
+
+Menu pages open once, a clearer name for the Tor-style protection, a softer white, and a more honest FFmpeg line in Settings → About.
+
+### Changed
+- **The light theme uses #FAFAFA instead of pure white** for cards, menus, panels and the find bar (softer on the
+  eyes). The page background and the dark theme are unchanged, and white text on buttons stays white.
+- **Settings, Downloads, Bookmarks and History open once per window.** Choosing one from the menu while it is
+  already open now goes to that tab instead of opening a second one (the keyboard shortcuts and the
+  notifications already did). Asking for Settings → About or Add-ons while Settings is open takes that tab to the
+  section. Real web pages and the new-tab page still open a new tab every time.
+- **"Tor-style protection" is now called Guard Extended** (the button in the Guard panel, Settings, the README):
+  the fingerprinting protection and the Standard / Safer / Safest security levels, working as before, and your
+  choices are kept. Settings now says the levels are modelled on Tor Browser's and that NovaDM does not use the
+  Tor network.
+- **Settings → About says more about FFmpeg.** "Up to date" no longer hides that FFmpeg's branch (9.0) has newer
+  bug fixes than your build: it says how many, and offers the update (the newest daily build). When the known
+  problems listed for FFmpeg are against the newest release, it says that no release with a fix exists yet and that
+  the list goes by release number only.
+
 ## [1.7.6] — 2026-10-25
 
 Security update: a new browser engine and a network library fix. No changes to how NovaDM works.
