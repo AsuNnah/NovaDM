@@ -6,6 +6,19 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.6] — 2026-10-25
+
+Security update: a new browser engine and a network library fix. No changes to how NovaDM works.
+
+### Security
+- **Browser engine updated to Electron 45.0.0** (Chromium 156.0.8078.48, Node 24.22.0, from Electron 44.7.2).
+  Electron 44.7.2 has a known high-severity security problem (CVE-2026-115570, listed by OSV.dev) that 45.0.0 does
+  not have, and the new Chromium carries the newest browser security fixes. NovaDM's own pages, extensions, pop-ups,
+  site permissions and downloads were checked against what changed in Electron 45; none of it needed a change in NovaDM.
+- **The network library `undici` updated to 8.12.3** (from 8.11.2), which fixes three advisories: a server answering
+  with an excessive number of content encodings could cause an unhandled error, one parser could use unbounded memory,
+  and one integrity check could be bypassed. The fast (multi-connection) downloads use this library.
+
 ## [1.7.5] — 2026-10-23
 
 Fixes for three issues found by a security review of the code.
