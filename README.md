@@ -136,7 +136,9 @@ OSV.dev and the US National Vulnerability Database about known security problems
 yt-dlp installed, opening a YouTube video lets yt-dlp ask YouTube about that video (as the page
 does; Settings → Add-ons turns it off). The sites you visit are checked against the lists on your PC, never sent anywhere.
 Private windows leave no history or downloads list entries, and their cookies, site data and
-sign-ins are deleted when the private window closes. Passwords for proxies and sites are
+sign-ins are deleted when the private window closes. They take nothing from normal browsing either: no history
+in the address bar, no closed normal tabs brought back, no normal downloads in their list, and a site allowed in a
+normal window asks again. Passwords for proxies and sites are
 encrypted with Windows' data protection.
 
 **Sign-ins.** Cookies (what keeps you logged in) are encrypted on disk. When you sign in, NovaDM

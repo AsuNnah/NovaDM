@@ -376,7 +376,7 @@ function registerIpc(ctx) {
       const p = getPendingPermission();
       if (!p) return;
       const grant = !!a.allow;
-      if (a.remember) getManagers().browser.setPermission(p.info.origin, p.info.permission, grant ? 'granted' : 'denied');
+      if (a.remember) getManagers().browser.setPermission(p.info.origin, p.info.permission, grant ? 'granted' : 'denied', !!p.info.incognito);
       try { p.cb(grant); } catch {}
       clearPendingPermission();
     },

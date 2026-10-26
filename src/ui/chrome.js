@@ -408,7 +408,9 @@ api.on('popups-blocked', (d) => {
 });
 $('popup-pill').onclick = () => call('popup.review');
 api.on('media', (d) => setBadge('media-badge', d.count));
-api.on('downloads', (d) => setBadge('dl-badge', d.summary ? d.summary.active : 0, true));
+// A private window counts its own downloads only.
+const activeHere = (d) => (d.list || []).filter((x) => x.incognito && (x.state === 'downloading' || x.state === 'connecting')).length;
+api.on('downloads', (d) => setBadge('dl-badge', document.documentElement.classList.contains('private') ? activeHere(d) : d.summary ? d.summary.active : 0, true));
 // Add-ons that aren't installed: a warning on the menu button (the menu lists them).
 function showAddons(d) {
   const n = (d && d.missing || []).length;
