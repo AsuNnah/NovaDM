@@ -332,7 +332,8 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       const lower = q.toLowerCase();
       const marks = bookmarks.items.filter((b) => (b.title + ' ' + b.url).toLowerCase().includes(lower)).slice(0, 3).map((b) => ({ url: b.url, title: b.title, kind: 'bookmark' }));
       const seen = new Set(marks.map((m) => m.url));
-      const hist = history.suggest(q, 8).filter((h) => !seen.has(h.url)).map((h) => ({ ...h, kind: 'history' }));
+      // A private window gets bookmarks only, never what was visited in normal windows.
+      const hist = browser.cur === 'private' ? [] : history.suggest(q, 8).filter((h) => !seen.has(h.url)).map((h) => ({ ...h, kind: 'history' }));
       const items = [...marks, ...hist].slice(0, 7);
       if (items.length) { setPanel(true); sendUI('omni-suggest', { items, left: a.left, width: a.width }); }
       else sendUI('omni-hide', {});
@@ -414,7 +415,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
         { label: 'Close other tabs', click: () => browser.closeOthers(t.id) },
         { label: 'Close tabs to the right', click: () => browser.closeOthers(t.id, { toRight: true }) },
         { type: 'separator' },
-        { label: 'Reopen closed tab', accelerator: 'CmdOrCtrl+Shift+T', registerAccelerator: false, enabled: browser.closed.length > 0, click: () => browser.reopenClosed() },
+        { label: 'Reopen closed tab', accelerator: 'CmdOrCtrl+Shift+T', registerAccelerator: false, enabled: !t.incognito && browser.closed.length > 0, click: () => browser.reopenClosed(t.incognito) },
       ], a.x, a.y);
     },
     'tabs.groupMenu': (a) => {

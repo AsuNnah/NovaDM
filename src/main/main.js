@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, dialog, session: electronSession, nativeTheme, safeStorage, screen } = require('electron');
+const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, dialog, session: electronSession, nativeTheme, safeStorage, screen, webContents } = require('electron');
 const { Settings } = require('./settings');
 const { AdBlocker } = require('./adblock');
 const { PopupGuard } = require('./popup');
@@ -84,6 +84,7 @@ let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatch
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST && !app.isPackaged) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
+const privateStats = { ads: 0, popups: 0 }; // the private window's new-tab counters, since it opened
 
 // Windows, by id: 'normal' (the first normal window), 'n2', 'n3' … (more normal windows, 1.6) and, while
 // one is open, 'private' (like Chrome's incognito window). win / chromeView / overlayView / panelOpen
@@ -355,6 +356,8 @@ function closePrivateWindow() {
   if (!c) return;
   closeWindowTabs('private', c);
   useCtx(browser.normalWindow());
+  privateStats.ads = privateStats.popups = 0;
+  browser.privatePermissions = {}; // its "remember" answers go with it
   const ses = browser.incognitoSession;
   Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache()]).catch(() => {});
 }
@@ -659,7 +662,7 @@ function handleShortcut(tab, action) {
     case 'new-private': return browser.createTab({ incognito: true });
     case 'close-tab': return browser.closeTab(tab.id);
     case 'close-window': return win && win.close();
-    case 'reopen-tab': return browser.reopenClosed();
+    case 'reopen-tab': return browser.reopenClosed(!!(tab && tab.incognito));
     case 'focus-address': leavePageFs(); chromeView.webContents.focus(); return sendUI('focus-address', {});
     case 'reload': return browser.reload(tab.id);
     case 'hard-reload': return wc && wc.reloadIgnoringCache();
@@ -1021,14 +1024,28 @@ app.whenReady().then(async () => {
     sendUI('adblock-ready', {});
   }).catch((e) => console.error('adblock init failed', e));
 
-  // Stats for the new-tab page.
+  // Stats for the new-tab page; a private window's page counts its own tabs only.
   let adsBlockedTotal = 0;
   let popupsBlockedTotal = 0;
-  adblock.on('blocked', () => { adsBlockedTotal++; });
-  browser.on('popup-blocked', () => { popupsBlockedTotal++; });
-  ipcMain.handle('novadm:internal-stats', () => ({
-    ads: adsBlockedTotal, popups: popupsBlockedTotal, downloads: downloads.list().filter((d) => d.state === 'done').length,
-  }));
+  adblock.on('blocked', (wcId, n) => {
+    if (!n) return; // a tab's count going back to 0, not a block
+    adsBlockedTotal++;
+    const wc = webContents.fromId(wcId);
+    if (wc && wc.session === browser.incognitoSession) privateStats.ads++;
+  });
+  browser.on('popup-blocked', (tabId) => {
+    popupsBlockedTotal++;
+    const t = browser.tabs.get(tabId);
+    if (t && t.incognito) privateStats.popups++;
+  });
+  ipcMain.handle('novadm:internal-stats', (e) => {
+    const priv = e.sender.session === browser.incognitoSession;
+    return {
+      ads: priv ? privateStats.ads : adsBlockedTotal,
+      popups: priv ? privateStats.popups : popupsBlockedTotal,
+      downloads: downloads.list().filter((d) => d.state === 'done' && (!priv || d.incognito)).length,
+    };
+  });
   // Settings for the novadm://settings page. Only NovaDM's own UI files may call this.
   const UI_FILE_PREFIX = pathToFileURL(UI_DIR).href + '/';
   ipcMain.handle('novadm:internal-settings', async (event, op, arg) => {

@@ -6,6 +6,24 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.9] — 2026-10-26
+
+Private windows keep normal browsing out of them.
+
+### Fixed
+- **The address bar of a private window no longer suggests pages from your history.** It still suggests your
+  bookmarks (the bookmarks bar is shown in private windows too), as in Chrome.
+- **Ctrl+Shift+T and "Reopen closed tab" in a private window no longer bring back a tab closed in a normal window**
+  (and switch you to it). In a normal window they work as before.
+- **A private window's downloads button lists and counts only the downloads started in private tabs.** Before, it
+  showed every download, normal ones included. Normal windows list everything, as before.
+- **A site you allowed in a normal window (notifications, camera, microphone, location…) asks again in a private
+  tab.** A site you blocked stays blocked there. "Remember my choice" in a private tab is no longer saved to your
+  settings: it lasts until the private window closes.
+- **The private new-tab page gets only its own counters** (ads and pop-ups blocked, downloads), starting from zero
+  each time a private window opens. Before, it could read the totals of all your browsing, though it did not show them.
+- **"Ads blocked" no longer counts a tab's counter going back to zero** as a block.
+
 ## [1.7.8] — 2026-10-25
 
 Fixes found in a problem report: a long video download that stopped halfway, and errors in the report itself.

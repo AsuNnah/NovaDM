@@ -53,6 +53,7 @@ class Browser extends EventEmitter {
     this.incognitoSession = electronSession.fromPartition('novadm-incognito');
     this._sessionsReady = new Set();
     this.closed = []; // recently closed tabs (Ctrl+Shift+T)
+    this.privatePermissions = {}; // "remember" answers given in private tabs, until the private window closes
     // Certificate errors, as in Chrome: the warning page's "Proceed (unsafe)" trusts that site with
     // that exact certificate until NovaDM closes (private windows apart). A changed certificate warns again.
     this.certSeen = new Map(); // 'n|host' or 'p|host' -> fingerprint of the certificate it showed last
@@ -396,7 +397,7 @@ class Browser extends EventEmitter {
       }
     });
     wc.session.setPermissionRequestHandler((wcc, permission, cb, detailsP) => this.handlePermission(tab, permission, detailsP, cb));
-    wc.session.setPermissionCheckHandler((wcc, permission, origin) => this.checkPermission(origin, permission));
+    wc.session.setPermissionCheckHandler((wcc, permission, origin) => this.checkPermission(origin, permission, tab.incognito));
 
   }
 
@@ -407,8 +408,9 @@ class Browser extends EventEmitter {
     this.emit('zoom', tab, Math.round(Math.pow(1.2, level) * 100));
   }
 
-  /** Ctrl+Shift+T: the last closed (non-private) tab, back where it was. */
-  reopenClosed() {
+  /** Ctrl+Shift+T: the last closed (non-private) tab, back where it was; from a private window, nothing. */
+  reopenClosed(fromPrivate = this.cur === 'private') {
+    if (fromPrivate) return null;
     const last = this.closed.pop();
     if (!last) return null;
     if (last.window) { // a closed window: back with its tabs and groups
@@ -515,25 +517,30 @@ class Browser extends EventEmitter {
       return;
     }
     const origin = (details && details.requestingUrl) ? originOf(details.requestingUrl) : originOf(tab.url);
-    const stored = this.getStoredPermission(origin, permission);
+    const stored = this.getStoredPermission(origin, permission, tab.incognito);
     if (stored === 'granted') return callback(true);
     if (stored === 'denied') return callback(false);
     const auto = new Set(['fullscreen', 'pointerLock', 'clipboard-sanitized-write']);
     if (auto.has(permission)) return callback(true);
-    this.emit('permission-ask', { tabId: tab.id, origin, permission }, callback);
+    this.emit('permission-ask', { tabId: tab.id, origin, permission, incognito: !!tab.incognito }, callback);
   }
 
-  checkPermission(origin, permission) {
-    const stored = this.getStoredPermission(originOf(origin), permission);
+  checkPermission(origin, permission, incognito = false) {
+    const stored = this.getStoredPermission(originOf(origin), permission, incognito);
     return stored === 'granted';
   }
 
-  getStoredPermission(origin, permission) {
+  getStoredPermission(origin, permission, incognito = false) {
     const all = this.settings.get('sitePermissions') || {};
-    return all[origin] && all[origin][permission];
+    const saved = all[origin] && all[origin][permission];
+    if (!incognito) return saved;
+    // Private tabs: their own answers; from normal browsing only a block carries over (as in Chrome), never an allow.
+    const own = this.privatePermissions[origin] && this.privatePermissions[origin][permission];
+    return own || (saved === 'denied' ? 'denied' : undefined);
   }
 
-  setPermission(origin, permission, value) {
+  setPermission(origin, permission, value, incognito = false) {
+    if (incognito) { this.privatePermissions[origin] = { ...(this.privatePermissions[origin] || {}), [permission]: value }; return; }
     const all = { ...(this.settings.get('sitePermissions') || {}) };
     all[origin] = { ...(all[origin] || {}), [permission]: value };
     this.settings.set({ sitePermissions: all });

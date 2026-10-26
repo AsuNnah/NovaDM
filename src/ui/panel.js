@@ -319,7 +319,8 @@ function renderDownloads() {
   const all = el('a', null, 'Show all downloads'); all.onclick = () => { api.call('downloads.openPageTab'); close(); };
   hdr.append(all);
   content.append(hdr);
-  const list = dlData.list || [];
+  // A private window lists its own downloads only.
+  const list = (dlData.list || []).filter((d) => d.incognito || !document.documentElement.classList.contains('private'));
   if (!list.length) { content.append(el('div', 'empty', 'No downloads yet.')); }
   for (const d of list) content.append(dlRow(d));
   const foot = el('div', 'foot');
