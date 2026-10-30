@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { pathToFileURL } = require('url');
-const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, dialog, session: electronSession, nativeTheme, safeStorage, screen, webContents } = require('electron');
+const { app, BaseWindow, WebContentsView, shell, ipcMain, protocol, dialog, session: electronSession, nativeTheme, screen, webContents } = require('electron');
 const { Settings } = require('./settings');
 const { AdBlocker } = require('./adblock');
 const { PopupGuard } = require('./popup');
@@ -13,7 +13,7 @@ const { guardFor } = require('./netguard');
 const { AddFlow, specFromUrl } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
-const { applyProxy, proxyCredentials, encryptPassword } = require('./proxy');
+const { applyProxy, proxyCredentials, encryptPassword, primeCredentials, decryptedPassword } = require('./proxy');
 const { Scheduler } = require('./scheduler');
 const { Background } = require('./background');
 const { FFmpeg } = require('./ffmpeg');
@@ -500,13 +500,11 @@ function onPageDownload(event, item, info) {
   downloads.addNative(item, info);
 }
 
-// Sign-in for a site from the per-site settings (password decrypted only here, when needed).
+// Sign-in for a site from the per-site settings (the password from proxy.js's decrypted cache).
 function siteCredentials(host) {
   const s = siteSettingsFor(settings.get('siteSettings'), 'https://' + host);
   if (!s || !s.user) return null;
-  let pass = '';
-  try { if (s.passEnc) pass = safeStorage.decryptString(Buffer.from(s.passEnc, 'base64')); } catch {}
-  return { user: s.user, pass };
+  return { user: s.user, pass: decryptedPassword(s.passEnc) };
 }
 
 // Theme (system / dark / light) for NovaDM and the pages it shows, and the accent colour of its own UI.
@@ -904,8 +902,10 @@ app.whenReady().then(async () => {
     browser.setWebRTCPolicy(via.trim().toUpperCase() === 'DIRECT' ? 'default_public_interface_only' : 'disable_non_proxied_udp');
   };
   applyProxy(settings, proxySessions()).then(proxyWebRTC);
+  primeCredentials(settings).catch(() => {});
   settings.on('change', (c) => {
     if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => { transport.close(); return proxyWebRTC(); });
+    if ('proxyPassEnc' in c || 'siteSettings' in c) primeCredentials(settings).catch(() => {});
   });
   net.setProxyCredentials(() => proxyCredentials(settings));
   net.setSiteCredentials((host) => siteCredentials(host));
@@ -1055,8 +1055,9 @@ app.whenReady().then(async () => {
     if (op === 'sitePassword') {
       // { site, password }: stored encrypted on that site's entry.
       try {
-        const enc = arg && arg.password ? encryptPassword(String(arg.password)) : '';
+        const enc = arg && arg.password ? await encryptPassword(String(arg.password)) : '';
         settings.set({ siteSettings: (settings.get('siteSettings') || []).map((s) => (String(s.site).toLowerCase() === String(arg.site).toLowerCase() ? { ...s, passEnc: enc } : s)) });
+        await primeCredentials(settings); // usable before the page's next request, not a moment later
       } catch (e) { return { ok: false, error: e.message }; }
     }
     if (op === 'chooseProgram') {
@@ -1068,7 +1069,7 @@ app.whenReady().then(async () => {
       return { folder: r.canceled ? '' : r.filePaths[0] || '' };
     }
     if (op === 'proxyPassword') {
-      try { settings.set({ proxyPassEnc: encryptPassword(String(arg || '')) }); } catch (e) { return { ok: false, error: e.message }; }
+      try { settings.set({ proxyPassEnc: await encryptPassword(String(arg || '')) }); await primeCredentials(settings); } catch (e) { return { ok: false, error: e.message }; }
     }
     if (op === 'chooseDir') {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });

@@ -90,7 +90,10 @@ module.exports = async ({ app, browser, downloads, settings, ipc, chromeView, ap
     result.rule = { folder: rd ? path.dirname(rd.savePath) === ruleDir : false, category: rd && rd.category };
 
     // 5. Per-site settings: browser name, one connection, and a sign-in
-    settings.set({ connections: 8, siteSettings: [{ site: '127.0.0.1', connections: 1, userAgent: 'NovaDM-Test-Agent', speedLimitKBps: 0, user: 'me', passEnc: require('../src/main/proxy').encryptPassword('pa55') }] });
+    const proxy = require('../src/main/proxy');
+    settings.set({ connections: 8, siteSettings: [{ site: '127.0.0.1', connections: 1, userAgent: 'NovaDM-Test-Agent', speedLimitKBps: 0, user: 'me', passEnc: await proxy.encryptPassword('pa55') }] });
+    await proxy.primeCredentials(settings); // 1.7.10: decrypting is asynchronous; the sign-in reads the primed cache
+    result.passwordRoundTrip = proxy.decryptedPassword(settings.get('siteSettings')[0].passEnc) === 'pa55' && !JSON.stringify(settings.get('siteSettings')).includes('pa55');
     downloads.add({ kind: 'http', url: base + '/site.bin', name: 'site.bin' });
     downloads.add({ kind: 'http', url: base + '/secure.bin', name: 'secure.bin' });
     const sd = await doneByName('site.bin');
