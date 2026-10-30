@@ -36,22 +36,29 @@ async function applyProxy(settings, sessions) {
   return cfg;
 }
 
-function encryptPassword(pw) {
+async function encryptPassword(pw) {
   if (!pw) return '';
-  if (!safeStorage.isEncryptionAvailable()) throw new Error('Windows could not protect the password');
-  return safeStorage.encryptString(String(pw)).toString('base64');
+  if (!(await safeStorage.isAsyncEncryptionAvailable())) throw new Error('Windows could not protect the password');
+  return (await safeStorage.encryptStringAsync(String(pw))).toString('base64');
 }
+
+// Decrypted passwords by their encrypted form. Decrypting is asynchronous since Electron 45 (the synchronous
+// calls go in 46), but the places that need a password (a proxy or site sign-in, the direct transport) are
+// synchronous, so they read this cache; primeCredentials fills it at start and whenever those settings change.
+const plain = new Map();
+async function primeCredentials(settings) {
+  const encs = [settings.get('proxyPassEnc'), ...(settings.get('siteSettings') || []).map((s) => s && s.passEnc)].filter((e) => e && !plain.has(e));
+  await Promise.all(encs.map(async (enc) => {
+    try { plain.set(enc, (await safeStorage.decryptStringAsync(Buffer.from(enc, 'base64'))).result); } catch {} // left out: tried again on the next change
+  }));
+}
+function decryptedPassword(enc) { return (enc && plain.get(enc)) || ''; }
 
 /** { user, pass } for the configured proxy, or null. */
 function proxyCredentials(settings) {
   const user = settings.get('proxyUser');
   if (!user || settings.get('proxyMode') === 'none') return null;
-  let pass = '';
-  try {
-    const enc = settings.get('proxyPassEnc');
-    if (enc) pass = safeStorage.decryptString(Buffer.from(enc, 'base64'));
-  } catch {}
-  return { user, pass };
+  return { user, pass: decryptedPassword(settings.get('proxyPassEnc')) };
 }
 
-module.exports = { proxyConfig, applyProxy, encryptPassword, proxyCredentials, TYPES };
+module.exports = { proxyConfig, applyProxy, encryptPassword, primeCredentials, decryptedPassword, proxyCredentials, TYPES };

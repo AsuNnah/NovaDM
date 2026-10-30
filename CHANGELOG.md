@@ -6,6 +6,19 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.10] — 2026-10-30
+
+Electron 45.1.0, and passwords stored the way Electron 46 will require.
+
+### Changed
+- **Electron 45.0.0 → 45.1.0** (Chromium 156.0.8078.49). Fixes NovaDM benefits from: extension requests no longer stall on a
+  blocking `webRequest` listener, extension events reach their background workers, clearing a site's data no longer
+  unregisters extension workers, and malformed `app.asar` files are handled safely.
+- **Proxy and site passwords use Electron's new asynchronous encryption.** Electron 45 deprecates the synchronous
+  `safeStorage` calls NovaDM used and removes them in Electron 46. Saved passwords stay readable (nothing to re-enter);
+  decrypted passwords are kept in memory while NovaDM runs, as before, now filled in once at start and whenever the
+  setting changes.
+
 ## [1.7.9] — 2026-10-26
 
 Private windows keep normal browsing out of them.
