@@ -75,7 +75,8 @@ function registerIpc(ctx) {
 
     // ---- tabs / navigation ----
     'tabs.list': () => { const b = getManagers().browser; return { tabs: b.order.map((id) => b.serializeTab(b.tabs.get(id))).filter(Boolean), activeId: b.activeId }; },
-    'tabs.new': (a = {}) => { const b = getManagers().browser; return a.incognito ? b.createTab({ url: a.url, incognito: true }) : b.openPage(a.url); },
+    // From a private window's toolbar (the + button, Alt+Enter) the call runs in that window's context: a private tab.
+    'tabs.new': (a = {}) => { const b = getManagers().browser; return a.incognito || b.cur === 'private' ? b.createTab({ url: a.url, incognito: true }) : b.openPage(a.url); },
     'tabs.select': (a) => getManagers().browser.selectTab(a.id),
     'tabs.close': (a) => getManagers().browser.closeTab(a.id),
     'nav.go': (a) => getManagers().browser.navigate(a.tabId, a.input),

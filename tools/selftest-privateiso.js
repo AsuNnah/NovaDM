@@ -116,6 +116,13 @@ module.exports = async ({ app, browser, ipc, browsing, downloads, adblock, setti
     c.reopenFromPrivateIsNull = browser.reopenClosed(true) === null && browser.closed.length === closedBefore;
     c.reopenFromNormalStillWorks = browser.inGroup('normal', () => browser.reopenClosed(false)) != null && browser.groups.normal.order.length === normalTabs + 1;
 
+    // 4b. The + button of the private window (tabs.new with no arguments, in that window's context): a private tab.
+    const privTabs = browser.groups.private.order.length; const normTabs2 = browser.groups.normal.order.length;
+    const plus = browser.inGroup('private', () => ipc['tabs.new']({}));
+    const plusTab = browser.tabs.get(plus);
+    c.plusInPrivateOpensPrivateTab = !!plusTab && plusTab.incognito === true && browser.groups.private.order.length === privTabs + 1 && browser.groups.normal.order.length === normTabs2;
+    browser.closeTab(plus);
+
     // 5. Permissions. The normal "allow" is not used in a private tab (it asks); the normal block still applies.
     c.privateIgnoresNormalAllow = browser.checkPermission(origin, 'notifications', true) === false && browser.checkPermission(origin, 'notifications', false) === true;
     c.privateKeepsNormalBlock = browser.getStoredPermission(origin, 'geolocation', true) === 'denied';
