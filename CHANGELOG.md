@@ -6,6 +6,12 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.11] — 2026-11-01
+
+### Fixed
+- **The + button in a private window opened a normal tab** (in the normal window), as did Alt+Enter in its address
+  bar. Both now open a private tab in the private window. Ctrl+T was already right.
+
 ## [1.7.10] — 2026-10-30
 
 Electron 45.1.0, and passwords stored the way Electron 46 will require.
