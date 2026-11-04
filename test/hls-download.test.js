@@ -163,7 +163,7 @@ function slowServer(routes, delayMs, counts) {
   });
 }
 
-test('pause keeps progress and a new engine resumes from the last written segment', async () => {
+test('pause keeps progress and a new engine resumes from the last written segment', async (t) => {
   const N = 14;
   const routes = {};
   let playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:1\n';
@@ -171,6 +171,7 @@ test('pause keeps progress and a new engine resumes from the last written segmen
   playlist += '#EXT-X-ENDLIST\n';
   const counts = {};
   const server = slowServer(routes, 40, counts);
+  t.after(() => server.close());
   const base = await listen(server);
   const save = tmp();
   const opts = {
@@ -179,7 +180,9 @@ test('pause keeps progress and a new engine resumes from the last written segmen
   };
   const dl = new HlsDownload({ id: 'p1', ...opts });
   dl.start();
-  await new Promise((r) => dl.on('progress', (p) => { if (p.doneSegments >= 6 && dl.state === 'downloading') r(); }));
+  // Watch the engine itself: progress events are throttled to one per 300 ms and can skip this moment.
+  await new Promise((r) => { const iv = setInterval(() => { if (dl.doneSegments >= 6 || dl.state === 'done' || dl.state === 'error') { clearInterval(iv); r(); } }, 5); });
+  assert.equal(dl.state, 'downloading', 'still downloading when paused');
   await dl.pause();
   const doneAtPause = dl.doneSegments;
   assert.equal(dl.state, 'paused');
@@ -194,7 +197,6 @@ test('pause keeps progress and a new engine resumes from the last written segmen
   for (let i = 0; i < N; i++) assert.equal(out[i * 4096], i, `block ${i} out of order`);
   for (let i = 0; i < doneAtPause; i++) assert.ok(!counts[`/r${i}.bin`], `segment ${i} was downloaded again`);
   assert.ok(!fs.existsSync(save + '.part.meta'), 'meta removed when finished');
-  server.close();
 });
 
 test('TS stream converted with a pause in the middle stays one valid MP4', async () => {

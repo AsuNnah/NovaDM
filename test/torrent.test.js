@@ -3,6 +3,9 @@ const test = require('node:test');
 const assert = require('node:assert');
 const http = require('http');
 const crypto = require('crypto');
+const path = require('path');
+// The download folder in the form the system uses: a drive path on Windows, where the app runs.
+const DL = process.platform === 'win32' ? 'D:\\dl' : '/dl';
 const { encode, decode, torrentInfo, parseMagnet } = require('../src/main/torrent/bencode');
 const { Aria2, parseTrackers } = require('../src/main/torrent/aria2');
 const { TorrentDownload } = require('../src/main/download/torrent-dl');
@@ -45,7 +48,7 @@ function mockAria2(t, { seedPolls = 2 } = {}) {
     gid: d.gid, status: d.status, totalLength: String(d.total), completedLength: String(d.done), uploadLength: String(d.up),
     downloadSpeed: d.status === 'active' && d.done < d.total ? '500000' : '0', uploadSpeed: d.seeder ? '20000' : '0',
     connections: '7', numSeeders: '3', seeder: d.seeder ? 'true' : 'false', infoHash: 'c12fe1c06bba254a9dc9f519b335aa7c1367a88a',
-    followedBy: d.followedBy, bittorrent: d.meta ? undefined : { info: { name: d.name } }, dir: 'D:\\dl',
+    followedBy: d.followedBy, bittorrent: d.meta ? undefined : { info: { name: d.name } }, dir: DL,
   });
   const server = http.createServer((req, res) => {
     let body = '';
@@ -86,8 +89,8 @@ function mockAria2(t, { seedPolls = 2 } = {}) {
           return reply(status(d));
         }
         case 'getFiles': return reply([
-          { index: '1', path: 'D:\\dl\\Holiday photos\\a.jpg', length: '1000', completedLength: '0', selected: 'true' },
-          { index: '2', path: 'D:\\dl\\Holiday photos\\sub\\b.mp4', length: '2500', completedLength: '0', selected: 'true' },
+          { index: '1', path: path.join(DL, 'Holiday photos', 'a.jpg'), length: '1000', completedLength: '0', selected: 'true' },
+          { index: '2', path: path.join(DL, 'Holiday photos', 'sub', 'b.mp4'), length: '2500', completedLength: '0', selected: 'true' },
         ]);
         case 'changeOption': d.select = p[1]['select-file']; d.total = d.select === '2' ? 2500 : d.total; return reply('OK');
         case 'unpause': d.status = 'active'; return reply(p[0]);
@@ -110,7 +113,7 @@ test('a magnet link: torrent info, the user picks files, download, seeding until
   const aria2 = ariaFor(port);
   assert.equal((await aria2.status()).version, '1.37.0');
   let offered = null;
-  const td = new TorrentDownload({ id: 'm', aria2, magnet: 'magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a', dir: 'D:\\dl', pollMs: 20,
+  const td = new TorrentDownload({ id: 'm', aria2, magnet: 'magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a', dir: DL, pollMs: 20,
     askFiles: async (files) => { offered = files; return '2'; } });
   const gids = [];
   let renamed = '';
@@ -132,18 +135,18 @@ test('a magnet link: torrent info, the user picks files, download, seeding until
 test('a .torrent with files already chosen starts right away; cancel and errors', async (t) => {
   const { port, calls } = await mockAria2(t);
   const aria2 = ariaFor(port);
-  const td = new TorrentDownload({ id: 't', aria2, torrent: makeTorrent(false).buf.toString('base64'), dir: 'D:\\dl', selectFiles: '1', pollMs: 20 });
+  const td = new TorrentDownload({ id: 't', aria2, torrent: makeTorrent(false).buf.toString('base64'), dir: DL, selectFiles: '1', pollMs: 20 });
   await runToDone(td);
   const add = calls.find(([m]) => m === 'addTorrent');
   assert.equal(add[1][2].pause, undefined, 'not paused');
   assert.equal(add[1][2]['select-file'], '1');
 
-  const cancelled = new TorrentDownload({ id: 'c', aria2, magnet: 'magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a', dir: 'D:\\dl', pollMs: 20, askFiles: async () => null });
+  const cancelled = new TorrentDownload({ id: 'c', aria2, magnet: 'magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a', dir: DL, pollMs: 20, askFiles: async () => null });
   const err = await new Promise((r) => { cancelled.on('error', r); cancelled.on('done', () => r(null)); cancelled.start(); });
   assert.equal(err.code, 'CANCELLED');
   assert.ok(calls.some(([m]) => m === 'forceRemove'));
 
-  const broken = new TorrentDownload({ id: 'b', aria2, magnet: 'magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a&dn=broken', dir: 'D:\\dl', pollMs: 20 });
+  const broken = new TorrentDownload({ id: 'b', aria2, magnet: 'magnet:?xt=urn:btih:c12fe1c06bba254a9dc9f519b335aa7c1367a88a&dn=broken', dir: DL, pollMs: 20 });
   const e2 = await new Promise((r) => { broken.on('error', r); broken.on('done', () => r(null)); broken.start(); });
   assert.match(e2.message, /Resource not found/);
 

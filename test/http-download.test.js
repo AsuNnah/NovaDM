@@ -179,12 +179,15 @@ test('if the file changed on the server, resume starts over instead of mixing ve
 
 test('after a crash, resume continues from the last checkpoint', async (t) => {
   const st = { body: crypto.randomBytes(4 * 1024 * 1024) };
-  const server = makeServer(st, { throttleMs: 10 }); t.after(() => server.close()); const url = await listen(server);
+  const server = makeServer(st, { throttleMs: 30 }); t.after(() => server.close()); const url = await listen(server);
   const save = tmp();
   const dl = new HttpDownload(base({ savePath: save, url: url + '/f.mp4', connections: 3, checkpointMs: 300 }));
   dl.start();
-  await new Promise((r) => dl.on('progress', (p) => { if (p.received > st.body.length * 0.5 && dl.state === 'downloading') r(); }));
-  await new Promise((r) => setTimeout(r, 400)); // let at least one checkpoint happen
+  // Crash right after the first checkpoint saved progress, while most of the file is still to come
+  // (a fixed wait could land after the download finished on a fast machine).
+  const checkpointed = () => { try { return JSON.parse(fs.readFileSync(save + '.part.meta', 'utf8')).segments.some((x) => x.done > 0); } catch { return false; } };
+  await new Promise((r) => { const iv = setInterval(() => { if (checkpointed() || dl.state === 'done' || dl.state === 'error') { clearInterval(iv); r(); } }, 10); });
+  assert.equal(dl.state, 'downloading', 'crash happens mid-download');
   // Simulated crash: stop everything without writing caches or saving progress.
   dl._stopping = true;
   for (const c of dl.conns) if (c.abort) c.abort();
