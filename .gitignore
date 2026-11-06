@@ -22,3 +22,25 @@ graphify-out/
 
 # Design notes, plans and pipeline docs: kept on this PC only, not published
 docs/
+
+# Machine migration (local only)
+MIGRATION.md
+tools/claude-state.sh
+inputs/
+*.tar.gz
+*.tar.gz.sha256
+
+# Groundwork framework, its state and Claude Code hooks: local only, like docs/
+groundwork/
+.groundwork/
+.claude/
+# groundwork (machine-specific / personal)
+.groundwork/host-profile.json
+.groundwork/env-report.json
+.groundwork/runs/*/logs/
+.groundwork/feedback/
+.groundwork/FEEDBACK.md
+.groundwork/backups/
+.groundwork/cache/
+# groundwork (machine-specific / personal)
+.groundwork/reuse/
