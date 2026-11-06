@@ -6,6 +6,32 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.7.12] — 2026-11-06
+
+Known-bug fixes: private tabs keep to their own session, and fewer traces are left behind.
+
+### Fixed
+- **Private tabs: video playlists, grabber downloads and grabber previews used the normal session.** NovaDM's own
+  request for a stream playlist, the content grabber's thumbnails and the files it downloads were sent with the cookies
+  of normal browsing, and grabber downloads from a private tab were saved in the downloads list. They now use the
+  private window's session, and those downloads leave no entry behind, like other private downloads.
+- **Certificate exceptions made in a private window** ("Proceed (unsafe)") were kept until NovaDM closed. They are now
+  forgotten when the private window closes, together with its open connections.
+- **Files unpacked from a downloaded archive had no Mark of the Web.** Each unpacked file now gets the archive's mark,
+  so Windows SmartScreen and Office Protected View check them too.
+- **Finished downloads kept their sign-in headers** (cookie, authorization, proxy authorization) in `downloads.json`,
+  also for joined video + audio downloads. They are no longer saved once a download is done; unfinished downloads keep
+  them so they can resume.
+- **"Download again" on a private download** started a normal download. It now stays private.
+- **Downloads page:** *Remove from list* with unfinished downloads ticked now says why those stay, instead of
+  skipping them silently.
+- **Settings text:** the update option now says that the installed version downloads a new release in the background
+  and installs it when NovaDM closes (the portable version only shows it).
+- The New download dialog's checksum hint now names SHA-512, which already worked.
+
+### Removed
+- The unused `hls.js` package (NovaDM reads playlists with its own code), so it no longer ships in the installer.
+
 ## [1.7.11] — 2026-11-01
 
 ### Fixed

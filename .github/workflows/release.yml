@@ -1,4 +1,4 @@
-# Stages 8–9 of docs/pipeline.md, by hand: a version tag (vX.Y.Z) pushed by a person runs the CI tests
+# Releasing by hand: a version tag (vX.Y.Z) pushed by a person runs the CI tests
 # again, builds the installer and the portable version, checks the build and drafts the GitHub release
 # (published by hand after review). Normal releases are made by auto-release.yml when a new version is
 # merged into main; its tag is pushed with the workflow token and does not start this workflow.

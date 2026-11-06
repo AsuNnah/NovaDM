@@ -1,4 +1,4 @@
-# Stages 4 and 6 of docs/pipeline.md on every push to main and every pull request. Also called by
+# Tests and security checks on every push to main and every pull request. Also called by
 # release.yml before a version is built.
 name: CI
 

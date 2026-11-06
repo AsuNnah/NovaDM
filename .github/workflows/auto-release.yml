@@ -1,4 +1,4 @@
-# Stages 8–9 of docs/pipeline.md, automatic: when a pull request that raises the version in package.json
+# Releasing, automatic: when a pull request that raises the version in package.json
 # is merged into main and every check passes, this builds the installer and the portable version,
 # verifies them, tags the version and publishes the GitHub release as the latest one.
 # Nothing is released when the version is already released (tag or release exists), is not newer than the

@@ -1,4 +1,4 @@
-# Stage 6 of docs/pipeline.md: free security scanners, no API keys and no cost. Their findings go to
+# Security: free security scanners, no API keys and no cost. Their findings go to
 # the Security tab (code scanning) next to CodeQL's. They don't block merging: the required checks
 # stay `test` and `analyze`; new findings are triaged like CodeQL alerts (fix, or dismiss with a reason).
 #  - Electronegativity: Electron misconfigurations (window options, isolation, IPC, navigation).
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 24
-      # Checks left out, after review (docs/security.md):
+      # Checks left out, after review:
       #  CSPGlobalCheck, CSPHTMLCheck: "review your CSP" notes; every UI page has a strict one in a meta tag
       #    (default-src 'none', script-src 'self'), the usual place for NovaDM's local pages.
       #  CustomArgumentsJSCheck: the Chromium switches are hardening on purpose (third-party cookies off, no JIT in Safer/Safest).
@@ -57,7 +57,7 @@ jobs:
       # Only the code that ships (src, the browser extension); tools/ and test/ are local test scripts.
       # regex_dos is left out: it flags every regex that sees outside text, also simple anchored ones;
       # CodeQL's ReDoS queries (security-extended) check real catastrophic backtracking.
-      # Other false positives are dismissed in GitHub with the reason (docs/security.md). In-code
+      # Other false positives are dismissed in GitHub with the reason. In-code
       # `nosemgrep` comments don't close alerts uploaded as SARIF, and editing a flagged line makes
       # CodeQL see a new alert there.
       - name: Semgrep

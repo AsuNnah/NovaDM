@@ -1,4 +1,4 @@
-# Stage 6 of docs/pipeline.md: AI penetration test (Strix, github.com/usestrix/strix) of NovaDM's
+# Security: AI penetration test (Strix, github.com/usestrix/strix) of NovaDM's
 # source. Only on demand (Actions → Strix → Run workflow): it is not part of releasing, because the free
 # AI quota often runs out mid-scan (HTTP 429). Each run uses AI model credits on the repository owner's account,
 # capped by max_budget_usd. Needs the repository secret LLM_API_KEY (an Anthropic API key); without
