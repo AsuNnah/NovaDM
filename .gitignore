@@ -42,3 +42,5 @@ groundwork/
 .groundwork/FEEDBACK.md
 .groundwork/backups/
 .groundwork/cache/
+# groundwork (machine-specific / personal)
+.groundwork/reuse/
