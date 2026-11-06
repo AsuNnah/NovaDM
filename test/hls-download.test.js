@@ -215,7 +215,8 @@ test('TS stream converted with a pause in the middle stays one valid MP4', async
   };
   const dl = new HlsDownload({ id: 'p2', ...opts });
   dl.start();
-  await new Promise((r) => dl.on('progress', (p) => { if (p.doneSegments >= 2 && dl.state === 'downloading') r(); }));
+  await new Promise((r) => { const iv = setInterval(() => { if (dl.doneSegments >= 2 || dl.state === 'done' || dl.state === 'error') { clearInterval(iv); r(); } }, 5); });
+  assert.equal(dl.state, 'downloading', 'still downloading when paused');
   await dl.pause();
   const dl2 = new HlsDownload({ id: 'p2', ...opts });
   await new Promise((res, rej) => { dl2.on('done', res); dl2.on('error', rej); dl2.start(); });
@@ -311,7 +312,9 @@ test('resume works after the playlist and key links have expired', async (t) => 
   const opts = { savePath: save, playlistUrl: base + '/p.m3u8', openConn: nodeOpen, convertTs: false, concurrency: 2 };
   const dl = new HlsDownload({ id: 'k1', ...opts, fetchText: async () => ({ text: playlist, finalUrl: base + '/p.m3u8' }) });
   dl.start();
-  await new Promise((r) => dl.on('progress', (p) => { if (p.doneSegments >= 4 && dl.state === 'downloading') r(); }));
+  // Watch the engine itself: progress events are throttled to one per 300 ms and can skip this moment.
+  await new Promise((r) => { const iv = setInterval(() => { if (dl.doneSegments >= 4 || dl.state === 'done' || dl.state === 'error') { clearInterval(iv); r(); } }, 5); });
+  assert.equal(dl.state, 'downloading', 'still downloading when paused');
   await dl.pause();
   assert.ok(fs.existsSync(save + '.part.m3u8'), 'playlist copy kept while unfinished');
 

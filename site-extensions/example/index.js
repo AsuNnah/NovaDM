@@ -1,4 +1,4 @@
-// Example NovaDM site extension. See docs/site-extensions.md.
+// Example NovaDM site extension (README.md, "Site extensions").
 // Called when a page on gallery.example.com has loaded. Return what can be downloaded.
 novadm.onResolve(async (page) => {
   // Pages like https://gallery.example.com/album/42 have a feed at /api/album/42.json

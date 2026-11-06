@@ -570,7 +570,7 @@ function grabVisible() {
 }
 
 function thumbUrl(it) {
-  return 'novadm-thumb://img/?u=' + encodeURIComponent(it.url) + '&r=' + encodeURIComponent(it.pageUrl || '');
+  return 'novadm-thumb://img/?u=' + encodeURIComponent(it.url) + '&r=' + encodeURIComponent(it.pageUrl || '') + (it.private ? '&p=1' : '');
 }
 
 function renderGrab() {
@@ -783,7 +783,7 @@ function showDownloadAsk(d) {
   const more = el('details', 'more');
   more.innerHTML = `<summary>More options</summary><div class="frm" style="padding:6px 0 0">
     <div class="k">Speed limit</div><div class="v"><input class="inp num" id="na-limit" type="number" min="0" step="100" value="0"><span style="color:var(--fg3);font-size:12px">KB/s for this download (0 = no limit)</span></div>
-    <div class="k">Checksum</div><div class="v"><input class="inp" id="na-hash" placeholder="Optional: MD5, SHA-1 or SHA-256 to check" spellcheck="false"></div></div>`;
+    <div class="k">Checksum</div><div class="v"><input class="inp" id="na-hash" placeholder="Optional: MD5, SHA-1, SHA-256 or SHA-512 to check" spellcheck="false"></div></div>`;
   content.append(more);
 
   if (d.duplicate) {

@@ -703,6 +703,11 @@ class Browser extends EventEmitter {
     this.certAllowed.add(`${key}|${fp}`);
     return true;
   }
+  /** The private window closed: its "Proceed (unsafe)" answers go with it. */
+  forgetPrivateCerts() {
+    for (const k of [...this.certSeen.keys()]) if (k.startsWith('p|')) this.certSeen.delete(k);
+    for (const k of [...this.certAllowed]) if (k.startsWith('p|')) this.certAllowed.delete(k);
+  }
   certBypassed(tab, url) {
     const key = certKey(tab.incognito, url);
     return !!key && [...this.certAllowed].some((x) => x.startsWith(key + '|'));

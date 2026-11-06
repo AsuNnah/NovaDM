@@ -1,4 +1,4 @@
-# Stage 6 of docs/pipeline.md: static security analysis of NovaDM's own JavaScript.
+# Security: static security analysis of NovaDM's own JavaScript.
 name: CodeQL
 
 on:

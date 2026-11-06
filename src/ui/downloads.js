@@ -473,7 +473,17 @@ $('q').addEventListener('input', () => { state.q = $('q').value; renderAll(); })
 const sel = () => items.filter((d) => selected.has(d.id));
 $('bResume').onclick = () => sel().forEach((d) => d.state !== 'done' && api.call('downloads.resume', { id: d.id }));
 $('bPause').onclick = () => sel().forEach((d) => api.call('downloads.pause', { id: d.id }));
-$('bRemove').onclick = () => { sel().forEach((d) => (d.state === 'done' ? api.call('downloads.remove', { id: d.id }) : null)); selected.clear(); renderAll(); };
+// Only finished downloads leave the list; unfinished ones stay ticked, and the user is told why.
+$('bRemove').onclick = () => {
+  const s = sel();
+  const left = s.filter((d) => d.state !== 'done');
+  for (const d of s) if (d.state === 'done') { api.call('downloads.remove', { id: d.id }); selected.delete(d.id); }
+  renderAll();
+  if (left.length) {
+    showInfo(left.length === 1 ? '1 download isn\'t finished' : `${left.length} downloads aren't finished`,
+      `Only finished downloads can be removed from the list. To remove ${left.length === 1 ? 'this one' : 'these'}, use Delete files: it stops the download and deletes the partly downloaded data.`);
+  }
+};
 $('bDelete').onclick = () => { const s = sel(); if (s.length) confirmDelete(s); };
 $('bNone').onclick = () => { selected.clear(); renderAll(); };
 

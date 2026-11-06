@@ -26,7 +26,7 @@ run must stay on localhost inside your sandbox.
 
 - `tools/` and `test/`: local test scripts and test servers, never shipped.
 - `node_modules/`, `dist/`, Electron and Chromium themselves.
-- Known and accepted (see `docs/security.md`, "Limits"): malware already running as the Windows user;
+- Known and accepted: malware already running as the Windows user;
   downloading `http://` links the user chose; no Google Safe Browsing.
 
 Report only findings you validated, with the file, the attack path from a web page, a server

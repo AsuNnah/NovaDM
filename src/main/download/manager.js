@@ -71,7 +71,7 @@ class DownloadManager extends EventEmitter {
     // Downloads from private tabs leave no trace in the saved list (the file itself stays).
     this.store.data.items = [...this.records.values()].filter((r) => !r.incognito).map((r) => ({
       id: r.id, kind: r.kind, name: r.name, savePath: r.savePath, sources: r.sources,
-      playlistUrl: r.playlistUrl, mirrors: r.mirrors, headers: r.headers, pageUrl: r.pageUrl,
+      playlistUrl: r.playlistUrl, mirrors: r.mirrors, headers: headersToSave(r), pageUrl: r.pageUrl,
       category: r.category, state: r.state, size: r.size, received: r.received,
       convertTs: r.convertTs, addedAt: r.addedAt, completedAt: r.completedAt, error: r.error,
       allowRename: r.allowRename, resumable: r.resumable, segments: r.segments, doneSegments: r.doneSegments,
@@ -82,7 +82,7 @@ class DownloadManager extends EventEmitter {
       separateAudio: !!r.separateAudio, reresolve: !!r.reresolve, live: !!r.live, recordedSeconds: r.recordedSeconds || 0,
       from: r.from || '',
       magnet: r.magnet || '', torrentData: r.torrentData || '', gid: r.gid || '', selectFiles: r.selectFiles || '', infoHash: r.infoHash || '',
-      btFiles: r.btFiles || null, uploaded: r.uploaded || 0, mergeSource: r.mergeSource || null,
+      btFiles: r.btFiles || null, uploaded: r.uploaded || 0, mergeSource: mergeSourceToSave(r),
       extract: r.extract === 'extracting' ? '' : r.extract || '', extractedTo: r.extractedTo || '',
     }));
     this.store.save();
@@ -570,7 +570,7 @@ class DownloadManager extends EventEmitter {
       mirrors: r.mirrors, headers: r.headers, pageUrl: r.pageUrl, category: r.category,
       convertTs: r.convertTs, meta: r.meta, allowRename: false, size: r.kind === 'hls' || r.kind === 'dash' ? r.size : -1,
       separateAudio: r.separateAudio, magnet: r.magnet, torrentData: r.torrentData, selectFiles: r.selectFiles, infoHash: r.infoHash,
-      mergeSource: r.mergeSource,
+      mergeSource: r.mergeSource, incognito: r.incognito,
     });
   }
 
@@ -584,10 +584,8 @@ class DownloadManager extends EventEmitter {
   // Mark of the Web, then (for programs and archives by default) a Microsoft Defender scan.
   async postProcess(rec) {
     await this.optimizeVideo(rec); // first: the mark and the scan apply to the final file
-    if (this.settings.get('markOfTheWeb') !== false && !rec.native) {
-      const from = rec.kind === 'merge' ? (rec.mergeSource && rec.mergeSource.tracks[0] && rec.mergeSource.tracks[0].url) : rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0];
-      post.markOfTheWeb(rec.savePath, { url: from || '', referrer: rec.pageUrl, incognito: rec.incognito });
-    }
+    const mark = this.motw(rec);
+    if (mark) post.markOfTheWeb(rec.savePath, mark);
     if (post.wantsScan(this.settings.get('scanDownloads'), rec.category)) {
       rec.scan = 'scanning'; this.emitRecord(rec);
       const r = await this.scanFile(rec.savePath);
@@ -597,6 +595,13 @@ class DownloadManager extends EventEmitter {
     }
     // Unpack archives (never one Defender reported).
     if (this.settings.get('extractArchives') && rec.scan !== 'threat' && post.isArchive(rec.savePath)) await this.extract(rec.id);
+  }
+
+  /** What the Mark of the Web records for this download, or null when it gets none. */
+  motw(rec) {
+    if (this.settings.get('markOfTheWeb') === false || rec.native) return null;
+    const from = rec.kind === 'merge' ? (rec.mergeSource && rec.mergeSource.tracks[0] && rec.mergeSource.tracks[0].url) : rec.kind === 'hls' || rec.kind === 'dash' ? rec.playlistUrl : rec.sources[0];
+    return { url: from || '', referrer: rec.pageUrl, incognito: rec.incognito };
   }
 
   /**
@@ -624,6 +629,8 @@ class DownloadManager extends EventEmitter {
     rec.extract = r.ok ? 'done' : 'error';
     rec.extractedTo = r.folder || '';
     rec.extractError = r.error || '';
+    const mark = r.ok && this.motw(rec);
+    if (mark) post.markTree(r.folder, mark);
     if (r.ok && this.settings.get('deleteAfterExtract')) { try { fs.rmSync(rec.savePath, { force: true }); rec.archiveDeleted = true; } catch {} }
     this.persist(); this.emitRecord(rec);
     return r;
@@ -842,4 +849,15 @@ class DownloadManager extends EventEmitter {
   }
 }
 
-module.exports = { DownloadManager };
+// A finished download needs no sign-in any more: its cookie and authorization headers aren't written to downloads.json.
+const SIGN_IN = /^(cookie|authorization|proxy-authorization)$/i;
+const withoutSignIn = (h) => h && Object.fromEntries(Object.entries(h).filter(([k]) => !SIGN_IN.test(k)));
+function headersToSave(r) { return r.state === 'done' ? withoutSignIn(r.headers) : r.headers; }
+// The same for the tracks of a joined video + audio download.
+function mergeSourceToSave(r) {
+  const m = r.mergeSource;
+  if (!m || r.state !== 'done') return m || null;
+  return { ...m, tracks: (m.tracks || []).map((t) => ({ ...t, headers: withoutSignIn(t.headers) })) };
+}
+
+module.exports = { DownloadManager, headersToSave, mergeSourceToSave };

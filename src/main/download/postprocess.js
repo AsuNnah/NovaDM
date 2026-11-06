@@ -27,6 +27,19 @@ function markOfTheWeb(file, { url = '', referrer = '', incognito = false } = {})
   }
 }
 
+/** Every file under dir gets the mark (files unpacked from a downloaded archive, as Windows Explorer does). */
+function markTree(dir, opts) {
+  let n = 0;
+  let entries = [];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return 0; }
+  for (const e of entries) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) n += markTree(p, opts);
+    else if (e.isFile() && markOfTheWeb(p, opts)) n++;
+  }
+  return n;
+}
+
 function readMarkOfTheWeb(file) {
   try { return fs.readFileSync(file + ':Zone.Identifier', 'utf8'); } catch { return ''; }
 }
@@ -146,7 +159,6 @@ function isFragmentedMp4(file) {
  * Rewrite a fragmented MP4 as a normal one with its index first (FFmpeg -c copy -movflags +faststart;
  * nothing is re-encoded). The original is replaced only when FFmpeg succeeded and the result is
  * about as big; otherwise it stays as it is. { ok, size } or { ok: false, error }.
- * shortcut: if NovaDM closes during the rewrite, "<name>.faststart.part" is left next to the video.
  */
 async function makeFaststart(file, ffmpeg, { retries = 10, waitMs = 1000 } = {}) {
   const tmp = file + '.faststart.part';
@@ -169,4 +181,4 @@ async function makeFaststart(file, ffmpeg, { retries = 10, waitMs = 1000 } = {})
   }
 }
 
-module.exports = { markOfTheWeb, readMarkOfTheWeb, findDefender, parseScanOutput, scanFile, wantsScan, isArchive, extractArchive, isFragmentedMp4, makeFaststart };
+module.exports = { markOfTheWeb, markTree, readMarkOfTheWeb, findDefender, parseScanOutput, scanFile, wantsScan, isArchive, extractArchive, isFragmentedMp4, makeFaststart };

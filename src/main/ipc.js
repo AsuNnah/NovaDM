@@ -317,19 +317,20 @@ function registerIpc(ctx) {
         let res;
         try { res = await grabber.scanTab(tab, { autoScroll: !!a.autoScroll }); } catch { continue; }
         if (tab.id === browser.activeId) title = res.title;
-        for (const it of res.items) if (!seen.has(it.url)) { seen.add(it.url); items.push(it); }
+        const priv = !!tab.incognito; // downloads and previews then use the private session
+        for (const it of res.items) if (!seen.has(it.url)) { seen.add(it.url); items.push({ ...it, private: priv }); }
         // Direct video/audio files the sniffer saw on this tab (streams stay in the media panel).
         for (const m of media.list(tab.id).items) {
           if ((m.kind === 'video' || m.kind === 'audio') && !seen.has(m.url)) {
             seen.add(m.url);
-            items.push({ url: m.url, kind: m.kind, name: m.name, alt: '', w: 0, h: 0, size: m.size, from: 'network', pageUrl: res.url, pageTitle: res.title, tabId: tab.id });
+            items.push({ url: m.url, kind: m.kind, name: m.name, alt: '', w: 0, h: 0, size: m.size, from: 'network', pageUrl: res.url, pageTitle: res.title, tabId: tab.id, private: priv });
           }
         }
       }
       return { title, items };
     },
     'grab.download': (a) => {
-      const { downloads } = getManagers();
+      const { downloads, browser } = getManagers();
       let n = 0;
       for (const it of a.items || []) {
         if (!/^https?:\/\//i.test(it.url || '')) continue;
@@ -338,6 +339,7 @@ function registerIpc(ctx) {
           headers: it.pageUrl ? { referer: it.pageUrl } : {}, pageUrl: it.pageUrl || '',
           category: GRAB_CATEGORY[it.kind] || 'other',
           subdir: a.subfolder ? (it.pageTitle || siteOf(it.pageUrl) || 'Page') : undefined,
+          incognito: !!it.private || !!(browser.tabs.get(it.tabId) || {}).incognito,
         });
         n++;
       }

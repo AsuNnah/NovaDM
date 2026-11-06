@@ -358,8 +358,10 @@ function closePrivateWindow() {
   useCtx(browser.normalWindow());
   privateStats.ads = privateStats.popups = 0;
   browser.privatePermissions = {}; // its "remember" answers go with it
+  browser.forgetPrivateCerts(); // and its certificate exceptions
   const ses = browser.incognitoSession;
-  Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache()]).catch(() => {});
+  // Open connections go too, so a site proceeded past isn't reached again over a kept-alive connection.
+  Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache(), ses.closeAllConnections()]).catch(() => {});
 }
 
 function wireEvents() {
@@ -821,7 +823,8 @@ app.whenReady().then(async () => {
       const tab = browser.tabs.get(opts.tabId);
       const guard = guardFor((tab && tab.url) || '');
       await guard(url);
-      const r = await net.fetchText(url, { session: browser.normalSession, headers: opts.headers, timeoutMs: 20000, guard });
+      const session = tab && tab.incognito ? browser.incognitoSession : browser.normalSession;
+      const r = await net.fetchText(url, { session, headers: opts.headers, timeoutMs: 20000, guard });
       return { text: r.text, finalUrl: r.finalUrl };
     },
   });
@@ -949,16 +952,17 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Grabber thumbnails: novadm-thumb://img/?u=<image url>&r=<page url>. Fetched through the browsing
-  // session with the page as Referer, so hotlink-protected images still preview. Only NovaDM's own UI
-  // views (default session) can load this scheme.
+  // Grabber thumbnails: novadm-thumb://img/?u=<image url>&r=<page url>[&p=1]. Fetched through the browsing
+  // session (the private one with p=1) with the page as Referer, so hotlink-protected images still preview.
+  // Only NovaDM's own UI views (default session) can load this scheme.
   protocol.handle('novadm-thumb', async (req) => {
     let target = '';
     let ref = '';
-    try { const u = new URL(req.url); target = u.searchParams.get('u') || ''; ref = u.searchParams.get('r') || ''; } catch {}
+    let priv = false;
+    try { const u = new URL(req.url); target = u.searchParams.get('u') || ''; ref = u.searchParams.get('r') || ''; priv = u.searchParams.get('p') === '1'; } catch {}
     if (!/^https?:\/\//i.test(target)) return new Response('', { status: 400 });
     try {
-      return await browser.normalSession.fetch(target, { headers: ref ? { 'x-novadm-referer': ref } : {} });
+      return await (priv ? browser.incognitoSession : browser.normalSession).fetch(target, { headers: ref ? { 'x-novadm-referer': ref } : {} });
     } catch {
       return new Response('', { status: 502 });
     }

@@ -212,6 +212,6 @@ NovaDM is free software: you can redistribute it and/or modify it under the term
 with no warranty.
 
 Libraries keep their own licenses: electron-chrome-extensions (GPL-3.0, the reason NovaDM is
-GPL), Ghostery adblocker (MPL-2.0), hls.js, mux.js and Mozilla Readability (Apache-2.0), undici
+GPL), Ghostery adblocker (MPL-2.0), mux.js and Mozilla Readability (Apache-2.0), undici
 and electron-chrome-web-store (MIT). Electron and Chromium's licenses ship with the app
 (`LICENSES.chromium.html`). The add-ons are separate programs under their own licenses.
