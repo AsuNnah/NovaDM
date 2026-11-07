@@ -205,9 +205,9 @@ Every feature and fix goes through the same pipeline: intake and sizing, brainst
 test, security test, release and maintenance, with automatic checks on GitHub (tests, dependency
 audit, CodeQL and free security scanners, build security checks, privacy check).
 
-NovaDM is built and tested with [Claude Code](https://claude.com/claude-code), Anthropic's AI coding
-agent: it is the engine that runs this pipeline, from the groundwork to each release, and every change
-is reviewed and merged by the maintainer.
+The pipeline follows the Groundwork framework, tested on [Claude Code](https://claude.com/claude-code),
+Anthropic's AI coding agent, which is the engine that runs it. The maintainer reviews and merges every
+change.
 
 ## License
 
