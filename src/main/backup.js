@@ -4,7 +4,7 @@
 // are not exported. Importing adds downloads that aren't in the list yet (finished ones stay
 // finished, unfinished ones come back paused) and applies the settings.
 
-const SECRET_SETTINGS = new Set(['proxyPassEnc', 'apiKey']);
+const SECRET_SETTINGS = new Set(['proxyPassEnc', 'apiKey', 'apiKeyEnc']);
 const { withoutSignIn } = require('./download/manager');
 // Paths of this PC, and what runs or is sent after each download: a backup someone else made must not set them.
 const MACHINE_SETTINGS = new Set(['ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl']);

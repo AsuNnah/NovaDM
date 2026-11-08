@@ -106,3 +106,31 @@ test('what yt-dlp found on private pages is forgotten when the private window cl
   active = tabs.n; await handlers['media.ytdlpFind']();
   assert.strictEqual(asked, 3); // the normal page's answer stays
 });
+
+test('the local API key is kept encrypted, an old plain key moves over, and the Settings page never gets it from settings', async () => {
+  const Module = require('module');
+  const proxyId = require.resolve('../src/main/proxy');
+  const apiId = require.resolve('../src/main/api');
+  const savedProxy = require.cache[proxyId];
+  const fake = new Module(proxyId); fake.loaded = true;
+  fake.exports = { encryptPassword: async (k) => 'enc:' + k, decryptPassword: async (e) => e.slice(4) };
+  require.cache[proxyId] = fake; delete require.cache[apiId];
+  try {
+    const { LocalApi } = require('../src/main/api');
+    const data = { apiKey: 'old-plain' };
+    const settings = { get: (k) => data[k], set: (p) => Object.assign(data, p) };
+    const api = new LocalApi({ settings });
+    assert.strictEqual(api.key(), ''); // nothing accepted before the key is loaded
+    assert.strictEqual(await api.loadKey(), 'old-plain');
+    assert.deepStrictEqual(data, { apiKey: '', apiKeyEnc: 'enc:old-plain' });
+    const again = new LocalApi({ settings });
+    assert.strictEqual(await again.loadKey(), 'old-plain'); // read back from the encrypted copy
+    const k = await again.newKey();
+    assert.strictEqual(data.apiKeyEnc, 'enc:' + k);
+    assert.strictEqual(again.authorized({ headers: { authorization: 'Bearer ' + k } }), true);
+    assert.strictEqual(new LocalApi({ settings }).authorized({ headers: {} }), false); // empty key, empty answer
+  } finally { if (savedProxy) require.cache[proxyId] = savedProxy; else delete require.cache[proxyId]; delete require.cache[apiId]; }
+  const { Settings } = require('../src/main/settings');
+  const all = Settings.prototype.all.call({ data: { apiKey: 'a', apiKeyEnc: 'b', proxyPassEnc: 'c', theme: 'dark' } });
+  assert.strictEqual('apiKey' in all || 'apiKeyEnc' in all || 'proxyPassEnc' in all, false);
+});

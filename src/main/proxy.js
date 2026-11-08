@@ -36,6 +36,8 @@ async function applyProxy(settings, sessions) {
   return cfg;
 }
 
+const decryptPassword = async (enc) => (await safeStorage.decryptStringAsync(Buffer.from(enc, 'base64'))).result;
+
 async function encryptPassword(pw) {
   if (!pw) return '';
   if (!(await safeStorage.isAsyncEncryptionAvailable())) throw new Error('Windows could not protect the password');
@@ -49,7 +51,7 @@ const plain = new Map();
 async function primeCredentials(settings) {
   const encs = [settings.get('proxyPassEnc'), ...(settings.get('siteSettings') || []).map((s) => s && s.passEnc)].filter((e) => e && !plain.has(e));
   await Promise.all(encs.map(async (enc) => {
-    try { plain.set(enc, (await safeStorage.decryptStringAsync(Buffer.from(enc, 'base64'))).result); } catch {} // left out: tried again on the next change
+    try { plain.set(enc, await decryptPassword(enc)); } catch {} // left out: tried again on the next change
   }));
 }
 function decryptedPassword(enc) { return (enc && plain.get(enc)) || ''; }
@@ -61,4 +63,4 @@ function proxyCredentials(settings) {
   return { user, pass: decryptedPassword(settings.get('proxyPassEnc')) };
 }
 
-module.exports = { proxyConfig, applyProxy, encryptPassword, primeCredentials, decryptedPassword, proxyCredentials, TYPES };
+module.exports = { proxyConfig, applyProxy, encryptPassword, decryptPassword, primeCredentials, decryptedPassword, proxyCredentials, TYPES };

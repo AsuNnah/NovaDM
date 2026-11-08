@@ -176,10 +176,10 @@ function registerIpc(ctx) {
       const { settings, getApiStatus } = getManagers();
       const st = getApiStatus();
       const extDir = app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension');
-      return { enabled: !!settings.get('apiEnabled'), running: !!st.running, port: st.port || settings.get('apiPort'), error: st.error || '', key: settings.get('apiEnabled') ? settings.get('apiKey') : '', extensionFolder: extDir };
+      return { enabled: !!settings.get('apiEnabled'), running: !!st.running, port: st.port || settings.get('apiPort'), error: st.error || '', key: settings.get('apiEnabled') ? getManagers().api.key() : '', extensionFolder: extDir };
     },
-    'integration.newKey': () => { getManagers().api.newKey(); return { ok: true }; },
-    'integration.copyKey': () => { copyText(getManagers().settings.get('apiKey') || ''); return { ok: true }; },
+    'integration.newKey': async () => { await getManagers().api.newKey(); return { ok: true }; },
+    'integration.copyKey': () => { copyText(getManagers().api.key()); return { ok: true }; },
     'integration.openExtensionFolder': () => {
       shell.openPath(app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension'));
     },

@@ -135,7 +135,7 @@ module.exports = async ({ app, browser, downloads, settings, ipc, chromeView, ap
     const port = api.port;
     const mcp = await new Promise((resolve) => {
       const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
-      const r = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/mcp', agent: false, headers: { 'content-type': 'application/json', authorization: `Bearer ${settings.get('apiKey')}` } }, (res) => {
+      const r = http.request({ host: '127.0.0.1', port, method: 'POST', path: '/mcp', agent: false, headers: { 'content-type': 'application/json', authorization: `Bearer ${api.key()}` } }, (res) => {
         let s = ''; res.on('data', (c) => { s += c; }); res.on('end', () => resolve(JSON.parse(s)));
       });
       r.end(body);

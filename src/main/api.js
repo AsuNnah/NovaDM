@@ -18,6 +18,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { specFromUrl } = require('./add-flow');
+const { encryptPassword, decryptPassword } = require('./proxy');
 
 const MAX_BODY = 1024 * 1024;
 const DEFAULT_PORT = 9614;
@@ -31,15 +32,28 @@ class LocalApi extends EventEmitter {
     this.port = 0;
   }
 
-  key() {
-    let k = this.settings.get('apiKey');
-    if (!k) { k = crypto.randomBytes(16).toString('hex'); this.settings.set({ apiKey: k }); }
-    return k;
+  /** The key, once loadKey() has run (requests are refused before that). */
+  key() { return this._key || ''; }
+
+  /** Loads the key, making one the first time. Kept encrypted by Windows (safeStorage); an older plain key moves over. */
+  async loadKey() {
+    if (this._key) return this._key;
+    const enc = this.settings.get('apiKeyEnc');
+    if (enc) { try { this._key = await decryptPassword(enc); } catch {} }
+    if (!this._key) await this.saveKey(this.settings.get('apiKey') || crypto.randomBytes(16).toString('hex'));
+    else if (this.settings.get('apiKey')) this.settings.set({ apiKey: '' });
+    return this._key;
   }
 
-  newKey() {
-    this.settings.set({ apiKey: crypto.randomBytes(16).toString('hex') });
-    return this.key();
+  async saveKey(k) {
+    this._key = k;
+    // shortcut: where Windows can't protect it (or outside Windows, in tests) it stays in plain text, as before 1.7.14.
+    try { this.settings.set({ apiKeyEnc: await encryptPassword(k), apiKey: '' }); } catch { this.settings.set({ apiKeyEnc: '', apiKey: k }); }
+  }
+
+  async newKey() {
+    await this.saveKey(crypto.randomBytes(16).toString('hex'));
+    return this._key;
   }
 
   /** Start or stop to match the settings. Resolves with { running, port, error }. */
@@ -50,7 +64,7 @@ class LocalApi extends EventEmitter {
     const port = setting === 0 ? 0 : Number(setting) || DEFAULT_PORT;
     if (this.server && (!want || (port !== 0 && port !== this.port))) await this.stop();
     if (want && !this.server) {
-      this.key();
+      await this.loadKey();
       try { await this.listen(port); } catch (e) { return { running: false, port, error: e.code === 'EADDRINUSE' ? `Port ${port} is used by another program` : e.message }; }
     }
     return { running: !!this.server, port: this.port };
@@ -123,7 +137,7 @@ class LocalApi extends EventEmitter {
   authorized(req) {
     const auth = String(req.headers.authorization || '');
     const given = auth.startsWith('Bearer ') ? auth.slice(7).trim() : String(req.headers['x-novadm-key'] || '');
-    return safeEqual(given, this.key());
+    return !!this.key() && safeEqual(given, this.key());
   }
 
   /** One JSON-RPC message. Notifications (no id) get no answer. */

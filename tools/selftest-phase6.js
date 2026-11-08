@@ -90,7 +90,7 @@ module.exports = async ({ app, browser, media, downloads, settings, ipc, overlay
     await sleep(600);
     const st = await ipc['integration.status']();
     const port = st.port;
-    const key = settings.get('apiKey');
+    const key = st.key;
     const ext = { authorization: `Bearer ${key}`, origin: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', host: `127.0.0.1:${port}` };
     const started = await call(port, 'POST', '/api/v1/downloads', { headers: ext, body: { url: base + '/files/api.bin', referer: base + '/page', cookies: 'from=chrome', start: true } });
     const asked = await call(port, 'POST', '/api/v1/downloads', { headers: ext, body: { url: base + '/files/link.bin' } });
