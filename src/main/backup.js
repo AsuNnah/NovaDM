@@ -5,7 +5,9 @@
 // finished, unfinished ones come back paused) and applies the settings.
 
 const SECRET_SETTINGS = new Set(['proxyPassEnc', 'apiKey']);
-const MACHINE_SETTINGS = new Set(['ffmpegPath', 'aria2Path', 'ytdlpPath']); // paths of this PC only
+const { withoutSignIn } = require('./download/manager');
+// Paths of this PC, and what runs or is sent after each download: a backup someone else made must not set them.
+const MACHINE_SETTINGS = new Set(['ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl']);
 
 function exportData({ settings, downloads, version, includeSettings = true, includeDownloads = true }) {
   const out = { app: 'NovaDM', format: 1, version, exportedAt: new Date().toISOString() };
@@ -27,12 +29,8 @@ function exportData({ settings, downloads, version, includeSettings = true, incl
   return out;
 }
 
-// Cookies belong to a sign-in on this PC: not carried in a backup file.
-function stripCookies(h) {
-  const out = {};
-  for (const [k, v] of Object.entries(h || {})) if (k.toLowerCase() !== 'cookie' && k.toLowerCase() !== 'authorization') out[k] = v;
-  return out;
-}
+// Sign-ins (cookies, authorization, proxy-authorization) belong to this PC: not carried in a backup file.
+const stripCookies = (h) => withoutSignIn(h) || {};
 
 /** Apply a backup. Returns { settings: n, added: n, skipped: n }. */
 function importData(data, { settings, downloads, applySettings = true, addDownloads = true }) {

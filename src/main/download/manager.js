@@ -649,7 +649,10 @@ class DownloadManager extends EventEmitter {
       magnet: d.magnet || '', torrentData: d.torrentData || '', selectFiles: d.selectFiles || '', mergeSource: d.mergeSource || null,
       expectedHash: d.expectedHash || '', verify: '', gid: '',
     };
-    if (!rec.savePath) rec.savePath = path.join(this.categoryDir(rec.category), util.sanitizeFilename(rec.name));
+    // A backup file names its own save paths: one outside the download folder could make Delete remove, or a resume
+    // overwrite, any file on the PC. Those are saved in the download folder under their name instead.
+    const rel = path.relative(this.settings.get('downloadDir'), rec.savePath);
+    if (!rec.savePath || !path.isAbsolute(rec.savePath) || !rel || rel.startsWith('..') || path.isAbsolute(rel)) rec.savePath = path.join(this.categoryDir(rec.category), util.sanitizeFilename(rec.name));
     this.records.set(id, rec);
     this.persist(); this.emitList();
     return rec;
@@ -860,4 +863,4 @@ function mergeSourceToSave(r) {
   return { ...m, tracks: (m.tracks || []).map((t) => ({ ...t, headers: withoutSignIn(t.headers) })) };
 }
 
-module.exports = { DownloadManager, headersToSave, mergeSourceToSave };
+module.exports = { DownloadManager, headersToSave, mergeSourceToSave, withoutSignIn };
