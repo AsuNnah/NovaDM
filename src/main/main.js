@@ -59,7 +59,13 @@ try {
 const isFirstInstance = app.requestSingleInstanceLock();
 if (!isFirstInstance) app.quit();
 // A second start (command line, novadm:// link, magnet link, .torrent file) hands its arguments over.
-app.on('second-instance', (_e, argv) => { showWindow(); if (addFlow) handleLaunch(argv); });
+app.on('second-instance', (_e, argv) => {
+  // A second start in the first moments, before the window exists: handled right after NovaDM's own start (this
+  // whenReady callback runs after the one below, which creates the window).
+  if (!addFlow) return void app.whenReady().then(() => { showWindow(); handleLaunch(argv); });
+  showWindow();
+  handleLaunch(argv);
+});
 // Started by Windows at sign-in: stay in the tray.
 const startHidden = process.argv.includes('--hidden');
 
