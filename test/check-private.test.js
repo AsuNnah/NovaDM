@@ -8,7 +8,10 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const asar = require('@electron/asar');
 
-test('check-private --build finds a user folder inside the packed app, and passes a clean one', async () => {
+// The check also reads the git history, so it needs git (CI has it; a bare test machine may not).
+const noGit = spawnSync('git', ['--version']).status !== 0 && 'needs git';
+
+test('check-private --build finds a user folder inside the packed app, and passes a clean one', { skip: noGit }, async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'novadm-asar-'));
   const make = async (name, content) => {
     const src = path.join(dir, name); fs.mkdirSync(path.join(src, 'lib'), { recursive: true });
