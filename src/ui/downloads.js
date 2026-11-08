@@ -447,8 +447,8 @@ $('resumeAll').onclick = () => api.call('downloads.resumeAll');
 $('pauseAll').onclick = () => api.call('downloads.pauseAll');
 $('openFolder').onclick = () => api.call('downloads.openFolder');
 $('queuesBtn').onclick = () => loadQueues().then(showQueues);
-$('openTorrent').onclick = () => api.call('downloads.openTorrent');
-$('exportBtn').onclick = async () => { const r = await api.call('downloads.export'); if (r && r.ok) showInfo('Exported', `${r.downloads} downloads and your settings were saved. Passwords, keys and cookies are not in the file.`); };
+$('openTorrent').onclick = async () => { const r = await api.call('downloads.openTorrent'); if (r && r.error) showNotice(r.error); };
+$('exportBtn').onclick = async () => { const r = await api.call('downloads.export'); if (r && r.ok) showInfo('Exported', `${r.downloads} downloads and your settings were saved. Passwords, keys and cookies are not in the file.`); else if (r && r.error) showNotice(r.error); };
 $('importBtn').onclick = async () => {
   const r = await api.call('downloads.import');
   if (r && r.ok) showInfo('Imported', `${r.added} downloads added (${r.skipped} already here), ${r.settings} settings changed.`);

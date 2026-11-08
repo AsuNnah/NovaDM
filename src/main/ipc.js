@@ -184,7 +184,7 @@ function registerIpc(ctx) {
       const { win, addFlow } = getManagers();
       const r = await dialog.showOpenDialog(win, { title: 'Open a torrent file', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Torrent files', extensions: ['torrent'] }] });
       if (r.canceled) return { ok: false };
-      for (const f of r.filePaths) addFlow.requestTorrentFile(fs.readFileSync(f), { origin: 'manual' });
+      try { for (const f of r.filePaths) addFlow.requestTorrentFile(fs.readFileSync(f), { origin: 'manual' }); } catch (e) { return { ok: false, error: `Could not open the torrent file: ${e.message}` }; }
       return { ok: true };
     },
     'downloads.stopSeeding': async (a) => { await getManagers().downloads.stopSeeding(a.id); return { ok: true }; },
@@ -255,7 +255,7 @@ function registerIpc(ctx) {
       const r = await dialog.showSaveDialog(win, { title: 'Export downloads and settings', defaultPath: `NovaDM backup ${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'NovaDM backup', extensions: ['json'] }] });
       if (r.canceled || !r.filePath) return { ok: false };
       const data = exportData({ settings, downloads, version: app.getVersion() });
-      fs.writeFileSync(r.filePath, JSON.stringify(data, null, 2));
+      try { fs.writeFileSync(r.filePath, JSON.stringify(data, null, 2)); } catch (e) { return { ok: false, error: `The backup was not saved: ${e.message}` }; }
       return { ok: true, downloads: data.downloads.length };
     },
     'downloads.import': async () => {
@@ -401,7 +401,11 @@ function registerIpc(ctx) {
       const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
       const r = await dialog.showSaveDialog(m.win, { title: 'Save problem report', defaultPath: path.join(app.getPath('downloads'), `NovaDM-report-${stamp}.txt`), filters: [{ name: 'Text', extensions: ['txt'] }] });
       if (r.canceled || !r.filePath) return { ok: false };
-      fs.writeFileSync(r.filePath, text, 'utf8');
+      try { fs.writeFileSync(r.filePath, text, 'utf8'); } catch (e) {
+        // Called from the menu, which closes: say it here.
+        dialog.showMessageBox(m.win, { type: 'error', title: 'Report a problem', message: 'The report was not saved', detail: e.message });
+        return { ok: false, error: e.message };
+      }
       shell.openPath(r.filePath); // opened so it can be read before it is shared
       return { ok: true, path: r.filePath };
     },

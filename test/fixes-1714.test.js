@@ -44,3 +44,40 @@ test('a backup leaves out every sign-in header, proxy sign-ins included', () => 
   assert.deepStrictEqual(out.downloads[0].headers, { referer: 'r' });
   assert.deepStrictEqual(out.downloads[0].mergeSource.tracks[0].headers, { referer: 'r' });
 });
+
+// ipc.js with a stand-in for Electron: its handlers, and the IPC listeners it registered.
+function loadIpc({ dialog = {}, managers = {} } = {}) {
+  const Module = require('module');
+  const listeners = {};
+  // Anything not given is a function that does nothing (Electron modules other files load call some at load time).
+  const stub = (given = {}) => new Proxy(function () {}, { get: (_t, k) => (k in given ? given[k] : k === 'then' ? undefined : stub()), apply: () => undefined });
+  const fake = stub({
+    app: stub({ isPackaged: false, isReady: () => false, whenReady: () => new Promise(() => {}), getVersion: () => '0.0.0', getAppPath: () => '/app', getPath: () => os.tmpdir() }),
+    ipcMain: stub({ handle: (ch, fn) => { listeners[ch] = fn; } }), dialog: stub(dialog),
+  });
+  const id = require.resolve('electron');
+  const saved = require.cache[id];
+  const m = new Module(id); m.exports = fake; m.loaded = true; require.cache[id] = m;
+  try {
+    for (const k of Object.keys(require.cache)) if (k.includes(path.join('src', 'main')) && !/manager|backup/.test(k)) delete require.cache[k];
+    const { registerIpc } = require('../src/main/ipc');
+    const handlers = registerIpc({ getManagers: () => managers, setPanel() {}, sendUI() {}, sendMediaState() {} });
+    return { handlers, listeners };
+  } finally { if (saved) require.cache[id] = saved; else delete require.cache[id]; }
+}
+
+test('a backup, problem report or torrent file that cannot be written or read is reported, not lost silently', async () => {
+  const nowhere = path.join(os.tmpdir(), 'novadm-no-such-dir', 'sub', 'x.json');
+  const shown = [];
+  const { handlers } = loadIpc({
+    dialog: { showSaveDialog: async () => ({ filePath: nowhere }), showOpenDialog: async () => ({ filePaths: [nowhere] }), showMessageBox: async (_w, o) => { shown.push(o.message); return {}; } },
+    managers: { win: {}, settings: { data: {}, get: () => '' }, downloads: { records: new Map() }, addFlow: { requestTorrentFile() {} } },
+  });
+  const exp = await handlers['downloads.export']();
+  assert.strictEqual(exp.ok, false); assert.match(exp.error, /not saved/);
+  const tor = await handlers['downloads.openTorrent']();
+  assert.strictEqual(tor.ok, false); assert.match(tor.error, /torrent file/);
+  handlers['diagnostics.report'] = async () => 'report';
+  assert.strictEqual((await handlers['diagnostics.save']()).ok, false);
+  assert.deepStrictEqual(shown, ['The report was not saved']);
+});
