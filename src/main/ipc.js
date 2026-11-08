@@ -37,6 +37,12 @@ const ADDONS = [
 const ytdlpFound = new Map();
 const YOUTUBE_VIDEO = /^https:\/\/((www|m)\.)?youtube\.com\/(watch\?|shorts\/)|^https:\/\/youtu\.be\//i;
 const ytdlpKey = (tab) => `${tab.incognito ? 'p' : 'n'} ${tab.url}`;
+// Only NovaDM's own toolbar, panels and internal pages, never a web page (even if one of those views navigated).
+const UI_PREFIX = pathToFileURL(path.join(__dirname, '..', 'ui')).href.toLowerCase() + '/';
+const fromUi = (e) => ((e && e.senderFrame && e.senderFrame.url) || '').toLowerCase().startsWith(UI_PREFIX);
+// What an internal page (novadm://downloads, settings …) may call.
+const INTERNAL = /^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update)\.[A-Za-z]+$/;
+
 // The private window closed: what yt-dlp found for its pages goes with it.
 function forgetPrivate() {
   for (const k of [...ytdlpFound.keys()]) if (k.startsWith('p ')) ytdlpFound.delete(k);
@@ -544,10 +550,8 @@ function registerIpc(ctx) {
   function pushShields() { sendUI('shields', shieldsState()); }
   function pushDownloads() { sendUI('downloads', { list: getManagers().downloads.list(), summary: getManagers().downloads.activeSummary() }); }
 
-  // Only NovaDM's own toolbar and panels, never a web page (even if one of those views navigated).
-  const UI_PREFIX = pathToFileURL(path.join(__dirname, '..', 'ui')).href.toLowerCase() + '/';
   ipcMain.handle('novadm:call', async (e, method, args) => {
-    if (!((e.senderFrame && e.senderFrame.url) || '').toLowerCase().startsWith(UI_PREFIX)) throw new Error('not allowed');
+    if (!fromUi(e)) throw new Error('not allowed');
     const fn = handlers[method];
     if (!fn) throw new Error('Unknown method ' + method);
     return inSenderCtx(e.sender, () => fn(args || {}));
@@ -555,4 +559,4 @@ function registerIpc(ctx) {
   return handlers;
 }
 
-module.exports = { registerIpc, forgetPrivate };
+module.exports = { registerIpc, forgetPrivate, fromUi, INTERNAL };

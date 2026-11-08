@@ -134,3 +134,61 @@ test('the local API key is kept encrypted, an old plain key moves over, and the 
   const all = Settings.prototype.all.call({ data: { apiKey: 'a', apiKeyEnc: 'b', proxyPassEnc: 'c', theme: 'dark' } });
   assert.strictEqual('apiKey' in all || 'apiKeyEnc' in all || 'proxyPassEnc' in all, false);
 });
+
+test('only NovaDM\'s own UI files may call in, and internal pages only the methods on their list', async () => {
+  const { pathToFileURL } = require('url');
+  const { handlers, listeners } = loadIpc({ managers: { settings: { all: () => ({ ok: 1 }) } } });
+  const { fromUi, INTERNAL } = require('../src/main/ipc');
+  const ui = pathToFileURL(path.join(__dirname, '..', 'src', 'ui', 'panel.html')).href;
+  const frame = (url) => ({ senderFrame: { url }, sender: { id: 1 } });
+  for (const bad of ['https://evil.test/', 'file:///C:/Users/x/Downloads/page.html', ui.replace('/ui/', '/ui-other/'), '', 'novadm://settings']) {
+    assert.strictEqual(fromUi(frame(bad)), false, bad);
+    await assert.rejects(listeners['novadm:call'](frame(bad), 'settings.get'), /not allowed/);
+  }
+  assert.strictEqual(fromUi(frame(ui.toUpperCase().replace('FILE:', 'file:'))), true); // Windows paths: any case
+  assert.deepStrictEqual(await listeners['novadm:call'](frame(ui), 'settings.get'), { ok: 1 });
+  await assert.rejects(listeners['novadm:call'](frame(ui), 'no.such'), /Unknown method/);
+  for (const m of ['downloads.list', 'cert.proceed', 'about.check']) assert.ok(INTERNAL.test(m), m);
+  for (const m of ['settings.get', 'tabs.new', 'window.close', 'shields.setGlobal', 'downloads.list;x', 'downloads.']) assert.ok(!INTERNAL.test(m), m);
+  assert.ok(handlers['settings.get']);
+});
+
+test('settings writes keep only known settings and keep connection counts in range', () => {
+  const Module = require('module');
+  const id = require.resolve('electron'); const sid = require.resolve('../src/main/settings');
+  const saved = require.cache[id];
+  const m = new Module(id); m.loaded = true; m.exports = { app: { getPath: () => os.tmpdir() } };
+  require.cache[id] = m; delete require.cache[sid];
+  const { Settings } = require('../src/main/settings');
+  if (saved) require.cache[id] = saved; else delete require.cache[id];
+  const s = { data: { connections: 8, maxActive: 3, theme: 'system' }, store: { save() {} }, emit() {} };
+  const changed = Settings.prototype.set.call(s, { theme: 'dark', __proto__x: 1, notASetting: 'x', connections: 99, maxActive: 0 });
+  assert.deepStrictEqual(Object.keys(changed).sort(), ['connections', 'maxActive', 'theme']);
+  assert.strictEqual('notASetting' in s.data, false);
+  assert.strictEqual(s.data.connections, 32); assert.strictEqual(s.data.maxActive, 1);
+});
+
+test('passwords are encrypted asynchronously, refused when Windows can\'t protect them, and readable from the cache once primed', async () => {
+  const Module = require('module');
+  const id = require.resolve('electron'); const proxyId = require.resolve('../src/main/proxy');
+  const saved = require.cache[id];
+  let available = true;
+  const m = new Module(id); m.loaded = true;
+  m.exports = { safeStorage: {
+    isAsyncEncryptionAvailable: async () => available,
+    encryptStringAsync: async (t) => Buffer.from('x' + t),
+    decryptStringAsync: async (b) => ({ result: b.toString().slice(1) }),
+  } };
+  require.cache[id] = m; delete require.cache[proxyId];
+  try {
+    const proxy = require('../src/main/proxy');
+    const enc = await proxy.encryptPassword('pw');
+    assert.notStrictEqual(enc, 'pw');
+    assert.strictEqual(await proxy.decryptPassword(enc), 'pw');
+    assert.strictEqual(proxy.decryptedPassword(enc), ''); // not primed yet
+    await proxy.primeCredentials({ get: (k) => (k === 'proxyPassEnc' ? enc : k === 'siteSettings' ? [] : '') });
+    assert.strictEqual(proxy.decryptedPassword(enc), 'pw');
+    available = false;
+    await assert.rejects(proxy.encryptPassword('pw'), /could not protect/);
+  } finally { if (saved) require.cache[id] = saved; else delete require.cache[id]; delete require.cache[proxyId]; }
+});

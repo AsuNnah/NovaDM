@@ -27,7 +27,7 @@ const { HttpDownload } = require('./download/http');
 const util = require('./util');
 const { Browser } = require('./browser');
 const net = require('./net');
-const { registerIpc, forgetPrivate } = require('./ipc');
+const { registerIpc, forgetPrivate, fromUi, INTERNAL } = require('./ipc');
 const { applySecureDns, PROVIDERS } = require('./dns');
 const { showContextMenu } = require('./contextmenu');
 const { setupBrowsing } = require('./browsing');
@@ -1058,10 +1058,8 @@ app.whenReady().then(async () => {
     };
   });
   // Settings for the novadm://settings page. Only NovaDM's own UI files may call this.
-  const UI_FILE_PREFIX = pathToFileURL(UI_DIR).href + '/';
   ipcMain.handle('novadm:internal-settings', async (event, op, arg) => {
-    const from = (event.senderFrame && event.senderFrame.url) || '';
-    if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
+    if (!fromUi(event)) throw new Error('not allowed');
     if (op === 'set') settings.set(arg || {});
     if (op === 'sitePassword') {
       // { site, password }: stored encrypted on that site's entry.
@@ -1090,9 +1088,8 @@ app.whenReady().then(async () => {
   });
   // Actions for internal pages (Downloads page). Same sender check plus an allow list.
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {
-    const from = (event.senderFrame && event.senderFrame.url) || '';
-    if (!from.toLowerCase().startsWith(UI_FILE_PREFIX.toLowerCase())) throw new Error('not allowed');
-    if (!/^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update)\.[A-Za-z]+$/.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
+    if (!fromUi(event)) throw new Error('not allowed');
+    if (!INTERNAL.test(method) || !ipcHandlers[method]) throw new Error('Unknown method ' + method);
     return inCtx(kindOfArgs([browser.tabIdForWc(event.sender.id)]), () => ipcHandlers[method](args || {}));
   });
   // Live updates for open Downloads pages.
