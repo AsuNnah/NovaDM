@@ -27,7 +27,7 @@ const { HttpDownload } = require('./download/http');
 const util = require('./util');
 const { Browser } = require('./browser');
 const net = require('./net');
-const { registerIpc } = require('./ipc');
+const { registerIpc, forgetPrivate } = require('./ipc');
 const { applySecureDns, PROVIDERS } = require('./dns');
 const { showContextMenu } = require('./contextmenu');
 const { setupBrowsing } = require('./browsing');
@@ -359,6 +359,7 @@ function closePrivateWindow() {
   privateStats.ads = privateStats.popups = 0;
   browser.privatePermissions = {}; // its "remember" answers go with it
   browser.forgetPrivateCerts(); // and its certificate exceptions
+  forgetPrivate(); // and what yt-dlp found on its pages
   const ses = browser.incognitoSession;
   // Open connections go too, so a site proceeded past isn't reached again over a kept-alive connection.
   Promise.all([ses.clearStorageData(), ses.clearCache(), ses.clearAuthCache(), ses.closeAllConnections()]).catch(() => {});

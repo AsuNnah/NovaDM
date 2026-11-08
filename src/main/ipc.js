@@ -37,6 +37,11 @@ const ADDONS = [
 const ytdlpFound = new Map();
 const YOUTUBE_VIDEO = /^https:\/\/((www|m)\.)?youtube\.com\/(watch\?|shorts\/)|^https:\/\/youtu\.be\//i;
 const ytdlpKey = (tab) => `${tab.incognito ? 'p' : 'n'} ${tab.url}`;
+// The private window closed: what yt-dlp found for its pages goes with it.
+function forgetPrivate() {
+  for (const k of [...ytdlpFound.keys()]) if (k.startsWith('p ')) ytdlpFound.delete(k);
+  if (ytdlpChoices && ytdlpChoices.incognito) ytdlpChoices = null;
+}
 
 function registerIpc(ctx) {
   const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission, inSenderCtx = (_s, fn) => fn() } = ctx;
@@ -550,4 +555,4 @@ function registerIpc(ctx) {
   return handlers;
 }
 
-module.exports = { registerIpc };
+module.exports = { registerIpc, forgetPrivate };

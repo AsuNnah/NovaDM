@@ -81,3 +81,28 @@ test('a backup, problem report or torrent file that cannot be written or read is
   assert.strictEqual((await handlers['diagnostics.save']()).ok, false);
   assert.deepStrictEqual(shown, ['The report was not saved']);
 });
+
+test('what yt-dlp found on private pages is forgotten when the private window closes; normal pages keep theirs', async () => {
+  let asked = 0;
+  const tabs = { p: { id: 1, incognito: true, url: 'https://v.test/p' }, n: { id: 2, incognito: false, url: 'https://v.test/n' } };
+  let active = tabs.p;
+  const ses = { cookies: { get: async () => [] } };
+  const spec = { kind: 'http', url: 'https://v.test/f.mp4' };
+  const requested = [];
+  const { handlers } = loadIpc({ managers: {
+    browser: { activeTab: () => active, incognitoSession: ses, normalSession: ses },
+    ytdlp: { find: async () => { asked++; return { title: 't', duration: 1, choices: [{ label: 'best', spec }] }; } },
+    addFlow: { request: (s) => { requested.push(s); return { ok: true }; } },
+  } });
+  const { forgetPrivate } = require('../src/main/ipc');
+  await handlers['media.ytdlpFind']();
+  active = tabs.n; await handlers['media.ytdlpFind']();
+  active = tabs.p; await handlers['media.ytdlpFind']();
+  assert.strictEqual(asked, 2); // the private page's answer was kept while its window was open
+  forgetPrivate();
+  assert.deepStrictEqual(handlers['media.ytdlpDownload']({ index: 0 }), { ok: false }); // its choices are gone
+  await handlers['media.ytdlpFind']();
+  assert.strictEqual(asked, 3); // asked again
+  active = tabs.n; await handlers['media.ytdlpFind']();
+  assert.strictEqual(asked, 3); // the normal page's answer stays
+});
