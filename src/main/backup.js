@@ -7,7 +7,8 @@
 const SECRET_SETTINGS = new Set(['proxyPassEnc', 'apiKey', 'apiKeyEnc']);
 const { withoutSignIn } = require('./download/manager');
 // Paths of this PC, and what runs or is sent after each download: a backup someone else made must not set them.
-const MACHINE_SETTINGS = new Set(['ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl']);
+// The download folder too: imported downloads are kept inside it (manager.importRecord), so the file can't move it.
+const MACHINE_SETTINGS = new Set(['downloadDir', 'ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl']);
 
 function exportData({ settings, downloads, version, includeSettings = true, includeDownloads = true }) {
   const out = { app: 'NovaDM', format: 1, version, exportedAt: new Date().toISOString() };

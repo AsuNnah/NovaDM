@@ -33,8 +33,8 @@ test('a backup carries no program to run after downloads and no webhook, in eith
   const settings = { data, set(p) { this.patch = p; return p; } };
   const out = exportData({ settings, downloads: { records: new Map() }, version: 't' });
   assert.deepStrictEqual(Object.keys(out.settings), ['theme']);
-  importData({ app: 'NovaDM', format: 1, settings: data }, { settings, downloads: { records: new Map() } });
-  assert.deepStrictEqual(settings.patch, { theme: 'dark' });
+  importData({ app: 'NovaDM', format: 1, settings: { ...data, downloadDir: 'C:\\Users' } }, { settings, downloads: { records: new Map() } });
+  assert.deepStrictEqual(settings.patch, { theme: 'dark' }); // nor a download folder that would widen the save-path check
 });
 
 test('a backup leaves out every sign-in header, proxy sign-ins included', () => {
@@ -43,6 +43,8 @@ test('a backup leaves out every sign-in header, proxy sign-ins included', () => 
   const out = exportData({ settings: { data: {} }, downloads: { records: new Map([['1', rec]]) }, version: 't' });
   assert.deepStrictEqual(out.downloads[0].headers, { referer: 'r' });
   assert.deepStrictEqual(out.downloads[0].mergeSource.tracks[0].headers, { referer: 'r' });
+  const back = fakeManager().importRecord({ ...rec, name: 'a', sources: ['https://a.test/a'], savePath: '' }); // and a hand-made file's are dropped
+  assert.deepStrictEqual([back.headers, back.mergeSource.tracks[0].headers], [{ referer: 'r' }, { referer: 'r' }]);
 });
 
 // ipc.js with a stand-in for Electron: its handlers, and the IPC listeners it registered.
@@ -129,6 +131,10 @@ test('the local API key is kept encrypted, an old plain key moves over, and the 
     assert.strictEqual(data.apiKeyEnc, 'enc:' + k);
     assert.strictEqual(again.authorized({ headers: { authorization: 'Bearer ' + k } }), true);
     assert.strictEqual(new LocalApi({ settings }).authorized({ headers: {} }), false); // empty key, empty answer
+    const unreadable = { apiKeyEnc: 'xx' }; // decrypts to '' (another Windows account): kept, and nothing accepted
+    const locked = new LocalApi({ settings: { get: (k) => unreadable[k], set: (p) => Object.assign(unreadable, p) } });
+    assert.strictEqual(await locked.loadKey(), '');
+    assert.deepStrictEqual(unreadable, { apiKeyEnc: 'xx' });
   } finally { if (savedProxy) require.cache[proxyId] = savedProxy; else delete require.cache[proxyId]; delete require.cache[apiId]; }
   const { Settings } = require('../src/main/settings');
   const all = Settings.prototype.all.call({ data: { apiKey: 'a', apiKeyEnc: 'b', proxyPassEnc: 'c', theme: 'dark' } });

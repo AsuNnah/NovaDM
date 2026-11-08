@@ -39,7 +39,12 @@ class LocalApi extends EventEmitter {
   async loadKey() {
     if (this._key) return this._key;
     const enc = this.settings.get('apiKeyEnc');
-    if (enc) { try { this._key = await decryptPassword(enc); } catch {} }
+    if (enc) {
+      try { this._key = await decryptPassword(enc); } catch {}
+      // Kept, not replaced: a key Windows can't read now (another account, a failed unlock) may read later.
+      // The API refuses every call meanwhile; "New key" in Settings makes a new one.
+      if (!this._key) { console.error('local API: the saved key could not be decrypted'); return ''; }
+    }
     if (!this._key) await this.saveKey(this.settings.get('apiKey') || crypto.randomBytes(16).toString('hex'));
     else if (this.settings.get('apiKey')) this.settings.set({ apiKey: '' });
     return this._key;

@@ -13,11 +13,15 @@ Safer backups, errors you can see, and the local API key kept encrypted.
 ### Security
 - **A backup file could choose where its downloads are saved.** A crafted backup could add a download pointing at any
   file on the PC, so *Delete* removed that file and resuming overwrote it. Imported downloads now stay in your
-  download folder.
+  download folder, and a backup no longer sets the download folder itself. A download you had saved elsewhere (a
+  site rule's folder, *Save as*) comes back in the download folder under its name.
 - **Backups no longer carry the program that runs after each download**, its arguments or the webhook. A backup made
-  by someone else can't set them. Backups also leave out proxy sign-in headers now, like cookies and authorization.
+  by someone else can't set them. Backups also leave out proxy sign-in headers now, like cookies and authorization,
+  and importing drops any sign-in headers a hand-made backup file carries.
 - **The local API key is stored encrypted by Windows**, like the proxy and site passwords; an older key moves over by
-  itself and keeps working with the browser extension. The Settings page only gets it while the API is on.
+  itself and keeps working with the browser extension. The Settings page only gets it while the API is on. A saved
+  key Windows can't read (another account) is kept, not replaced: the API refuses calls until it can, or until you
+  make a new key.
 - **What yt-dlp found on private pages** (page address, title, video links) is now forgotten when the private window
   closes, instead of when NovaDM closes.
 

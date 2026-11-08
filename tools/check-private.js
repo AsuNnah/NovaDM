@@ -40,16 +40,19 @@ for (const line of new Set(history.split('\n'))) {
   for (const hit of findings(line)) problems.push(`commit / tag history: ${hit}`);
 }
 if (process.argv.includes('--build')) {
-  // --build [archive]: the built app (by default the one electron-builder made), read with the asar reader that
-  // electron-builder brings, so a change in how files are packed can't make the scan find nothing.
+  // --build [archive]: the built app (by default the one electron-builder made), read with the asar reader (a dev
+  // dependency), so a change in how files are packed can't make the scan find nothing.
   const asar = require('@electron/asar');
   const next = process.argv[process.argv.indexOf('--build') + 1];
   const archive = next && !next.startsWith('--') ? path.resolve(next) : path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar');
   const files = asar.listPackage(archive, { isPack: false });
   if (!files.length) problems.push(`app.asar: no files in ${archive}`);
   for (const f of files) {
+    const name = f.replace(/^[\\/]/, '');
+    const st = asar.statFile(archive, name);
     let text = '';
-    try { text = asar.extractFile(archive, f.replace(/^[\\/]/, '')).toString('latin1'); } catch { /* a folder */ }
+    // A file that can't be read is reported: the scan must not pass by skipping it.
+    if (!('files' in st) && !('link' in st)) { try { text = asar.extractFile(archive, name).toString('latin1'); } catch (e) { problems.push(`app.asar${f}: could not be read (${e.message})`); } }
     // Third-party packages inside list their authors' e-mails, so only user folders and own patterns here.
     for (const hit of findings(f + '\n' + text, false)) problems.push(`app.asar${f}: ${hit}`);
   }
