@@ -1,7 +1,7 @@
 'use strict';
 // Release gate: no personal data in the repo, the commits or the built app.
 //   node tools/check-private.js            tracked files + commit authors
-//   node tools/check-private.js --build    also dist/win-unpacked/resources/app.asar
+//   node tools/check-private.js --build [app.asar]   also the built app (default dist/win-unpacked/resources/app.asar)
 // Generic checks (Windows user folders, e-mail addresses) run everywhere, including CI.
 // Your own strings (name, e-mail, site names) go one regex per line in `.private-patterns`,
 // which is git-ignored so the list itself is never published.
@@ -40,10 +40,19 @@ for (const line of new Set(history.split('\n'))) {
   for (const hit of findings(line)) problems.push(`commit / tag history: ${hit}`);
 }
 if (process.argv.includes('--build')) {
-  const asar = path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar');
-  // Third-party packages inside list their authors' e-mails, so only user folders and own patterns here.
-  // shortcut: the asar's file contents are stored uncompressed, so a text scan of the archive finds them.
-  for (const hit of findings(fs.readFileSync(asar).toString('latin1'), false)) problems.push(`app.asar: ${hit}`);
+  // --build [archive]: the built app (by default the one electron-builder made), read with the asar reader that
+  // electron-builder brings, so a change in how files are packed can't make the scan find nothing.
+  const asar = require('@electron/asar');
+  const next = process.argv[process.argv.indexOf('--build') + 1];
+  const archive = next && !next.startsWith('--') ? path.resolve(next) : path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar');
+  const files = asar.listPackage(archive, { isPack: false });
+  if (!files.length) problems.push(`app.asar: no files in ${archive}`);
+  for (const f of files) {
+    let text = '';
+    try { text = asar.extractFile(archive, f.replace(/^[\\/]/, '')).toString('latin1'); } catch { /* a folder */ }
+    // Third-party packages inside list their authors' e-mails, so only user folders and own patterns here.
+    for (const hit of findings(f + '\n' + text, false)) problems.push(`app.asar${f}: ${hit}`);
+  }
 }
 
 const unique = [...new Set(problems)];
