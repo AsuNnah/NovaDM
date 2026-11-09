@@ -9,7 +9,7 @@ const { PopupGuard } = require('./popup');
 const { MediaRegistry } = require('./media/registry');
 const { DownloadManager } = require('./download/manager');
 const { Transport } = require('./transport');
-const { guardFor } = require('./netguard');
+const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { AddFlow, specFromUrl } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
@@ -833,10 +833,11 @@ app.whenReady().then(async () => {
       // The playlist and its variants are named by the page: a page on the internet must not make NovaDM ask for an
       // address on this PC or a private network (also not through a redirect).
       const tab = browser.tabs.get(opts.tabId);
-      const guard = guardFor((tab && tab.url) || '');
-      await guard(url);
       const session = tab && tab.incognito ? browser.incognitoSession : browser.normalSession;
-      const r = await net.fetchText(url, { session, headers: opts.headers, timeoutMs: 20000, guard });
+      const page = (tab && tab.url) || '';
+      const guard = guardFor(page, { lookup: sessionLookup(session) });
+      await guard(url);
+      const r = await net.fetchText(url, { session, headers: opts.headers, timeoutMs: 20000, guard, opener: openerFor(session, page) });
       return { text: r.text, finalUrl: r.finalUrl };
     },
   });

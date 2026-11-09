@@ -12,7 +12,7 @@ const { History, Bookmarks, TabSession } = require('./library');
 const { SiteIcons } = require('./site-icons');
 const bookmarkImport = require('./bookmarks-import');
 const { menuText } = require('./util');
-const { guardFor } = require('./netguard');
+const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
 
@@ -182,9 +182,10 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // never with the normal session's cookies; a page on the internet cannot point its icon at this PC or the home
   // network. Resolves to { type, body }.
   async function fetchIcon(pageUrl, favicon, incognito) {
-    const guard = guardFor(pageUrl);
+    const session = incognito ? browser.incognitoSession : browser.normalSession;
+    const guard = guardFor(pageUrl, { lookup: sessionLookup(session) });
     await guard(favicon);
-    const r = await net.fetchBuffer(favicon, { session: incognito ? browser.incognitoSession : browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000, guard });
+    const r = await net.fetchBuffer(favicon, { session, maxBytes: 64 * 1024, timeoutMs: 8000, guard, opener: openerFor(session, pageUrl) });
     return { type: String(r.headers['content-type'] || '').split(';')[0].trim(), body: r.body };
   }
   // The site's icon, kept with the bookmark (fetched once).

@@ -161,7 +161,7 @@ function readBody(conn, maxBytes = 64 * 1024 * 1024, idleMs = 30000) {
 }
 
 async function fetchBuffer(url, opts = {}) {
-  const conn = await open(url, opts);
+  const conn = await (opts.opener || open)(url, opts); // opener: a guarded fetch's pinned connection (netguard.js)
   if (conn.status >= 400) { conn.abort(); throw new HttpError(conn.status); }
   const body = await readBody(conn, opts.maxBytes, opts.timeoutMs);
   return { status: conn.status, headers: conn.headers, finalUrl: conn.finalUrl, body };

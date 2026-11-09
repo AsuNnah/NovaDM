@@ -1,9 +1,9 @@
 'use strict';
 // Is a web address on this PC or on a private network? Used so that a page on the internet cannot make NovaDM
 // fetch (blind GET) things on 127.0.0.1, the home router, a NAS and the like through its automatic media checks.
-// shortcut: the name is looked up through the operating system before the request, and Chromium looks it up again
-// when it connects, so a name that answers differently the second time (DNS rebinding) can still slip through;
-// a full fix needs the connection itself to be filtered.
+// 1.8.0 (SEC-104): a guarded fetch looks the name up once, through the session (Secure DNS), and connects to the
+// address it checked (undici, see openerFor), so a name that answers differently the second time (DNS rebinding)
+// can't slip through. Behind a proxy the proxy looks names up: then only the name and literal addresses are checked.
 const dns = require('dns').promises;
 const net = require('net');
 
@@ -68,4 +68,24 @@ function guardFor(pageUrl, opts) {
   };
 }
 
-module.exports = { isPrivateIp, isPrivateUrl, guardFor };
+/** The session's resolver as a lookup for isPrivateUrl (Secure DNS when it is on, never the OS behind its back). */
+const sessionLookup = (ses) => async (host) => ((await ses.resolveHost(host)).endpoints || []).map((e) => ({ address: e.address }));
+
+const pinned = new WeakMap(); // session -> Transport that refuses private addresses at connect time
+/**
+ * How a guarded fetch for pageUrl connects (net.fetchBuffer's `opener`): through a pinned direct connection that
+ * refuses private addresses, unless the page itself is local or a proxy does the lookups (then Chromium's stack).
+ */
+function openerFor(ses, pageUrl, { Transport = require('./transport').Transport, open = require('./net').open } = {}) {
+  return async (url, opts) => {
+    if (await isPrivateUrl(pageUrl, { lookup: sessionLookup(ses) })) return open(url, opts);
+    let proxy = 'DIRECT';
+    try { proxy = await ses.resolveProxy(url); } catch {}
+    if (!/^DIRECT/i.test(String(proxy || 'DIRECT').split(';')[0].trim())) return open(url, opts);
+    let t = pinned.get(ses);
+    if (!t) { t = new Transport({ session: ses, refuse: isPrivateIp }); pinned.set(ses, t); }
+    return t.directOpen(url, { headers: opts.headers, timeoutMs: opts.timeoutMs, session: ses });
+  };
+}
+
+module.exports = { isPrivateIp, isPrivateUrl, guardFor, sessionLookup, openerFor };

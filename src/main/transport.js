@@ -30,8 +30,10 @@ const HOP_HEADERS = new Set(['host', 'connection', 'keep-alive', 'transfer-encod
 
 class Transport {
   /** browserOpen (tests): replaces net.open for the browser stack. */
-  constructor({ session, settings, browserOpen }) {
+  /** refuse (guarded fetches, SEC-104): address -> true to refuse connecting to it; checked at connect time. */
+  constructor({ session, settings, browserOpen, refuse }) {
     this.session = session;
+    this.refuse = refuse || null;
     this.settings = settings;
     this.browserOpen = browserOpen || net.open;
     this.agents = new Map(); // proxy key -> undici dispatcher
@@ -107,6 +109,7 @@ class Transport {
           .then((r) => {
             const list = (r.endpoints || []).map((e) => ({ address: e.address, family: e.family === 'ipv6' ? 6 : 4 }));
             if (!list.length) return cb(Object.assign(new Error('DNS lookup failed for ' + hostname), { code: 'ENOTFOUND' }));
+            if (this.refuse && list.some((x) => this.refuse(x.address))) return cb(refused());
             if (options && options.all) return cb(null, list);
             const v4 = list.find((x) => x.family === 4) || list[0];
             cb(null, v4.address, v4.family);
@@ -145,6 +148,8 @@ class Transport {
     const explicitCookie = headers.cookie || headers.Cookie || '';
     const host = (u) => { try { return new URL(u).host.toLowerCase(); } catch { return ''; } };
     for (let hop = 0; hop < 15; hop++) {
+      // A literal address (also after a redirect) never reaches the lookup above: check it here.
+      if (this.refuse) { const hn = new URL(current).hostname.replace(/^\[|\]$/g, ''); if (require('net').isIP(hn) && this.refuse(hn)) throw refused(); }
       const h = {};
       const sameHost = host(current) === host(url);
       for (const [k, v] of Object.entries(headers)) {
@@ -203,6 +208,8 @@ class Transport {
     this.agents.clear();
   }
 }
+
+function refused() { return Object.assign(new Error('Not fetched: a page on the internet asked for an address on this PC or a private network'), { code: 'NOVADM_GUARD' }); }
 
 function isRefusal(err) {
   const code = (err && (err.code || (err.cause && err.cause.code))) || '';
