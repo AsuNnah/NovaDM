@@ -52,7 +52,7 @@ class LocalApi extends EventEmitter {
 
   async saveKey(k) {
     this._key = k;
-    // shortcut: where Windows can't protect it (or outside Windows, in tests) it stays in plain text, as before 1.7.14.
+    // shortcut: where Windows can't protect it (or outside Windows, in tests) it stays in plain text, as before 1.7.13.
     try { this.settings.set({ apiKeyEnc: await encryptPassword(k), apiKey: '' }); } catch { this.settings.set({ apiKeyEnc: '', apiKey: k }); }
   }
 

@@ -1,5 +1,5 @@
 'use strict';
-// 1.7.14: findings of the core and IPC audit (backup import safety, failed saves reported, trust checks).
+// 1.7.13: findings of the core and IPC audit (backup import safety, failed saves reported, trust checks).
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('path');

@@ -100,7 +100,7 @@ function defaults() {
     // Integration
     apiEnabled: false, // local API for the browser extension and scripts (127.0.0.1 only, with a key)
     apiPort: 9614,
-    apiKey: '', // before 1.7.14 the key was kept here in plain text; now only where Windows can't protect it
+    apiKey: '', // before 1.7.13 the key was kept here in plain text; now only where Windows can't protect it
     apiKeyEnc: '',
     magnetHandler: false, // open magnet: links from other apps in NovaDM
     siteExtensionsOff: [], // installed site extensions that are switched off

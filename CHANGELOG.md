@@ -6,9 +6,13 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
-## [1.7.14] — 2026-11-08
+Planned for **1.7.14**: the History panel (a History button with search, *All* and *Recently closed*). It was planned
+as 1.7.13; on 2026-11-09 the two versions swapped, so the core and IPC fixes below, planned as 1.7.14, ship as 1.7.13.
 
-Safer backups, errors you can see, and the local API key kept encrypted.
+## [1.7.13] — 2026-11-09
+
+Safer backups, errors you can see, and the local API key kept encrypted. Planned as 1.7.14; renumbered so the
+version after 1.7.12 is 1.7.13 (the History panel moved to 1.7.14).
 
 ### Security
 - **A backup file could choose where its downloads are saved.** A crafted backup could add a download pointing at any
