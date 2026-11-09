@@ -6,6 +6,48 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-11-09
+
+Trust and safety: certificate warnings that can't be clicked past on sites that ask for HTTPS only, sites you choose
+forgotten when NovaDM closes, a Secure DNS that never falls back if you say so, and your own ad-block rules.
+
+### Added
+- **Forget this site when NovaDM closes** (Guard panel). That site's cookies and site data, sub-domains included,
+  are deleted when NovaDM closes, and again at the next start in case it didn't close normally. Settings → Privacy
+  lists these sites, each with a remove button.
+- **Strict only** for Secure DNS (Settings → Privacy). If the secure DNS servers can't be reached, pages don't load,
+  instead of NovaDM using your network's DNS.
+- **A warning when Secure DNS falls back** to your network's DNS: a mark on the Guard button and a line in the Guard
+  panel with a link to the setting. It goes away when Secure DNS works again.
+- **My filters** (Settings → Privacy): your own ad-block rules, one per line, applied on Save without a restart.
+  It says how many rules are on and which lines it didn't understand. At most 2,000 lines (64 KB); kept only in
+  your settings, and still applied after the lists update.
+
+### Changed
+- **A simpler Guard panel:** Guard on this site, Guard Extended and pop-ups as three switches, and a link to all Guard
+  settings. Turning ad blocking off everywhere is in Settings only.
+- **Sites are grouped with the full Public Suffix List**, so two people's pages on the same shared host (blog and
+  hosting services) count as different sites for Guard, pop-ups, permissions and forgetting. A page on such a host
+  starts with the default settings once.
+
+### Security
+- **No *Proceed (unsafe)* on sites that ask for HTTPS only.** A site that sent `Strict-Transport-Security` over a
+  valid connection is remembered (`hsts.json`; private windows in memory only) and its certificate warning has no way
+  past it, as in Chrome. Clearing history clears the list.
+- **Video playlists and site icons connect to the address that was checked.** A site could answer a public address
+  first and an address on your own network next (DNS rebinding); NovaDM now looks the name up once and connects to
+  that answer.
+- **NovaDM's own pages load from an `app://` address** instead of files on disk, and only NovaDM's own page files
+  can be loaded from it. Internal calls are trusted by that address, and the Electron switch that gave every
+  `file://` page extra rights is off. `novadm://` addresses work as before.
+- **A private window's History page shows nothing** from normal browsing, and its buttons can't remove, clear or
+  open normal history.
+
+### Fixed
+- **Downloads from a site whose certificate you accepted** (*Proceed (unsafe)*, normal windows) now work with
+  NovaDM's fast engine too. It accepts only that exact certificate.
+- **Uninstalling removes the `novadm:` link**, and the `magnet:` link when it still opens NovaDM. Updating keeps both.
+
 ## [1.7.14] — 2026-11-09
 
 A History panel on the toolbar, and the toolbar itself now runs sandboxed. Planned as 1.7.13; the two versions

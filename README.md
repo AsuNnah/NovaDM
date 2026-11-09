@@ -61,7 +61,8 @@ the SHA-256 of its files so you can check your download.
 - Unloads tabs you haven't used for a while, to save memory
 
 **Privacy and safety**
-- Ad and tracker blocker (EasyList, EasyPrivacy, uBlock Origin lists, OISD), off per site
+- Ad and tracker blocker (EasyList, EasyPrivacy, uBlock Origin lists, OISD), off per site, plus your own rules
+  (My filters)
 - Pop-up guard: asks before a site opens a pop-up; ad pop-ups are blocked; a site can be set to always
   block (or always allow) its pop-ups
 - Third-party cookies blocked; tracking redirects skipped; tracking codes removed from addresses;
@@ -69,9 +70,11 @@ the SHA-256 of its files so you can check your download.
 - **Guard Extended**: fingerprinting protection (Brave-style noise, or strict blocking) and Standard /
   Safer / Safest security levels modelled on Tor Browser's (NovaDM does not use the Tor network), with an
   off switch per site
-- Secure DNS (DNS over HTTPS), proxy support, Microsoft Defender scan of downloaded programs,
+- Secure DNS (DNS over HTTPS) with a strict choice that never falls back to your network's DNS, proxy support, Microsoft Defender scan of downloaded programs,
   Mark of the Web on downloads
 - Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
+- Sites you choose are forgotten (cookies and site data) when NovaDM closes
+- Certificate warnings, and no way past them on sites that ask for HTTPS only
 - A warning on the menu button while an add-on you may need isn't installed
 - Warning page for phishing and malware sites; updates itself like Chrome (Update button), the portable version shows a notice
 
@@ -139,7 +142,8 @@ Private windows leave no history or downloads list entries, and their cookies, s
 sign-ins are deleted when the private window closes. They take nothing from normal browsing either: no history
 in the address bar, no closed normal tabs brought back, no normal downloads in their list, and a site allowed in a
 normal window asks again. Passwords for proxies and sites are
-encrypted with Windows' data protection.
+encrypted with Windows' data protection. Sites you mark *Forget this site when NovaDM closes* lose their cookies and
+site data each time NovaDM closes. My filters, your own ad-block rules, stay in your settings on this PC.
 
 **Sign-ins.** Cookies (what keeps you logged in) are encrypted on disk. When you sign in, NovaDM
 warns if the password is in a known data breach (Have I Been Pwned; only the first 5 characters of
@@ -212,6 +216,6 @@ NovaDM is free software: you can redistribute it and/or modify it under the term
 with no warranty.
 
 Libraries keep their own licenses: electron-chrome-extensions (GPL-3.0, the reason NovaDM is
-GPL), Ghostery adblocker (MPL-2.0), mux.js and Mozilla Readability (Apache-2.0), undici
-and electron-chrome-web-store (MIT). Electron and Chromium's licenses ship with the app
+GPL), Ghostery adblocker (MPL-2.0), mux.js and Mozilla Readability (Apache-2.0), undici,
+electron-chrome-web-store and tldts (MIT). Electron and Chromium's licenses ship with the app
 (`LICENSES.chromium.html`). The add-ons are separate programs under their own licenses.
