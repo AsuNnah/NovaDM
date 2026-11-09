@@ -381,7 +381,7 @@ class Browser extends EventEmitter {
       update();
       if (!tab.incognito) this.emit('visit', tab, url);
     });
-    wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons && icons[0] || ''; update(); });
+    wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons && icons[0] || ''; update(); if (!tab.incognito) this.emit('favicon', tab); });
     wc.on('media-started-playing', update);
     wc.on('enter-html-full-screen', () => this.emit('fullscreen', tab, true));
     wc.on('leave-html-full-screen', () => this.emit('fullscreen', tab, false));
