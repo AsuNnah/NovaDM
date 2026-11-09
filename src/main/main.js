@@ -39,6 +39,8 @@ diagnostics.install(app); // keeps the last errors for "Report a problem"
 const { isLocalHost } = require('./shields');
 // Must load before the app is ready (registers the crx:// scheme for extension icons).
 const { Extensions } = require('./extensions');
+const appScheme = require('./app-scheme');
+appScheme.registerPrivileged(protocol); // before ready, like crx://
 
 let dnsStatus = { mode: 'starting', servers: [] };
 
@@ -261,12 +263,12 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
   // Sandboxed: the extension-buttons code is joined into this one preload by tools/build-ui-preload.js.
   const cv = new WebContentsView({ webPreferences: { preload: TOOLBAR_PRELOAD, contextIsolation: true, sandbox: true } });
   cv.setBackgroundColor('#00000000');
-  cv.webContents.loadFile(path.join(UI_DIR, 'chrome.html'), { query });
+  cv.webContents.loadURL(appScheme.uiUrl('chrome.html', query));
   diagnostics.watchConsole(cv.webContents, 'toolbar');
 
   const ov = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
   ov.setBackgroundColor('#00000000');
-  ov.webContents.loadFile(path.join(UI_DIR, 'panel.html'), { query });
+  ov.webContents.loadURL(appScheme.uiUrl('panel.html', query));
   diagnostics.watchConsole(ov.webContents, 'panel');
   ov.setVisible(false);
 
@@ -580,7 +582,7 @@ function createSiteExtSandbox() {
   wc.session.setPermissionRequestHandler((_w, _p, cb) => cb(false));
   const box = {
     webContents: wc, onResult: null,
-    run(job) { wc.loadFile(path.join(UI_DIR, 'siteext-host.html')).then(() => wc.send('siteext:run', job)).catch((e) => box.onResult && box.onResult({ error: e.message })); },
+    run(job) { wc.loadURL(appScheme.uiUrl('siteext-host.html')).then(() => wc.send('siteext:run', job)).catch((e) => box.onResult && box.onResult({ error: e.message })); },
     destroy() { siteExtSandboxes.delete(wc.id); try { wc.close(); } catch {} },
   };
   siteExtSandboxes.set(wc.id, box);
@@ -961,6 +963,9 @@ app.whenReady().then(async () => {
       });
     }
   });
+
+  // NovaDM's own pages (SEC-108): the UI views use the default session, internal pages in tabs the tab sessions.
+  for (const p of [protocol, browser.normalSession.protocol, browser.incognitoSession.protocol]) p.handle(appScheme.SCHEME, (req) => appScheme.serve(req));
 
   // Grabber thumbnails: novadm-thumb://img/?u=<image url>&r=<page url>[&p=1]. Fetched through the browsing
   // session (the private one with p=1) with the page as Referer, so hotlink-protected images still preview.

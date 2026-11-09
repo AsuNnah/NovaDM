@@ -12,6 +12,7 @@ const { normalizeOrder, nextColor, cleanGroup, stepTab, COLOR_HEX } = require('.
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
 const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
 const { normalizeUrl, NEWTAB } = require('./address');
+const { uiUrl } = require('./app-scheme');
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
@@ -336,6 +337,11 @@ class Browser extends EventEmitter {
     wc.on('will-navigate', (e) => {
       if (/^magnet:\?/i.test(e.url || '')) { e.preventDefault(); this.emit('magnet', tab, e.url); }
     });
+    // NovaDM's own pages (app://) open only when NovaDM loads them, never from a web page (SEC-108).
+    const toApp = (e) => { if (/^app:/i.test(e.url || '') && !/^app:/i.test(wc.getURL())) e.preventDefault(); };
+    wc.on('will-navigate', toApp);
+    wc.on('will-frame-navigate', (e) => { if (/^app:/i.test(e.url || '') && !e.isMainFrame) e.preventDefault(); });
+    wc.on('will-redirect', (e) => { if (/^app:/i.test(e.url || '')) e.preventDefault(); });
     wc.on('did-start-navigation', (e) => {
       // Only a real page change resets per-page state; SPA URL changes (same document) keep it.
       if (!e.isMainFrame || e.isSameDocument) return;
@@ -373,7 +379,7 @@ class Browser extends EventEmitter {
       tab.failed = { url, code, desc };
       tab.loading = false;
       const phishing = code === -20 && !!this.adblock && this.adblock.phishBlocked.delete(url); // -20: blocked by NovaDM
-      wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '' } }).catch(() => {});
+      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '' })).catch(() => {});
     });
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
       if (!isMain) return;
@@ -502,6 +508,7 @@ class Browser extends EventEmitter {
   }
 
   handleWindowOpen(tab, details) {
+    if (/^app:/i.test(details.url || '')) return { action: 'deny' }; // SEC-108
     if (/^magnet:\?/i.test(details.url || '')) { this.emit('magnet', tab, details.url); return { action: 'deny' }; }
     // Always deny the raw request and decide a moment later: the preload's click report travels
     // on a separate channel and may arrive just after this call. Allowed windows open as tabs.
@@ -569,11 +576,11 @@ class Browser extends EventEmitter {
     if (target.startsWith('novadm://')) {
       const rest = target.slice('novadm://'.length);
       const page = rest.split(/[?#]/)[0] || 'newtab';
-      if (!INTERNAL_PAGES.has(page)) { tab.url = target; tab.wc.loadFile(path.join(__dirname, '..', 'ui', 'newtab.html')).catch(() => {}); return; }
+      if (!INTERNAL_PAGES.has(page)) { tab.url = target; tab.wc.loadURL(uiUrl('newtab.html')).catch(() => {}); return; }
       const query = Object.fromEntries(new URLSearchParams(rest.includes('?') ? rest.slice(rest.indexOf('?') + 1) : ''));
       if (tab.incognito) query.private = '1'; // the page shows the private look (theme.css)
       tab.url = 'novadm://' + page; tab.title = INTERNAL_PAGES.get(page);
-      tab.wc.loadFile(path.join(__dirname, '..', 'ui', `${page}.html`), { query }).catch(() => {});
+      tab.wc.loadURL(uiUrl(`${page}.html`, query)).catch(() => {});
     } else {
       tab.url = target;
       tab.wc.loadURL(target).catch(() => {});
@@ -999,8 +1006,7 @@ function cleanUserAgent(ua) {
 
 // Map the on-disk UI file URL back to its novadm:// address (so the omnibox stays clean).
 function internalUrl(u) {
-  if (!/^file:/i.test(u || '')) return '';
-  const m = /[\\/]ui[\\/](\w+)\.html(?:[?#]|$)/.exec(u || '');
+  const m = /^app:\/\/ui\/(\w+)\.html(?:[?#]|$)/i.exec(u || '');
   return m ? 'novadm://' + (m[1] === 'newtab' ? 'newtab' : m[1]) : '';
 }
 

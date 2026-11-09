@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { app, ipcMain, shell, clipboard, dialog } = require('electron');
-const { pathToFileURL } = require('url');
+const { isUiUrl } = require('./app-scheme');
 const { siteOf, extractLinks, expandPattern } = require('./util');
 const grabber = require('./grabber');
 const { copyText } = require('./clipboard-watch');
@@ -38,8 +38,8 @@ const ytdlpFound = new Map();
 const YOUTUBE_VIDEO = /^https:\/\/((www|m)\.)?youtube\.com\/(watch\?|shorts\/)|^https:\/\/youtu\.be\//i;
 const ytdlpKey = (tab) => `${tab.incognito ? 'p' : 'n'} ${tab.url}`;
 // Only NovaDM's own toolbar, panels and internal pages, never a web page (even if one of those views navigated).
-const UI_PREFIX = pathToFileURL(path.join(__dirname, '..', 'ui')).href.toLowerCase() + '/';
-const fromUi = (e) => ((e && e.senderFrame && e.senderFrame.url) || '').toLowerCase().startsWith(UI_PREFIX);
+// NovaDM's own pages (app://ui/…, SEC-108), and only their top frame: a page can't be framed, but don't rely on it.
+const fromUi = (e) => !!(e && e.senderFrame && !e.senderFrame.parent && isUiUrl(e.senderFrame.url));
 // What an internal page (novadm://downloads, settings …) may call.
 const INTERNAL = /^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update)\.[A-Za-z]+$/;
 

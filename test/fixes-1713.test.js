@@ -142,16 +142,17 @@ test('the local API key is kept encrypted, an old plain key moves over, and the 
 });
 
 test('only NovaDM\'s own UI files may call in, and internal pages only the methods on their list', async () => {
-  const { pathToFileURL } = require('url');
   const { handlers, listeners } = loadIpc({ managers: { settings: { all: () => ({ ok: 1 }) } } });
   const { fromUi, INTERNAL } = require('../src/main/ipc');
-  const ui = pathToFileURL(path.join(__dirname, '..', 'src', 'ui', 'panel.html')).href;
-  const frame = (url) => ({ senderFrame: { url }, sender: { id: 1 } });
-  for (const bad of ['https://evil.test/', 'file:///C:/Users/x/Downloads/page.html', ui.replace('/ui/', '/ui-other/'), '', 'novadm://settings']) {
+  const ui = 'app://ui/panel.html'; // SEC-108: NovaDM's pages are on app:// since 1.8.0
+  const frame = (url, parent = null) => ({ senderFrame: { url, parent }, sender: { id: 1 } });
+  const old = 'file:///C:/Program%20Files/NovaDM/resources/app.asar/src/ui/panel.html';
+  for (const bad of ['https://evil.test/', 'file:///C:/Users/x/Downloads/page.html', old, 'app://other/panel.html', 'app://ui/../x.html', '', 'novadm://settings']) {
     assert.strictEqual(fromUi(frame(bad)), false, bad);
     await assert.rejects(listeners['novadm:call'](frame(bad), 'settings.get'), /not allowed/);
   }
-  assert.strictEqual(fromUi(frame(ui.toUpperCase().replace('FILE:', 'file:'))), true); // Windows paths: any case
+  assert.strictEqual(fromUi(frame(ui, { url: 'https://evil.test/' })), false, 'a framed NovaDM page is not trusted');
+  assert.strictEqual(fromUi(frame('APP://UI/panel.html?private=1')), true);
   assert.deepStrictEqual(await listeners['novadm:call'](frame(ui), 'settings.get'), { ok: 1 });
   await assert.rejects(listeners['novadm:call'](frame(ui), 'no.such'), /Unknown method/);
   for (const m of ['downloads.list', 'cert.proceed', 'about.check']) assert.ok(INTERNAL.test(m), m);

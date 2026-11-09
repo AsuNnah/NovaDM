@@ -121,7 +121,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     if (f.view) return;
     const view = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
     view.setBackgroundColor('#00000000');
-    view.webContents.loadFile(path.join(UI_DIR, 'find.html'));
+    view.webContents.loadURL(require('./app-scheme').uiUrl('find.html'));
     view.setVisible(false);
     f.parent.addChildView(view);
     view.webContents.on('did-finish-load', () => view.webContents.setZoomFactor(scale()));

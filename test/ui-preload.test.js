@@ -21,7 +21,7 @@ test('the toolbar preload needs nothing but electron, and gives the toolbar its 
   };
   const ctx = {
     require: (n) => { if (n !== 'electron') throw new Error('not in a sandbox: ' + n); return electron; },
-    location: { pathname: '/app/src/ui/chrome.html', search: '' }, URLSearchParams, process: Object.assign(new (require('events'))(), { contextIsolated: true, sandboxed: true }),
+    location: { href: 'app://ui/chrome.html', pathname: '/chrome.html', search: '' }, URLSearchParams, process: Object.assign(new (require('events'))(), { contextIsolated: true, sandboxed: true }),
     console, queueMicrotask, document: { documentElement: {} }, window: {},
   };
   vm.runInNewContext(src, ctx);

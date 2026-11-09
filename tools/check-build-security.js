@@ -72,7 +72,7 @@ async function cookieOnDisk(exe, args) {
   const check = (name, ok, detail = '') => results.push({ name, ok, detail });
 
   const wire = await getCurrentFuseWire(EXE);
-  const want = { RunAsNode: false, EnableCookieEncryption: true, EnableNodeOptionsEnvironmentVariable: false, EnableNodeCliInspectArguments: false, EnableEmbeddedAsarIntegrityValidation: true, OnlyLoadAppFromAsar: true, GrantFileProtocolExtraPrivileges: true }; // false breaks NovaDM's own file:// pages inside app.asar (1.3.0–1.4.0)
+  const want = { RunAsNode: false, EnableCookieEncryption: true, EnableNodeOptionsEnvironmentVariable: false, EnableNodeCliInspectArguments: false, EnableEmbeddedAsarIntegrityValidation: true, OnlyLoadAppFromAsar: true, GrantFileProtocolExtraPrivileges: false }; // off since 1.8.0: NovaDM's pages are on app:// (SEC-108)
   for (const [k, on] of Object.entries(want)) check(`fuse ${k} ${on ? 'on' : 'off'}`, (wire[FuseV1Options[k]] === 49) === on);
 
   let r = await start(EXE, [script], { ELECTRON_RUN_AS_NODE: '1' });
