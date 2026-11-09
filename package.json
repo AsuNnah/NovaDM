@@ -9,6 +9,7 @@
   "private": true,
   "scripts": {
     "start": "electron .",
+    "postinstall": "node tools/build-ui-preload.js",
     "test": "node --test --test-timeout=120000 test/*.test.js",
     "icon": "node tools/make-icon.js",
     "dist": "electron-builder --win",
