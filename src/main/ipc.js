@@ -37,6 +37,17 @@ const ADDONS = [
 const ytdlpFound = new Map();
 const YOUTUBE_VIDEO = /^https:\/\/((www|m)\.)?youtube\.com\/(watch\?|shorts\/)|^https:\/\/youtu\.be\//i;
 const ytdlpKey = (tab) => `${tab.incognito ? 'p' : 'n'} ${tab.url}`;
+// Only NovaDM's own toolbar, panels and internal pages, never a web page (even if one of those views navigated).
+const UI_PREFIX = pathToFileURL(path.join(__dirname, '..', 'ui')).href.toLowerCase() + '/';
+const fromUi = (e) => ((e && e.senderFrame && e.senderFrame.url) || '').toLowerCase().startsWith(UI_PREFIX);
+// What an internal page (novadm://downloads, settings …) may call.
+const INTERNAL = /^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update)\.[A-Za-z]+$/;
+
+// The private window closed: what yt-dlp found for its pages goes with it.
+function forgetPrivate() {
+  for (const k of [...ytdlpFound.keys()]) if (k.startsWith('p ')) ytdlpFound.delete(k);
+  if (ytdlpChoices && ytdlpChoices.incognito) ytdlpChoices = null;
+}
 
 function registerIpc(ctx) {
   const { getManagers, setPanel, sendUI, sendMediaState, downloadItem, reviewBlockedPopup, getPendingPermission, clearPendingPermission, inSenderCtx = (_s, fn) => fn() } = ctx;
@@ -171,10 +182,10 @@ function registerIpc(ctx) {
       const { settings, getApiStatus } = getManagers();
       const st = getApiStatus();
       const extDir = app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension');
-      return { enabled: !!settings.get('apiEnabled'), running: !!st.running, port: st.port || settings.get('apiPort'), error: st.error || '', key: settings.get('apiEnabled') ? settings.get('apiKey') : '', extensionFolder: extDir };
+      return { enabled: !!settings.get('apiEnabled'), running: !!st.running, port: st.port || settings.get('apiPort'), error: st.error || '', key: settings.get('apiEnabled') ? getManagers().api.key() : '', extensionFolder: extDir };
     },
-    'integration.newKey': () => { getManagers().api.newKey(); return { ok: true }; },
-    'integration.copyKey': () => { copyText(getManagers().settings.get('apiKey') || ''); return { ok: true }; },
+    'integration.newKey': async () => { await getManagers().api.newKey(); return { ok: true }; },
+    'integration.copyKey': () => { copyText(getManagers().api.key()); return { ok: true }; },
     'integration.openExtensionFolder': () => {
       shell.openPath(app.isPackaged ? path.join(process.resourcesPath, 'browser-extension') : path.join(app.getAppPath(), 'browser-extension'));
     },
@@ -184,7 +195,7 @@ function registerIpc(ctx) {
       const { win, addFlow } = getManagers();
       const r = await dialog.showOpenDialog(win, { title: 'Open a torrent file', properties: ['openFile', 'multiSelections'], filters: [{ name: 'Torrent files', extensions: ['torrent'] }] });
       if (r.canceled) return { ok: false };
-      for (const f of r.filePaths) addFlow.requestTorrentFile(fs.readFileSync(f), { origin: 'manual' });
+      try { for (const f of r.filePaths) addFlow.requestTorrentFile(fs.readFileSync(f), { origin: 'manual' }); } catch (e) { return { ok: false, error: `Could not open the torrent file: ${e.message}` }; }
       return { ok: true };
     },
     'downloads.stopSeeding': async (a) => { await getManagers().downloads.stopSeeding(a.id); return { ok: true }; },
@@ -255,7 +266,7 @@ function registerIpc(ctx) {
       const r = await dialog.showSaveDialog(win, { title: 'Export downloads and settings', defaultPath: `NovaDM backup ${new Date().toISOString().slice(0, 10)}.json`, filters: [{ name: 'NovaDM backup', extensions: ['json'] }] });
       if (r.canceled || !r.filePath) return { ok: false };
       const data = exportData({ settings, downloads, version: app.getVersion() });
-      fs.writeFileSync(r.filePath, JSON.stringify(data, null, 2));
+      try { fs.writeFileSync(r.filePath, JSON.stringify(data, null, 2)); } catch (e) { return { ok: false, error: `The backup was not saved: ${e.message}` }; }
       return { ok: true, downloads: data.downloads.length };
     },
     'downloads.import': async () => {
@@ -401,7 +412,11 @@ function registerIpc(ctx) {
       const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
       const r = await dialog.showSaveDialog(m.win, { title: 'Save problem report', defaultPath: path.join(app.getPath('downloads'), `NovaDM-report-${stamp}.txt`), filters: [{ name: 'Text', extensions: ['txt'] }] });
       if (r.canceled || !r.filePath) return { ok: false };
-      fs.writeFileSync(r.filePath, text, 'utf8');
+      try { fs.writeFileSync(r.filePath, text, 'utf8'); } catch (e) {
+        // Called from the menu, which closes: say it here.
+        dialog.showMessageBox(m.win, { type: 'error', title: 'Report a problem', message: 'The report was not saved', detail: e.message });
+        return { ok: false, error: e.message };
+      }
       shell.openPath(r.filePath); // opened so it can be read before it is shared
       return { ok: true, path: r.filePath };
     },
@@ -535,10 +550,8 @@ function registerIpc(ctx) {
   function pushShields() { sendUI('shields', shieldsState()); }
   function pushDownloads() { sendUI('downloads', { list: getManagers().downloads.list(), summary: getManagers().downloads.activeSummary() }); }
 
-  // Only NovaDM's own toolbar and panels, never a web page (even if one of those views navigated).
-  const UI_PREFIX = pathToFileURL(path.join(__dirname, '..', 'ui')).href.toLowerCase() + '/';
   ipcMain.handle('novadm:call', async (e, method, args) => {
-    if (!((e.senderFrame && e.senderFrame.url) || '').toLowerCase().startsWith(UI_PREFIX)) throw new Error('not allowed');
+    if (!fromUi(e)) throw new Error('not allowed');
     const fn = handlers[method];
     if (!fn) throw new Error('Unknown method ' + method);
     return inSenderCtx(e.sender, () => fn(args || {}));
@@ -546,4 +559,4 @@ function registerIpc(ctx) {
   return handlers;
 }
 
-module.exports = { registerIpc };
+module.exports = { registerIpc, forgetPrivate, fromUi, INTERNAL };

@@ -1,7 +1,7 @@
 {
   "name": "novadm",
   "productName": "NovaDM",
-  "version": "1.7.12",
+  "version": "1.7.13",
   "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
   "author": "NovaDM",
   "license": "GPL-3.0-or-later",
@@ -24,6 +24,7 @@
     "undici": "8.12.3"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "electron": "45.2.2",
     "electron-builder": "26.18.0"
   },

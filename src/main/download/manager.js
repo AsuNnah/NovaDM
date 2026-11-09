@@ -642,14 +642,17 @@ class DownloadManager extends EventEmitter {
     const done = d.state === 'done';
     const rec = {
       id, kind: d.kind, name: String(d.name || 'download'), savePath: String(d.savePath || ''), sources: Array.isArray(d.sources) ? d.sources : [],
-      playlistUrl: d.playlistUrl || '', mirrors: Array.isArray(d.mirrors) ? d.mirrors : [], headers: d.headers || {}, pageUrl: d.pageUrl || '',
+      playlistUrl: d.playlistUrl || '', mirrors: Array.isArray(d.mirrors) ? d.mirrors : [], headers: withoutSignIn(d.headers) || {}, pageUrl: d.pageUrl || '',
       category: d.category || 'other', state: done ? 'done' : 'paused', size: Number(d.size) || -1, received: done ? Number(d.size) || 0 : 0, speed: 0,
       convertTs: true, addedAt: Number(d.addedAt) || Date.now(), completedAt: Number(d.completedAt) || 0, error: null, allowRename: false,
       meta: d.meta || null, activeMs: 0, resumable: null, queue: this.queueIds().includes(d.queue) ? d.queue : 'main', separateAudio: !!d.separateAudio,
-      magnet: d.magnet || '', torrentData: d.torrentData || '', selectFiles: d.selectFiles || '', mergeSource: d.mergeSource || null,
+      magnet: d.magnet || '', torrentData: d.torrentData || '', selectFiles: d.selectFiles || '', mergeSource: mergeSourceToSave({ mergeSource: d.mergeSource, state: 'done' }),
       expectedHash: d.expectedHash || '', verify: '', gid: '',
     };
-    if (!rec.savePath) rec.savePath = path.join(this.categoryDir(rec.category), util.sanitizeFilename(rec.name));
+    // A backup file names its own save paths: one outside the download folder could make Delete remove, or a resume
+    // overwrite, any file on the PC. Those are saved in the download folder under their name instead.
+    const rel = path.relative(this.settings.get('downloadDir'), rec.savePath);
+    if (!rec.savePath || !path.isAbsolute(rec.savePath) || !rel || rel.startsWith('..') || path.isAbsolute(rel)) rec.savePath = path.join(this.categoryDir(rec.category), util.sanitizeFilename(rec.name));
     this.records.set(id, rec);
     this.persist(); this.emitList();
     return rec;
@@ -860,4 +863,4 @@ function mergeSourceToSave(r) {
   return { ...m, tracks: (m.tracks || []).map((t) => ({ ...t, headers: withoutSignIn(t.headers) })) };
 }
 
-module.exports = { DownloadManager, headersToSave, mergeSourceToSave };
+module.exports = { DownloadManager, headersToSave, mergeSourceToSave, withoutSignIn };

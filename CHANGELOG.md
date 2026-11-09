@@ -6,6 +6,37 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+Planned for **1.7.14**: the History panel (a History button with search, *All* and *Recently closed*). It was planned
+as 1.7.13; on 2026-11-09 the two versions swapped, so the core and IPC fixes below, planned as 1.7.14, ship as 1.7.13.
+
+## [1.7.13] — 2026-11-09
+
+Safer backups, errors you can see, and the local API key kept encrypted. Planned as 1.7.14; renumbered so the
+version after 1.7.12 is 1.7.13 (the History panel moved to 1.7.14).
+
+### Security
+- **A backup file could choose where its downloads are saved.** A crafted backup could add a download pointing at any
+  file on the PC, so *Delete* removed that file and resuming overwrote it. Imported downloads now stay in your
+  download folder, and a backup no longer sets the download folder itself. A download you had saved elsewhere (a
+  site rule's folder, *Save as*) comes back in the download folder under its name.
+- **Backups no longer carry the program that runs after each download**, its arguments or the webhook. A backup made
+  by someone else can't set them. Backups also leave out proxy sign-in headers now, like cookies and authorization,
+  and importing drops any sign-in headers a hand-made backup file carries.
+- **The local API key is stored encrypted by Windows**, like the proxy and site passwords; an older key moves over by
+  itself and keeps working with the browser extension. The Settings page only gets it while the API is on. A saved
+  key Windows can't read (another account) is kept, not replaced: the API refuses calls until it can, or until you
+  make a new key.
+- **What yt-dlp found on private pages** (page address, title, video links) is now forgotten when the private window
+  closes, instead of when NovaDM closes.
+
+### Fixed
+- **Export, Report a problem and Open torrent** said nothing when the file couldn't be saved or read. They now show why.
+- **Starting NovaDM a second time in its first moments** (opening a link or a .torrent file) no longer throws an error.
+
+### Changed
+- The release check for personal data reads the built app file by file, so a change in how it is packed can't make the
+  check pass by finding nothing.
+
 ## [1.7.12] — 2026-11-06
 
 Known-bug fixes: private tabs keep to their own session, and fewer traces are left behind.

@@ -100,7 +100,8 @@ function defaults() {
     // Integration
     apiEnabled: false, // local API for the browser extension and scripts (127.0.0.1 only, with a key)
     apiPort: 9614,
-    apiKey: '',
+    apiKey: '', // before 1.7.13 the key was kept here in plain text; now only where Windows can't protect it
+    apiKeyEnc: '',
     magnetHandler: false, // open magnet: links from other apps in NovaDM
     siteExtensionsOff: [], // installed site extensions that are switched off
 
@@ -149,7 +150,7 @@ class Settings extends EventEmitter {
   get(key) { return this.data[key]; }
 
   all() {
-    const { proxyPassEnc, ...rest } = this.data;
+    const { proxyPassEnc, apiKey, apiKeyEnc, ...rest } = this.data; // the API key reaches the page only through integration.status
     // Site sign-in passwords stay here (encrypted); the settings page only learns that one is set.
     rest.siteSettings = (rest.siteSettings || []).map(({ passEnc, ...s }) => ({ ...s, hasPassword: !!passEnc }));
     return { ...rest, proxyHasPassword: !!proxyPassEnc, searchEngines: SEARCH_ENGINES };
