@@ -490,9 +490,10 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       return { ok: true };
     },
 
-    'history.search': (a) => ({ items: history.search({ q: a.q || '', limit: Math.min(Number(a.limit) || 150, 500), before: Number(a.before) || Infinity }) }),
-    'history.remove': (a) => { history.remove((a.ids || []).map(Number)); siteIcons.keepOnly(history.visits.map((v) => v.url)); return { ok: true }; },
-    'history.clear': (a) => clearData(a),
+    // A private window keeps no history and must not see or change the normal one (SEC-110).
+    'history.search': (a) => (browser.cur === 'private' ? { private: true, items: [] } : { items: history.search({ q: a.q || '', limit: Math.min(Number(a.limit) || 150, 500), before: Number(a.before) || Infinity }) }),
+    'history.remove': (a) => { if (browser.cur === 'private') return { ok: false }; history.remove((a.ids || []).map(Number)); siteIcons.keepOnly(history.visits.map((v) => v.url)); return { ok: true }; },
+    'history.clear': (a) => (browser.cur === 'private' ? { ok: false } : clearData(a)),
     // The History panel (Ctrl+Shift+H): nothing from a private window, neither visits nor closed tabs.
     'history.panel': (a) => {
       if (browser.cur === 'private') return { private: true, items: [], closed: [] };
@@ -500,7 +501,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       return { private: false, items, closed: browser.closedList(false).map((c) => ({ ...c, icon: siteIcons.get(c.url) })) };
     },
     'history.reopenClosed': (a) => { if (browser.cur !== 'private') browser.reopenClosed(false, Number(a.id)); return { ok: true }; },
-    'history.open': (a) => { if (/^https?:/i.test(a.url || '')) { if (a.newTab) browser.createTab({ url: a.url, background: true }); else browser.navigate(browser.activeId, a.url); } },
+    'history.open': (a) => { if (browser.cur !== 'private' && /^https?:/i.test(a.url || '')) { if (a.newTab) browser.createTab({ url: a.url, background: true }); else browser.navigate(browser.activeId, a.url); } },
 
     'reader.open': () => openReader(),
     'reader.get': (a) => { const p = readerPages.get(String(a.id)); return p ? { ok: true, ...p } : { ok: false }; },

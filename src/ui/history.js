@@ -20,6 +20,7 @@ async function load(reset) {
   if (reset) { items = []; done = false; }
   const before = items.length ? items[items.length - 1].t : 0;
   const r = await bridge.call('history.search', { q: $('q').value, limit: PAGE, before: before || undefined });
+  if (r.private) { $('list').innerHTML = '<div class="card"><div class="empty">History isn’t kept in private windows.</div></div>'; $('moreBox').hidden = true; return; }
   items = items.concat(r.items || []);
   done = (r.items || []).length < PAGE;
   render();

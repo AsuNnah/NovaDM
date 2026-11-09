@@ -154,6 +154,14 @@ module.exports = async ({ app, browser, ipc, browsing, downloads, adblock, setti
     result.stats.reopened = s3;
     c.newPrivateWindowCountersReset = s3.ads === 0 && s3.popups === 0;
 
+    // 1.8.0 (SEC-110): novadm://history typed in the private window lists no visits and says why.
+    browsing.history.add('https://normal-visit.test/', 'Normal visit');
+    ipc['tabs.new']({ incognito: true, url: 'novadm://history' });
+    const ph = await until(() => [...browser.tabs.values()].find((t) => t.incognito && t.url === 'novadm://history' && t.wc && !t.loading), 6000);
+    await sleep(600);
+    const histText = ph ? await ph.wc.executeJavaScript(`document.body.innerText`).catch(() => '') : '';
+    c.privateHistoryPageEmpty = !!ph && /isn.t kept in private windows/i.test(histText) && !/Normal visit/.test(histText);
+
     for (const d of downloads.list()) { try { await downloads.cancel(d.id, true); } catch {} }
     const perms = { ...(settings.get('sitePermissions') || {}) }; delete perms[origin]; settings.set({ sitePermissions: perms });
     result.ok = Object.values(c).every(Boolean);
