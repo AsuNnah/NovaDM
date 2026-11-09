@@ -491,7 +491,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     },
 
     'history.search': (a) => ({ items: history.search({ q: a.q || '', limit: Math.min(Number(a.limit) || 150, 500), before: Number(a.before) || Infinity }) }),
-    'history.remove': (a) => { history.remove((a.ids || []).map(Number)); return { ok: true }; },
+    'history.remove': (a) => { history.remove((a.ids || []).map(Number)); siteIcons.keepOnly(history.visits.map((v) => v.url)); return { ok: true }; },
     'history.clear': (a) => clearData(a),
     // The History panel (Ctrl+Shift+H): nothing from a private window, neither visits nor closed tabs.
     'history.panel': (a) => {

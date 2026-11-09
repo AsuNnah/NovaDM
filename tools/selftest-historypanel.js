@@ -86,9 +86,10 @@ module.exports = async ({ app, browser, ipc, browsing, chromeView }) => {
     await sleep(800);
     const pPanel = viewOf(privWin(), 'panel');
     await viewOf(privWin(), 'chrome').executeJavaScript(`document.getElementById('history-btn').click()`);
-    const ps = await until(async () => { const s = await pPanel.executeJavaScript(`({ current, rows: content.querySelectorAll('.hrow').length, empty: (content.querySelector('.empty') || {}).textContent || '' })`); return s.current === 'history' && s.empty ? s : null; }, 4000);
+    const ps = await until(async () => { const s = await pPanel.executeJavaScript(`({ current, rows: content.querySelectorAll('.hrow').length, buttons: content.querySelectorAll('.hdr .iconbtn').length, empty: (content.querySelector('.empty') || {}).textContent || '' })`); return s.current === 'history' && s.empty ? s : null; }, 4000);
     result.private = ps;
     c.privateShowsNothing = !!ps && ps.rows === 0 && /private/i.test(ps.empty);
+    c.privateNoWayToFullHistory = !!ps && ps.buttons === 0; // trash and … would open the normal History page
     c.privateHandlerEmpty = browser.inGroup('private', () => { const r = ipc['history.panel']({}); return r.private === true && !r.items.length && !r.closed.length; });
 
     result.ok = Object.values(c).every(Boolean);

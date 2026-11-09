@@ -541,7 +541,7 @@ async function renderTabSearch() {
 const GLOBE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/></svg>';
 const TRASH_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></svg>';
 const DOTS_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>';
-const hist = { tab: 'all', q: '', menu: false };
+const hist = { tab: 'all', q: '', menu: false, seq: 0 };
 const hmTime = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 function hmDay(t) {
   const d = new Date(t); const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -555,6 +555,10 @@ function hmIcon(src) {
 }
 
 async function renderHistory() {
+  // Ask first, then draw everything at once: a second render started meanwhile wins, never both.
+  const seq = ++hist.seq;
+  const d = await api.call('history.panel', { q: hist.q });
+  if (current !== 'history' || seq !== hist.seq) return;
   content.innerHTML = '';
   const hdr = el('div', 'hdr');
   hdr.append(el('div', 't', 'History'), el('div', 'sp'));
@@ -563,9 +567,9 @@ async function renderHistory() {
   const clearData = () => { api.call('tabs.new', { url: 'novadm://history?clear=1' }); close(); };
   trash.onclick = clearData;
   more.onclick = () => { hist.menu = !hist.menu; renderHistory(); };
-  hdr.append(trash, more);
+  if (!d.private) hdr.append(trash, more); // a private window gets no way into the normal History page
   content.append(hdr);
-  if (hist.menu) {
+  if (hist.menu && !d.private) {
     const m = el('div', 'sugg');
     const item = (label, fn) => { const r = el('div', 'menuitem', `<span class="ml">${esc(label)}</span>`); r.onclick = fn; m.append(r); };
     item('Open the full History page', () => { api.call('tabs.new', { url: 'novadm://history' }); close(); });
@@ -573,8 +577,6 @@ async function renderHistory() {
     m.append(el('div', 'msep'));
     content.append(m);
   }
-  const d = await api.call('history.panel', { q: hist.q });
-  if (current !== 'history') return;
   if (d.private) {
     content.append(el('div', 'empty', 'History isn’t kept in private windows.'));
     return;
@@ -622,7 +624,7 @@ async function renderHistory() {
   box.oninput = () => {
     hist.q = box.value; clearTimeout(timer);
     if (hist.tab === 'closed') return draw([], d.closed);
-    timer = setTimeout(async () => { const r = await api.call('history.panel', { q: hist.q }); if (current === 'history') draw(r.items, r.closed); }, 150);
+    timer = setTimeout(async () => { const q = hist.q; const r = await api.call('history.panel', { q }); if (current === 'history' && q === hist.q && seq === hist.seq) draw(r.items, r.closed); }, 150);
   };
   box.focus();
 }

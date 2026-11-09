@@ -38,5 +38,12 @@ test('site icons: one per site, 500 at most, 64 KB each, never private, cleared 
   assert.deepStrictEqual(Object.keys(new SiteIcons(dir).sites), ['s504.test'], 'saved to site-icons.json');
   icons.keepOnly([]);
   assert.deepStrictEqual(icons.sites, {});
+  // An icon still loading when history is cleared doesn't come back after the clear.
+  let release;
+  const pending = icons.learn({ url: 'https://late.test/', favicon: 'https://late.test/f.ico' }, () => new Promise((r) => { release = () => r(png()); }));
+  icons.keepOnly([]);
+  release();
+  assert.strictEqual(await pending, false);
+  assert.deepStrictEqual(icons.sites, {});
   fs.rmSync(dir, { recursive: true, force: true });
 });

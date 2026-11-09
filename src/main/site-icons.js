@@ -8,12 +8,14 @@ const { JsonStore } = require('./store');
 
 const MAX_SITES = 500;
 const MAX_BYTES = 64 * 1024;
+const DAY = 864e5;
 
 const siteOf = (url) => { try { const u = new URL(url); return /^https?:$/.test(u.protocol) ? u.host.toLowerCase() : ''; } catch { return ''; } };
 
 class SiteIcons {
   constructor(dir, now = () => Date.now()) {
     this.now = now;
+    this.gen = 0;
     this.store = new JsonStore(path.join(dir, 'site-icons.json'), { sites: {} });
     if (!this.store.data || typeof this.store.data.sites !== 'object' || !this.store.data.sites) this.store.data = { sites: {} };
   }
@@ -31,9 +33,12 @@ class SiteIcons {
     const site = siteOf(url);
     if (incognito || !site || !/^https?:\/\//i.test(favicon || '')) return false;
     const e = this.sites[site];
-    if (e && e.src === favicon) { e.seen = this.now(); this.store.save(5000); return false; }
+    // `seen` only orders the least-recently-seen drop: a day's precision is enough, and the file stays unwritten.
+    if (e && e.src === favicon) { if (this.now() - e.seen > DAY) { e.seen = this.now(); this.store.save(5000); } return false; }
+    const gen = this.gen;
     let r;
     try { r = await fetchIcon(favicon); } catch { return false; }
+    if (gen !== this.gen) return false; // history was cleared while the icon loaded
     if (!r || !r.body || !r.body.length || r.body.length > MAX_BYTES) return false;
     if (!/^image\/(png|x-icon|vnd\.microsoft\.icon|svg\+xml|gif|jpeg|webp)$/.test(r.type || '')) return false;
     this.sites[site] = { icon: `data:${r.type};base64,${r.body.toString('base64')}`, src: favicon, seen: this.now() };
@@ -46,11 +51,13 @@ class SiteIcons {
     return true;
   }
 
-  /** History was cleared: keep only the icons of sites still in it (none after "all time"). */
+  /** History was cleared or visits removed: keep only the icons of sites still in it (none after "all time"). */
   keepOnly(urls) {
+    this.gen++;
     const keep = new Set([...urls].map(siteOf));
-    for (const n of Object.keys(this.sites)) if (!keep.has(n)) delete this.sites[n];
-    this.store.save(0);
+    let gone = 0;
+    for (const n of Object.keys(this.sites)) if (!keep.has(n)) { delete this.sites[n]; gone++; }
+    if (gone) this.store.save(0);
   }
 
   flush() { this.store.flush(); }

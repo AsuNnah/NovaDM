@@ -8,6 +8,7 @@
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
+    "prestart": "node tools/build-ui-preload.js",
     "start": "electron .",
     "postinstall": "node tools/build-ui-preload.js",
     "test": "node --test --test-timeout=120000 test/*.test.js",
