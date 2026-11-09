@@ -45,3 +45,15 @@
     ${endIf}
   ${endIf}
 !macroend
+
+; 1.8.0 (REQ-310): uninstalling removes the novadm: link NovaDM registers at each start (src/main/main.js
+; registerLinkHandlers), and magnet: only when it still opens this NovaDM. An update keeps both.
+!macro customUnInstall
+  ${ifNot} ${isUpdated}
+    DeleteRegKey HKCU "Software\Classes\novadm"
+    ReadRegStr $0 HKCU "Software\Classes\magnet\shell\open\command" ""
+    ${if} $0 == '"$INSTDIR\${APP_EXECUTABLE_FILENAME}" "%1"'
+      DeleteRegKey HKCU "Software\Classes\magnet"
+    ${endIf}
+  ${endIf}
+!macroend
