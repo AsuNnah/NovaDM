@@ -21,11 +21,11 @@
     "electron-chrome-web-store": "0.13.0",
     "electron-updater": "6.8.11",
     "mux.js": "6.3.0",
-    "undici": "8.12.3"
+    "undici": "8.12.4"
   },
   "devDependencies": {
     "@electron/asar": "3.4.1",
-    "electron": "45.2.2",
+    "electron": "45.2.3",
     "electron-builder": "26.18.0"
   },
   "overrides": {
