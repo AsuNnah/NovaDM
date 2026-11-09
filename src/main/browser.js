@@ -13,6 +13,7 @@ const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
 const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
 const { normalizeUrl, NEWTAB } = require('./address');
 const { uiUrl } = require('./app-scheme');
+const { Hsts } = require('./hsts');
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
@@ -59,6 +60,8 @@ class Browser extends EventEmitter {
     // that exact certificate until NovaDM closes (private windows apart). A changed certificate warns again.
     this.certSeen = new Map(); // 'n|host' or 'p|host' -> fingerprint of the certificate it showed last
     this.certAllowed = new Set(); // 'n|host|fingerprint'
+    // Sites that asked for HTTPS only (SEC-107): their certificate errors get no Proceed.
+    this.hsts = { n: new Hsts(path.join(app.getPath('userData'), 'hsts.json')), p: new Hsts(null) };
     app.on('certificate-error', (event, wc, url, _error, cert, callback) => {
       const key = certKey(wc.session === this.incognitoSession, url);
       if (key && cert && this.certAllowed.has(`${key}|${cert.fingerprint}`)) { event.preventDefault(); callback(true); return; }
@@ -113,6 +116,7 @@ class Browser extends EventEmitter {
       this.media.recordRequestHeaders(details.id, net.replayableHeaders(details.requestHeaders));
     });
     ses.webRequest.onResponseStarted({ urls: ['http://*/*', 'https://*/*'] }, (details) => {
+      this.noteHsts(ses === this.incognitoSession, details);
       if (details.method && details.method !== 'GET' && details.resourceType === 'mainFrame') {
         this._nonGet.set(details.url, Date.now());
         if (this._nonGet.size > 50) this._nonGet.delete(this._nonGet.keys().next().value);
@@ -379,7 +383,7 @@ class Browser extends EventEmitter {
       tab.failed = { url, code, desc };
       tab.loading = false;
       const phishing = code === -20 && !!this.adblock && this.adblock.phishBlocked.delete(url); // -20: blocked by NovaDM
-      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '' })).catch(() => {});
+      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '', h: this.hstsFor(tab.incognito, url) ? '1' : '' })).catch(() => {});
     });
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
       if (!isMain) return;
@@ -718,11 +722,11 @@ class Browser extends EventEmitter {
     };
   }
 
-  /** "Proceed (unsafe)": trust the certificate the site showed last; false when there is none. */
+  /** "Proceed (unsafe)": trust the certificate the site showed last; false when there is none, or for an HSTS site. */
   allowCert(tab, url) {
     const key = certKey(tab.incognito, url);
     const fp = key && this.certSeen.get(key);
-    if (!fp) return false;
+    if (!fp || this.hstsFor(tab.incognito, url)) return false;
     this.certAllowed.add(`${key}|${fp}`);
     return true;
   }
@@ -730,6 +734,18 @@ class Browser extends EventEmitter {
   forgetPrivateCerts() {
     for (const k of [...this.certSeen.keys()]) if (k.startsWith('p|')) this.certSeen.delete(k);
     for (const k of [...this.certAllowed]) if (k.startsWith('p|')) this.certAllowed.delete(k);
+    this.hsts.p.clear();
+  }
+  /** A Strict-Transport-Security header, counted only over HTTPS the user didn't have to accept by hand. */
+  noteHsts(incognito, details) {
+    if (!/^https:/i.test(details.url)) return;
+    const k = Object.keys(details.responseHeaders || {}).find((x) => x.toLowerCase() === 'strict-transport-security');
+    if (!k || this.certBypassed({ incognito }, details.url)) return;
+    const v = details.responseHeaders[k];
+    try { this.hsts[incognito ? 'p' : 'n'].note(new URL(details.url).hostname, Array.isArray(v) ? v[0] : v); } catch {}
+  }
+  hstsFor(incognito, url) {
+    try { return this.hsts[incognito ? 'p' : 'n'].has(new URL(url).hostname); } catch { return false; }
   }
   certBypassed(tab, url) {
     const key = certKey(tab.incognito, url);

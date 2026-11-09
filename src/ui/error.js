@@ -58,6 +58,8 @@ function certWarning() {
   }[String(code)] || 'its security certificate has a problem.';
   $('advText').append('This server could not prove that it is ', bold(host), `; ${why} This may be caused by a misconfiguration or an attacker intercepting your connection.`);
   $('proceed').textContent = `Proceed to ${host} (unsafe)`;
+  // An HTTPS-only (HSTS) site: no way past the warning (SEC-107).
+  if (p.get('h') === '1') { $('proceed').hidden = true; $('advText').append(' This site asks for a secure connection only, so you can’t proceed.'); }
   $('retry').textContent = 'Back to safety';
   $('settings').textContent = 'Advanced';
 }

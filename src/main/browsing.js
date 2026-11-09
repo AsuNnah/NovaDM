@@ -308,7 +308,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // ---- clear browsing data ----
   const RANGES = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity };
   async function clearData({ range = 'all', history: h = true, cookies = false, cache = false } = {}) {
-    if (h) { history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
+    if (h) { browser.hsts.n.clear(); history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
     if (cookies) {
       await browser.normalSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers', 'cachestorage', 'filesystem', 'shadercache'] });
     }
@@ -339,13 +339,14 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   async function onQuit() {
     await forgetSites().catch(() => {}); // first: it reads the history for the sites' origins
     const jobs = [];
-    if (settings.get('clearHistoryOnExit')) { history.clear(); siteIcons.keepOnly([]); }
+    if (settings.get('clearHistoryOnExit')) { history.clear(); siteIcons.keepOnly([]); if (browser.hsts) browser.hsts.n.clear(); }
     if (settings.get('clearCookiesOnExit') || settings.get('clearCacheOnExit')) {
       jobs.push(clearData({ history: false, cookies: !!settings.get('clearCookiesOnExit'), cache: !!settings.get('clearCacheOnExit') }).catch(() => {}));
     }
     await Promise.all(jobs);
     history.flush();
     siteIcons.flush();
+    if (browser.hsts) browser.hsts.n.store.flush();
     bookmarks.flush();
     if (settings.get('restoreTabs') === false) tabSession.clear();
     tabSession.flush();
