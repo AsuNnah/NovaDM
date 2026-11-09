@@ -747,6 +747,11 @@ class Browser extends EventEmitter {
   hstsFor(incognito, url) {
     try { return this.hsts[incognito ? 'p' : 'n'].has(new URL(url).hostname); } catch { return false; }
   }
+  /** The certificates the user proceeded past for host[:port] in normal windows (the fast download engine, REQ-308). */
+  acceptedCerts(host) {
+    const pre = `n|${String(host).toLowerCase()}|`;
+    return [...this.certAllowed].filter((x) => x.startsWith(pre)).map((x) => x.slice(pre.length));
+  }
   certBypassed(tab, url) {
     const key = certKey(tab.incognito, url);
     return !!key && [...this.certAllowed].some((x) => x.startsWith(key + '|'));

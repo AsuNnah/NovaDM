@@ -867,7 +867,7 @@ app.whenReady().then(async () => {
       .catch(() => {}); // offline or service down: no warning
   });
   adblock.protection = (url) => hardening.protectionFor(settings, url);
-  transport = new Transport({ session: browser.normalSession, settings });
+  transport = new Transport({ session: browser.normalSession, settings, certFor: (host) => browser.acceptedCerts(host) });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
   // Helper tools on demand (FFmpeg, aria2): downloaded with NovaDM's own engine (speed limit and

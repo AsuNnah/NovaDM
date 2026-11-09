@@ -45,6 +45,10 @@ module.exports = async ({ app, browser }) => {
     await tab.wc.executeJavaScript("document.getElementById('proceed').click()");
     result.opened = !!(await until(() => tab.wc.getTitle() === 'Router page'));
     result.lockAfterProceed = tab.secure;
+    // 1.8.0 (REQ-308): the fast engine gets the accepted certificate in the format it computes itself.
+    const crypto = require('crypto');
+    result.acceptedFp = browser.acceptedCerts(host);
+    result.fpMatches = result.acceptedFp.includes('sha256/' + crypto.createHash('sha256').update(new crypto.X509Certificate(fs.readFileSync(path.join(dir, 'cert.pem'))).raw).digest('base64'));
 
     // The same site again in a new tab: no warning this time.
     const id2 = browser.createTab({ url });
@@ -86,6 +90,7 @@ module.exports = async ({ app, browser }) => {
       advanced: a.advHidden === false && a.proceed === `Proceed to ${host} (unsafe)` && a.buttons.includes('Hide advanced (left)'),
       proceeds: result.opened,
       noLock: result.lockAfterProceed === false,
+      fastEngineFingerprint: result.fpMatches,
       secondTab: result.secondTabOpens,
       privateApart: result.privateWarns,
       hstsNoProceed: !!(result.hsts && result.hsts.title === 'Your connection is not private' && result.hsts.proceedHidden === true) && result.hstsRefused,
