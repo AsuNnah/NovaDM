@@ -34,6 +34,21 @@ function fillOptions() {
   for (const [key, e] of Object.entries(current.searchEngines || {})) se.add(new Option(e.name, key));
 }
 
+// REQ-309: the sites forgotten when NovaDM closes, each with a remove button.
+function renderForget() {
+  const box = $('forgetList');
+  box.textContent = '';
+  const sites = current.forgetSites || [];
+  if (!sites.length) { const e = document.createElement('div'); e.className = 'fempty'; e.textContent = 'No sites yet.'; box.append(e); return; }
+  for (const site of sites) {
+    const r = document.createElement('div'); r.className = 'frow';
+    const n = document.createElement('span'); n.textContent = site;
+    const x = document.createElement('button'); x.className = 'fx'; x.textContent = '✕'; x.title = 'Stop forgetting ' + site; x.setAttribute('aria-label', 'Remove ' + site);
+    x.onclick = () => save({ forgetSites: sites.filter((s) => s !== site) });
+    r.append(n, x); box.append(r);
+  }
+}
+
 function renderDns() {
   const st = current.dnsStatus || {};
   const el = $('dnsStatus');
@@ -67,6 +82,7 @@ function render() {
   $('proxyPass').placeholder = current.proxyHasPassword ? 'Password saved' : 'Password';
   $('afterProgramShow').textContent = current.afterProgram || 'None';
   renderRules();
+  renderForget();
   if (document.activeElement !== $('secureDnsCustom')) $('secureDnsCustom').value = current.secureDnsCustom || '';
   $('downloadDir').textContent = current.downloadDir || '';
   $('downloadDir').title = current.downloadDir || '';

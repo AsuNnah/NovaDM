@@ -390,6 +390,7 @@ function renderShields() {
   row('Guard on this site', s.siteEnabled, 'shields.toggleSite', 'main');
   if (s.protection) row('Guard Extended', s.protection.siteOn, 'shields.toggleHardening', null, "Fingerprinting protection and the security level. Turn it off for a site that doesn't work; the page reloads.");
   if (s.popups) row('Block pop-ups', s.popups === 'blocked', 'shields.togglePopupBlock', null, 'Always block the pop-ups and new tabs this site opens on its own.');
+  if (s.forget !== null && s.forget !== undefined) row('Forget this site when NovaDM closes', s.forget, 'shields.toggleForget', null, 'Its cookies and site data are deleted when NovaDM closes, so you are signed out. Its tabs still come back.');
   if (!s.ready) content.append(el('div', 'note', 'Filter lists are still loading…'));
   const foot = el('div', 'foot');
   const link = el('button', 'link'); link.textContent = 'Guard settings'; link.onclick = openSettings;

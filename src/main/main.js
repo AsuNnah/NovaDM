@@ -332,7 +332,8 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
 
   // The tabs from last time (Settings → Restore tabs), or a new tab. NOVADM_OPEN (debug) opens a
   // given address instead.
-  if (restore) browsing.openStartTabs(process.env.NOVADM_OPEN || '');
+  // Sites to forget are cleared first, in case NovaDM was killed before it could (SEC-109).
+  if (restore) browsing.forgetSites().catch(() => {}).finally(() => browsing.openStartTabs(process.env.NOVADM_OPEN || ''));
 }
 
 /** A new normal window (Ctrl+N, a tab dragged out, a closed window reopened); returns its id. */

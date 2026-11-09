@@ -85,6 +85,7 @@ function defaults() {
     fingerprinting: 'standard', // off | standard (noise, like Brave) | strict (blocked, like Tor)
     securityLevel: 'standard', // standard | safer | safest (Tor Browser's levels; JIT part after a restart)
     hardeningOff: [], // sites where Guard Extended is off (Guard panel)
+    forgetSites: [], // 1.8.0 (REQ-309): sites whose cookies and site data are deleted when NovaDM closes
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
     ytdlpPath: '', // the user's own yt-dlp.exe
 

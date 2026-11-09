@@ -11,7 +11,7 @@ const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeepin
 const { History, Bookmarks, TabSession } = require('./library');
 const { SiteIcons } = require('./site-icons');
 const bookmarkImport = require('./bookmarks-import');
-const { menuText } = require('./util');
+const { menuText, siteOf } = require('./util');
 const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
@@ -316,8 +316,28 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     return { ok: true };
   }
 
+  // 1.8.0 (SEC-109): the sites marked "Forget this site when NovaDM closes" lose their cookies (sub-domains too) and
+  // site data, when NovaDM closes and again at the next start (after a crash or a kill). Only site names are kept.
+  const FORGET_DATA = ['backgroundFetch', 'cache', 'fileSystems', 'indexedDB', 'localStorage', 'serviceWorkers', 'webSQL'];
+  async function forgetSites(list = settings.get('forgetSites')) {
+    const sites = (Array.isArray(list) ? list : []).filter((x) => typeof x === 'string' && x);
+    if (!sites.length) return;
+    const set = new Set(sites);
+    const ses = browser.normalSession;
+    const host = (c) => String(c.domain || '').replace(/^\./, '');
+    const cookies = (await ses.cookies.get({}).catch(() => [])).filter((c) => set.has(siteOf('https://' + host(c))));
+    await Promise.all(cookies.map((c) => ses.cookies.remove(`${c.secure ? 'https' : 'http'}://${host(c)}${c.path || '/'}`, c.name).catch(() => {})));
+    // Storage is kept per origin: the bare and www names, plus every origin of the site in the history.
+    const origins = new Set();
+    for (const s of sites) for (const p of ['https://', 'http://']) { origins.add(p + s); origins.add(p + 'www.' + s); }
+    for (const v of history.visits) { try { if (set.has(siteOf(v.url))) origins.add(new URL(v.url).origin); } catch {} }
+    await ses.clearData({ dataTypes: FORGET_DATA, origins: [...origins] }).catch(() => {});
+    await ses.cookies.flushStore().catch(() => {});
+  }
+
   /** Settings → "When NovaDM closes, clear…". */
   async function onQuit() {
+    await forgetSites().catch(() => {}); // first: it reads the history for the sites' origins
     const jobs = [];
     if (settings.get('clearHistoryOnExit')) { history.clear(); siteIcons.keepOnly([]); }
     if (settings.get('clearCookiesOnExit') || settings.get('clearCacheOnExit')) {
@@ -512,7 +532,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
 
   return {
     history, bookmarks, tabSession, siteIcons, shields, handlers,
-    chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData,
+    chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData, forgetSites,
     toggleActiveBookmark, openReader, bookmarkState, memoryCheck,
     get findView() { return find.view; },
     get findOpen() { return find.open; },
