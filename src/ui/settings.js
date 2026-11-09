@@ -49,6 +49,19 @@ function renderForget() {
   }
 }
 
+// REQ-311: how many of My filters are on, and the lines that are not rules.
+function renderMyFilters(error) {
+  const el = $('myFiltersStatus');
+  const st = current.myFiltersStatus || { rules: 0, bad: [] };
+  el.className = 'status';
+  if (error) { el.textContent = error; el.classList.add('warn'); return; }
+  const on = `${st.rules} rule${st.rules === 1 ? '' : 's'} on.`;
+  if (!st.bad.length) { el.textContent = on; return; }
+  el.textContent = `${on} Not understood: ${st.bad.map((b) => `line ${b.line}`).join(', ')}${st.more ? ` and ${st.more} more` : ''}.`;
+  el.title = st.bad.map((b) => `${b.line}: ${b.text}`).join('\n');
+  el.classList.add('warn');
+}
+
 function renderDns() {
   const st = current.dnsStatus || {};
   const el = $('dnsStatus');
@@ -83,6 +96,8 @@ function render() {
   $('afterProgramShow').textContent = current.afterProgram || 'None';
   renderRules();
   renderForget();
+  if (document.activeElement !== $('myFilters')) $('myFilters').value = current.myFilters || '';
+  renderMyFilters();
   if (document.activeElement !== $('secureDnsCustom')) $('secureDnsCustom').value = current.secureDnsCustom || '';
   $('downloadDir').textContent = current.downloadDir || '';
   $('downloadDir').title = current.downloadDir || '';
@@ -285,6 +300,13 @@ function rowsOf(id) {
 function saveRules() { return save({ categoryRules: rowsOf('ruleList').filter((r) => r.value) }); }
 function saveSites() { return save({ siteSettings: rowsOf('siteList').filter((s) => s.site) }); }
 $('clearNow').onclick = () => bridge.navigate('novadm://history?clear=1');
+$('myFiltersSave').onclick = () => {
+  const text = $('myFilters').value;
+  // The same limits as main (settings.js refuses anything bigger and keeps the saved rules).
+  if (new TextEncoder().encode(text).length > 64 * 1024) return renderMyFilters('Too big: My filters can hold at most 64 KB. Nothing was saved.');
+  if (text.split('\n').length > 2000) return renderMyFilters('Too many lines: My filters can hold at most 2,000. Nothing was saved.');
+  save({ myFilters: text });
+};
 
 function initRules() {
   $('ruleAdd').onclick = async () => { await save({ categoryRules: [...(current.categoryRules || []), { by: 'type', value: '', category: 'other', folder: '' }] }); renderRules(); };

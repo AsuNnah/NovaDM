@@ -128,6 +128,7 @@ function defaults() {
     adblock: true,
     adblockWhitelist: [], // sites where ad blocking is off
     adblockUpdatedAt: 0,
+    myFilters: '', // 1.8.0 (REQ-311): the user's own rules, one per line; only here, never in the engine cache
 
     // Pop-ups
     popupMode: 'ask', // ask | block | allow
@@ -167,6 +168,7 @@ class Settings extends EventEmitter {
     }
     for (const [k, v] of Object.entries(patch || {})) {
       if (!(k in defaults())) continue;
+      if (k === 'myFilters' && require('./adblock').myFiltersTooBig(v)) continue; // too big: the saved rules stay
       if (JSON.stringify(this.data[k]) === JSON.stringify(v)) continue;
       this.data[k] = v;
       changed[k] = v;

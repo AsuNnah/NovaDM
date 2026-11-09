@@ -910,6 +910,7 @@ app.whenReady().then(async () => {
   settings.on('change', (c) => {
     if ('apiEnabled' in c || 'apiPort' in c) api.update().then((st) => { apiStatus = st; });
     if ('magnetHandler' in c) registerLinkHandlers();
+    if ('myFilters' in c) adblock.applyMyFilters();
   });
   registerLinkHandlers();
 
@@ -1096,7 +1097,7 @@ app.whenReady().then(async () => {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });
       if (!r.canceled && r.filePaths[0]) settings.set({ downloadDir: r.filePaths[0] });
     }
-    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS };
+    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS, myFiltersStatus: adblock.myStatus };
   });
   // Actions for internal pages (Downloads page). Same sender check plus an allow list.
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {

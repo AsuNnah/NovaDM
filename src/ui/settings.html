@@ -49,6 +49,7 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
 .notes ul{margin:0;padding-left:18px;color:var(--fg3);font-size:12.5px;} .notes li{margin:2px 0;}
 .status{font-size:12.5px;margin-top:4px;}
 .status.ok{color:var(--ok);} .status.warn{color:var(--warn);}
+.myf{display:block;width:100%;box-sizing:border-box;min-height:96px;margin-top:8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:12.5px/1.5 ui-monospace,Consolas,monospace;padding:8px 10px;resize:vertical;outline:none;} .myf:focus-visible{border-color:var(--accent);} .myfbar{display:flex;align-items:center;gap:10px;margin-top:6px;}
 .forget{margin-top:8px;} .frow{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line);} .frow:first-child{border-top:0;} .frow span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;} .fx{border:0;background:none;color:var(--fg3);border-radius:6px;width:26px;height:26px;cursor:default;} .fx:hover{background:var(--hover);color:var(--fg);} .fx:focus-visible{outline:2px solid var(--accent);} .fempty{color:var(--fg3);font-size:12.5px;}
 .saved{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 16px;font-size:12.5px;opacity:0;transition:opacity .2s;}
 .saved.on{opacity:1;}
@@ -117,6 +118,12 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     <div class="row">
       <div class="lbl"><b>Block ads and trackers</b><span>Turn it off for one site from the shield in the address bar.</span></div>
       <label class="sw"><input type="checkbox" id="adblock"><i></i></label>
+    </div>
+    <div class="row">
+      <div class="lbl"><b>My filters</b><span>Your own blocking rules, one per line, in the usual ad-block style. Lines starting with ! are notes. Kept only on this PC.</span>
+        <textarea id="myFilters" class="myf" spellcheck="false" aria-label="My filters"></textarea>
+        <div class="myfbar"><button id="myFiltersSave">Save</button><span id="myFiltersStatus" class="status" role="status"></span></div>
+      </div>
     </div>
     <div class="row">
       <div class="lbl"><b>Pop-ups and new windows</b><span>Ask: pop-ups and links that open another site in a new tab ask first. Block: pop-ups are blocked; links to other sites still ask. Ad-site pop-ups are always blocked. For one annoying site, open the Guard button in the address bar and choose "Always block pop-ups on this site" (or tick "Remember my choice" when NovaDM asks): that site's pop-ups are then blocked without asking.</span></div>

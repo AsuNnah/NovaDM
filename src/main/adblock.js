@@ -6,6 +6,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const { app, ipcMain } = require('electron');
 const { ElectronBlocker, fromElectronDetails, adsAndTrackingLists } = require('@ghostery/adblocker-electron');
+const { parseFilter } = require('@ghostery/adblocker');
 const { siteOf } = require('./util');
 
 const PRELOAD_PATH = require.resolve('@ghostery/adblocker-electron-preload');
@@ -21,6 +22,28 @@ const PHISHING_LISTS = ['https://malware-filter.gitlab.io/malware-filter/phishin
 const PHISHING_REFRESH_MS = 24 * 3600 * 1000;
 const LIST_VERSION = 2; // bump when the list set changes, so old caches are rebuilt
 const REFRESH_MS = 4 * 24 * 3600 * 1000;
+
+// My filters (REQ-311): the user's own rules, kept only in settings, never in the engine cache file.
+const MY_MAX_BYTES = 64 * 1024;
+const MY_MAX_LINES = 2000;
+/** Too big for My filters: a message, or '' when it fits. */
+function myFiltersTooBig(text) {
+  if (typeof text !== 'string') return 'My filters must be text.';
+  if (Buffer.byteLength(text) > MY_MAX_BYTES) return 'My filters can hold at most 64 KB.';
+  if (text.split('\n').length > MY_MAX_LINES) return 'My filters can hold at most 2,000 lines.';
+  return '';
+}
+/** The rules in My filters, and the lines that are not rules (line number and text). Comments start with "!". */
+function readMyFilters(text) {
+  const rules = [];
+  const bad = [];
+  String(text || '').split('\n').forEach((raw, i) => {
+    const line = raw.trim();
+    if (!line || line.startsWith('!') || /^\[adblock/i.test(line)) return;
+    if (parseFilter(line)) rules.push(line); else bad.push({ line: i + 1, text: line.slice(0, 200) });
+  });
+  return { rules: [...new Set(rules)], bad };
+}
 
 /** A cached engine file and its age, read through one handle (no change between the two). */
 async function readCache(file) {
@@ -43,6 +66,23 @@ class AdBlocker extends EventEmitter {
     this.phishPath = path.join(dir, 'phishing-v1.bin');
     this.phishBlocked = new Set(); // page loads just stopped (browser.js shows the warning)
     this.phishAllowed = new Set(); // sites the user chose to open anyway, until NovaDM closes
+    this.myApplied = []; // My filters now in the engine
+    this.myStatus = { rules: 0, bad: [] };
+  }
+
+  /** Put My filters into the engine (on Save, and on every new engine: a list update keeps them). */
+  // shortcut: a rule also on a built-in list is dropped from the engine when the user removes it from My filters,
+  // until the lists next load; upgrade if that ever matters.
+  applyMyFilters(fresh = false) {
+    if (fresh) this.myApplied = [];
+    const { rules, bad } = readMyFilters(this.settings.get('myFilters'));
+    this.myStatus = { rules: rules.length, bad: bad.slice(0, 20), more: Math.max(0, bad.length - 20) };
+    if (!this.engine) return this.myStatus;
+    const now = new Set(rules); const was = new Set(this.myApplied);
+    const added = rules.filter((r) => !was.has(r)); const removed = this.myApplied.filter((r) => !now.has(r));
+    if (added.length || removed.length) this.engine.updateFromDiff({ added, removed });
+    this.myApplied = rules;
+    return this.myStatus;
   }
 
   /** Load the phishing lists (cached for a day). Failure leaves the check off until the next try. */
@@ -101,6 +141,7 @@ class AdBlocker extends EventEmitter {
         this.engine = await ElectronBlocker.fromLists(fetch, []).catch(() => ElectronBlocker.parse(''));
       }
     }
+    this.applyMyFilters(true);
     this.ready = true;
     this.settings.data.adblockUpdatedAt = cachedAt;
     this.settings.store.save();
@@ -111,6 +152,7 @@ class AdBlocker extends EventEmitter {
   async refresh() {
     try {
       this.engine = await this.build();
+      this.applyMyFilters(true);
       this.settings.data.adblockUpdatedAt = Date.now();
       this.settings.store.save();
       this.emit('updated');
@@ -242,4 +284,4 @@ class AdBlocker extends EventEmitter {
   }
 }
 
-module.exports = { AdBlocker };
+module.exports = { AdBlocker, readMyFilters, myFiltersTooBig };
