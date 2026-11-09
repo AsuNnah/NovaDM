@@ -48,5 +48,11 @@ test('SEC-104: one lookup per connection, the checked address is used, a private
     await openerFor(pub, 'http://192.168.1.5/', { Transport: FakeTransport, open })('http://192.168.1.5/p.m3u8', {});
     await openerFor({ ...pub, resolveProxy: async () => 'PROXY 10.0.0.1:8080' }, 'https://site.test/', { Transport: FakeTransport, open })('https://cdn.test/p.m3u8', {});
     assert.deepStrictEqual(used, ['pinned', 'browser', 'browser']);
+    // A site that answers its own name with a private address is still a site on the internet (no exemption).
+    const twoFaced = { ...pub, resolveHost: async () => ({ endpoints: [{ address: '93.184.216.34' }, { address: '192.168.1.1' }] }) };
+    await openerFor(twoFaced, 'https://evil.test/', { Transport: FakeTransport, open })('http://192.168.1.1/', {});
+    assert.strictEqual(used[3], 'pinned');
+    const { guardFor } = require('../src/main/netguard');
+    await assert.rejects(guardFor('https://evil2.test/', { lookup: async () => [{ address: '192.168.1.1' }] })('http://192.168.1.1/'), /Not fetched/);
   } finally { server.close(); }
 });

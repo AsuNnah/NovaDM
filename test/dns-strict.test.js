@@ -30,6 +30,12 @@ test('SEC-105, REQ-307: Strict only stays encrypted when the servers are down; o
   assert.deepStrictEqual(calls, ['secure', 'automatic']);
   assert.strictEqual(s.mode, 'automatic', 'the fallback the Guard button warns about');
 
+  // The 5-minute re-check in fallback: still down, so the resolver isn't touched (no seconds of strict lookups).
+  calls.length = 0;
+  s = await applySecureDns(settingsOf({ secureDns: 'cloudflare', secureDnsStrict: false }), { recheck: true });
+  assert.deepStrictEqual(calls, []);
+  assert.strictEqual(s.mode, 'automatic');
+
   calls.length = 0;
   global.fetch = async () => ({ ok: true });
   s = await applySecureDns(settingsOf({ secureDns: 'cloudflare', secureDnsStrict: true }));

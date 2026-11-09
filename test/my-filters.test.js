@@ -21,14 +21,21 @@ test('REQ-311: applied at once, removed on change, kept through a new engine, no
   const b = Object.create(AdBlocker.prototype);
   Object.assign(b, { settings: { get: (k) => data[k] }, myApplied: [], myStatus: null, engine: ElectronBlocker.parse('') });
   const blocked = (url) => !!b.engine.match(fromElectronDetails({ id: 1, url, resourceType: 'script', referrer: 'https://page.test/' })).match;
-  const cache = b.engine.serialize();
   assert.deepStrictEqual(b.applyMyFilters(), { rules: 1, bad: [], more: 0 });
   assert.ok(blocked('https://ads.test/x.js'), 'blocked at once');
-  assert.ok(!ElectronBlocker.deserialize(cache).match(fromElectronDetails({ id: 2, url: 'https://ads.test/x.js', resourceType: 'script', referrer: 'https://page.test/' })).match, 'the cache built before has no user rules');
   data.myFilters = '||other.test^';
   b.applyMyFilters();
   assert.ok(!blocked('https://ads.test/x.js') && blocked('https://other.test/y.js'), 'the old rule went, the new one is on');
-  b.engine = ElectronBlocker.parse(''); // a list update brings a new engine
-  b.applyMyFilters(true);
-  assert.ok(blocked('https://other.test/y.js'), 'still applied after a list update');
+});
+
+test('REQ-311: a list update writes the cache before My filters go in, and keeps them in the engine', async () => {
+  const data = { myFilters: '||other.test^' };
+  let cache = null;
+  const b = Object.create(AdBlocker.prototype);
+  Object.assign(b, { settings: { get: (k) => data[k], data: {}, store: { save() {} } }, myApplied: ['||other.test^'], myStatus: null, engine: null });
+  b.build = async () => { const e = ElectronBlocker.parse(''); cache = e.serialize(); return e; }; // what build() writes to disk
+  await b.refresh();
+  const req = (e) => !!e.match(fromElectronDetails({ id: 1, url: 'https://other.test/y.js', resourceType: 'script', referrer: 'https://page.test/' })).match;
+  assert.ok(req(b.engine), 'still applied after a list update');
+  assert.ok(!req(ElectronBlocker.deserialize(cache)), 'the cache file has no user rules');
 });

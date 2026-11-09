@@ -58,12 +58,24 @@ async function isPrivateUrl(url, { lookup = (h) => dns.lookup(h, { all: true }) 
 }
 
 /**
+ * Is the page itself local? Only a literal private address or a reserved name counts, never a DNS answer: a site
+ * could answer its own name with a private address too and so switch the guard off for itself (SEC-104).
+ */
+function isLocalPage(pageUrl) {
+  let host;
+  try { host = new URL(pageUrl).hostname.toLowerCase().replace(/\.$/, ''); } catch { return false; }
+  if (!host) return false;
+  if (net.isIP(host.replace(/^\[|\]$/g, '')) || v4(host)) return isPrivateIp(host);
+  return host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.lan') || !host.includes('.');
+}
+
+/**
  * A request guard for automatic fetches made because of what a page showed: refuses private and local addresses
  * unless the page itself is on one (a media server at home, a test page on localhost).
  */
 function guardFor(pageUrl, opts) {
   return async (url) => {
-    if (await isPrivateUrl(pageUrl, opts)) return; // the page is local: it could ask for these itself
+    if (isLocalPage(pageUrl)) return; // the page is local: it could ask for these itself
     if (await isPrivateUrl(url, opts)) throw new Error('Not fetched: a page on the internet asked for an address on this PC or a private network');
   };
 }
@@ -78,7 +90,7 @@ const pinned = new WeakMap(); // session -> Transport that refuses private addre
  */
 function openerFor(ses, pageUrl, { Transport = require('./transport').Transport, open = require('./net').open } = {}) {
   return async (url, opts) => {
-    if (await isPrivateUrl(pageUrl, { lookup: sessionLookup(ses) })) return open(url, opts);
+    if (isLocalPage(pageUrl)) return open(url, opts);
     let proxy = 'DIRECT';
     try { proxy = await ses.resolveProxy(url); } catch {}
     if (!/^DIRECT/i.test(String(proxy || 'DIRECT').split(';')[0].trim())) return open(url, opts);
@@ -88,4 +100,4 @@ function openerFor(ses, pageUrl, { Transport = require('./transport').Transport,
   };
 }
 
-module.exports = { isPrivateIp, isPrivateUrl, guardFor, sessionLookup, openerFor };
+module.exports = { isPrivateIp, isPrivateUrl, isLocalPage, guardFor, sessionLookup, openerFor };

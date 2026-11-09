@@ -4,6 +4,8 @@
 // memory only (no file). Cleared with the browsing history.
 const { JsonStore } = require('./store');
 
+// shortcut: one total cap, so a site with thousands of sub-domains could push older hosts out; upgrade to a cap per
+// site if that is ever seen.
 const MAX = 5000;
 
 class Hsts {

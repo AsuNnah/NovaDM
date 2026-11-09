@@ -42,14 +42,19 @@ async function reachable(url, timeoutMs = 3500) {
  * from the ISP are never used, then relaxes to "automatic" if the DoH servers can't be reached.
  * Returns a status object for the UI.
  */
-async function applySecureDns(settings) {
+async function applySecureDns(settings, { recheck = false } = {}) {
   const servers = serversFor(settings);
   if (!servers.length) {
     app.configureHostResolver({ secureDnsMode: 'off' });
     return { mode: 'off', servers };
   }
+  const probe = async () => (await reachable(servers[0])) || (servers[1] && (await reachable(servers[1])));
+  // A re-check while in fallback probes first: switching to strict meanwhile would stop every lookup for seconds.
+  if (recheck && !settings.get('secureDnsStrict') && !(await probe())) {
+    return { mode: 'automatic', servers, note: 'Secure DNS servers unreachable on this network; using normal DNS as fallback.' };
+  }
   app.configureHostResolver({ secureDnsMode: 'secure', secureDnsServers: servers });
-  const ok = (await reachable(servers[0])) || (servers[1] && (await reachable(servers[1])));
+  const ok = await probe();
   if (!ok && settings.get('secureDnsStrict')) {
     // Strict only (SEC-105): stay encrypted; lookups fail instead of going to the network's DNS.
     return { mode: 'secure', strict: true, unreachable: true, servers, note: "Secure DNS servers unreachable; Strict only is on, so pages won't load." };

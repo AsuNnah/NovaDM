@@ -5,8 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { app, ipcMain } = require('electron');
-const { ElectronBlocker, fromElectronDetails, adsAndTrackingLists } = require('@ghostery/adblocker-electron');
-const { parseFilter } = require('@ghostery/adblocker');
+const { ElectronBlocker, fromElectronDetails, adsAndTrackingLists, parseFilter } = require('@ghostery/adblocker-electron');
 const { siteOf } = require('./util');
 
 const PRELOAD_PATH = require.resolve('@ghostery/adblocker-electron-preload');

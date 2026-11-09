@@ -373,7 +373,7 @@ function registerIpc(ctx) {
     'shields.toggleSite': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { const on = getManagers().adblock.isWhitelisted(t.url); getManagers().adblock.setSiteEnabled(t.url, on); b.reload(t.id); } setTimeout(pushShields, 200); },
     'shields.toggleHardening': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { toggleSite(getManagers().settings, t.url); b.reload(t.id); } setTimeout(pushShields, 200); },
     // The Guard panel's "always block pop-ups on this site" (and back to asking / the general setting).
-    'shields.toggleForget': () => { const t = getManagers().browser.activeTab(); const st = getManagers().settings; const site = t && /^https?:/i.test(t.url || '') ? siteOf(t.url) : ''; if (site) { const l = new Set(st.get('forgetSites') || []); if (l.has(site)) l.delete(site); else l.add(site); st.set({ forgetSites: [...l] }); } pushShields(); },
+    'shields.toggleForget': () => { const t = getManagers().browser.activeTab(); const st = getManagers().settings; const site = t && !t.incognito && /^https?:/i.test(t.url || '') ? siteOf(t.url) : ''; /* a private window's site is never written to disk */ if (site) { const l = new Set(st.get('forgetSites') || []); if (l.has(site)) l.delete(site); else l.add(site); st.set({ forgetSites: [...l] }); } pushShields(); },
     'shields.togglePopupBlock': () => { const t = getManagers().browser.activeTab(); const p = getManagers().popup; if (t) p.blockSite(t.url, !p.siteBlocked(t.url)); setTimeout(pushShields, 100); },
     'shields.setGlobal': (a) => { getManagers().settings.set({ adblock: !!a.enabled }); pushShields(); },
 
@@ -546,7 +546,7 @@ function registerIpc(ctx) {
       protection: t && /^https?:/i.test(t.url || '') ? { siteOn: !(settings.get('hardeningOff') || []).includes(siteOf(t.url)), level: settings.get('securityLevel'), fingerprinting: settings.get('fingerprinting') } : null,
       popups: t && /^https?:/i.test(t.url || '') ? (getManagers().popup.siteBlocked(t.url) ? 'blocked' : getManagers().popup.siteAllowed(t.url) ? 'allowed' : 'default') : null,
       ready: adblock.ready,
-      forget: t && /^https?:/i.test(t.url || '') ? (settings.get('forgetSites') || []).includes(siteOf(t.url)) : null, // REQ-309
+      forget: t && !t.incognito && /^https?:/i.test(t.url || '') ? (settings.get('forgetSites') || []).includes(siteOf(t.url)) : null, // REQ-309
       dnsFallback: !!getManagers().getDnsStatus && getManagers().getDnsStatus().mode === 'automatic', // REQ-307
     };
   }

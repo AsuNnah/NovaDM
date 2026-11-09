@@ -825,10 +825,10 @@ app.whenReady().then(async () => {
   // Secure DNS first, before any page loads (strict mode is set synchronously inside).
   // The Guard button shows when lookups fell back to the network's DNS (REQ-307); checked again every 5 minutes
   // while the servers don't answer, so the warning goes when they do.
-  const dns = () => applySecureDns(settings).then((s) => { dnsStatus = s; sendUI('dns-warning', { on: s.mode === 'automatic' }); }).catch(() => {});
+  const dns = (opts) => applySecureDns(settings, opts).then((s) => { dnsStatus = s; sendUI('dns-warning', { on: s.mode === 'automatic' }); }).catch(() => {});
   dns();
   settings.on('change', (c) => { if ('secureDns' in c || 'secureDnsCustom' in c || 'secureDnsStrict' in c) dns(); });
-  setInterval(() => { if (dnsStatus.mode === 'automatic' || dnsStatus.unreachable) dns(); }, 5 * 60 * 1000).unref();
+  setInterval(() => { if (dnsStatus.mode === 'automatic' || dnsStatus.unreachable) dns({ recheck: true }); }, 5 * 60 * 1000).unref();
   popup = new PopupGuard(settings);
   media = new MediaRegistry({
     getSetting: (k) => settings.get(k),
@@ -970,7 +970,7 @@ app.whenReady().then(async () => {
   });
 
   // NovaDM's own pages (SEC-108): the UI views use the default session, internal pages in tabs the tab sessions.
-  for (const p of [protocol, browser.normalSession.protocol, browser.incognitoSession.protocol]) p.handle(appScheme.SCHEME, (req) => appScheme.serve(req));
+  for (const p of [protocol, browser.normalSession.protocol, browser.incognitoSession.protocol, electronSession.fromPartition('novadm-siteext').protocol]) p.handle(appScheme.SCHEME, (req) => appScheme.serve(req)); // every session that shows NovaDM's own pages
 
   // Grabber thumbnails: novadm-thumb://img/?u=<image url>&r=<page url>[&p=1]. Fetched through the browsing
   // session (the private one with p=1) with the page as Referer, so hotlink-protected images still preview.

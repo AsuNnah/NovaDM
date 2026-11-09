@@ -308,7 +308,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // ---- clear browsing data ----
   const RANGES = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity };
   async function clearData({ range = 'all', history: h = true, cookies = false, cache = false } = {}) {
-    if (h) { browser.hsts.n.clear(); history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
+    if (h) { if (range === 'all') browser.hsts.n.clear(); history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
     if (cookies) {
       await browser.normalSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers', 'cachestorage', 'filesystem', 'shadercache'] });
     }
@@ -327,8 +327,11 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     const host = (c) => String(c.domain || '').replace(/^\./, '');
     const cookies = (await ses.cookies.get({}).catch(() => [])).filter((c) => set.has(siteOf('https://' + host(c))));
     await Promise.all(cookies.map((c) => ses.cookies.remove(`${c.secure ? 'https' : 'http'}://${host(c)}${c.path || '/'}`, c.name).catch(() => {})));
-    // Storage is kept per origin: the bare and www names, plus every origin of the site in the history.
+    // Storage is kept per origin: the bare and www names, every host of its cookies, and every origin in the history.
+    // shortcut: a sub-domain with no cookie and no history entry (an iframe only) keeps its storage; upgrade with a
+    // list of the origins Electron stores, if it ever offers one.
     const origins = new Set();
+    for (const c of cookies) for (const p of ['https://', 'http://']) origins.add(p + host(c));
     for (const s of sites) for (const p of ['https://', 'http://']) { origins.add(p + s); origins.add(p + 'www.' + s); }
     for (const v of history.visits) { try { if (set.has(siteOf(v.url))) origins.add(new URL(v.url).origin); } catch {} }
     await ses.clearData({ dataTypes: FORGET_DATA, origins: [...origins] }).catch(() => {});

@@ -7,7 +7,7 @@ const path = require('path');
 
 const OUT = path.join(os.tmpdir(), 'novadm-selftest-forgetsites.json');
 
-module.exports = async ({ app, browser, browsing, settings }) => {
+module.exports = async ({ app, browser, browsing, settings, ipc }) => {
   const result = { checks: {} };
   const c = result.checks;
   try {
@@ -23,11 +23,25 @@ module.exports = async ({ app, browser, browsing, settings }) => {
     result.before = names();
     c.cookiesOnDiskBefore = ['forgetme', 'forgetme2', 'keepme'].every((n) => result.before.includes(n));
 
+    // A private window can't add its site to the list (it would be written to settings.json).
+    const http = require('http');
+    const srv = http.createServer((_q, r) => r.end('<title>private page</title>ok'));
+    await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+    const pid = browser.createTab({ url: `http://127.0.0.1:${srv.address().port}/`, incognito: true });
+    for (let i = 0; i < 50 && browser.tabs.get(pid).wc.getTitle() !== 'private page'; i++) await new Promise((r) => setTimeout(r, 100));
+    browser.cur = 'private';
+    result.activePrivate = !!(browser.activeTab() && browser.activeTab().incognito);
+    ipc['shields.toggleForget']();
+    c.privateCantAdd = result.activePrivate && JSON.stringify(settings.get('forgetSites')) === '[]';
+    srv.close();
+    browser.cur = 'normal';
+
     settings.set({ forgetSites: ['bank.example'] });
     await browsing.onQuit(); // what NovaDM runs when it closes
     result.after = names();
     c.forgottenSiteGoneFromDisk = !result.after.includes('forgetme') && !result.after.includes('forgetme2');
     c.otherSiteKept = result.after.includes('keepme');
+
     result.ok = Object.values(c).every(Boolean);
   } catch (e) {
     result.fatal = String((e && e.stack) || e);
