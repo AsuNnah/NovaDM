@@ -6,8 +6,27 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
-Planned for **1.7.14**: the History panel (a History button with search, *All* and *Recently closed*). It was planned
-as 1.7.13; on 2026-11-09 the two versions swapped, so the core and IPC fixes below, planned as 1.7.14, ship as 1.7.13.
+## [1.7.14] — 2026-11-09
+
+A History panel on the toolbar, and the toolbar itself now runs sandboxed. Planned as 1.7.13; the two versions
+swapped on 2026-11-09, so the core and IPC fixes shipped first as 1.7.13.
+
+### Added
+- **History button** (a clock, next to the extension buttons) and **Ctrl+Shift+H** open a History panel under it; the
+  same key or Esc closes it. Ctrl+H still opens the full History page.
+  - A search box, ready to type in, filters as you type.
+  - **All:** your visits by day (*Today*, *Yesterday*, then dates), each with the site's icon, the title and the time.
+    Click opens the page here, Ctrl+click or middle click in a new tab; × removes that one visit.
+  - **Recently closed:** the tabs and windows Ctrl+Shift+T would bring back, newest first, with the time they closed.
+    Click reopens *that* one, not only the last.
+  - The trash button and the … menu open the full History page or its *Clear browsing data* box.
+- **One small icon per site** for the panel, kept in `site-icons.json` (at most 500 sites, 64 KB each). It is learned
+  only when a normal tab shows its icon, never because the panel opened; private tabs never add to it, and clearing
+  history clears it too.
+
+### Security
+- **The toolbar runs sandboxed**, like NovaDM's other views. Extension buttons keep working.
+- **A private window's History panel shows nothing** from normal browsing: no visits and no closed tabs.
 
 ## [1.7.13] — 2026-11-09
 
