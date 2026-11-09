@@ -37,7 +37,7 @@ jobs:
         run: npx --yes @doyensec/electronegativity@1.10.3 --input src --relative --electron-version 45.0.0 --exclude-checks CSPGlobalCheck,CSPHTMLCheck,CustomArgumentsJSCheck --output electronegativity.sarif
       - name: Send the results to code scanning
         if: always() && hashFiles('electronegativity.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           sarif_file: electronegativity.sarif
           category: electronegativity
@@ -64,7 +64,7 @@ jobs:
         run: semgrep scan --config p/javascript --config p/nodejsscan --exclude-rule ajinabraham.njsscan.dos.regex_dos.regex_dos --metrics=off --sarif --output semgrep.sarif src browser-extension
       - name: Send the results to code scanning
         if: always() && hashFiles('semgrep.sarif') != ''
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           sarif_file: semgrep.sarif
           category: semgrep
@@ -99,7 +99,7 @@ jobs:
           results_format: sarif
           publish_results: false
       - name: Send the results to code scanning
-        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        uses: github/codeql-action/upload-sarif@1fc58d04a4d4374f921bdac573c3811c240f9c26 # v4.39.2
         with:
           sarif_file: scorecard.sarif
           category: scorecard

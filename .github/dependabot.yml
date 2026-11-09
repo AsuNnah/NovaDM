@@ -13,3 +13,7 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    groups:
+      # Every github/codeql-action step in a workflow must run the same version (CodeQL refuses a mix).
+      codeql-action:
+        patterns: ["github/codeql-action*"]
