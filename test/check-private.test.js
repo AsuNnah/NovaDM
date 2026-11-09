@@ -22,7 +22,7 @@ test('check-private --build finds a user folder inside the packed app, and passe
   const run = (a) => spawnSync(process.execPath, [path.join(__dirname, '..', 'tools', 'check-private.js'), '--build', a], { encoding: 'utf8' });
   const dirty = run(await make('dirty', 'const p = "C:\\\\Users\\\\alicew\\\\AppData";'));
   assert.strictEqual(dirty.status, 1);
-  assert.match(dirty.stdout, /app\.asar\/lib\/a\.js: C:\\\\Users\\\\alicew/);
+  assert.match(dirty.stdout, /app\.asar[\\/]lib[\\/]a\.js: C:\\\\Users\\\\alicew/);
   const clean = run(await make('clean', 'module.exports = 1;'));
   assert.strictEqual(clean.status, 0, clean.stdout);
   fs.rmSync(dir, { recursive: true, force: true });
