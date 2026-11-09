@@ -493,6 +493,13 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     'history.search': (a) => ({ items: history.search({ q: a.q || '', limit: Math.min(Number(a.limit) || 150, 500), before: Number(a.before) || Infinity }) }),
     'history.remove': (a) => { history.remove((a.ids || []).map(Number)); return { ok: true }; },
     'history.clear': (a) => clearData(a),
+    // The History panel (Ctrl+Shift+H): nothing from a private window, neither visits nor closed tabs.
+    'history.panel': (a) => {
+      if (browser.cur === 'private') return { private: true, items: [], closed: [] };
+      const items = history.search({ q: a.q || '', limit: 200 }).map((v) => ({ id: v.id, t: v.t, url: v.url, title: v.title, icon: siteIcons.get(v.url) }));
+      return { private: false, items, closed: browser.closedList(false).map((c) => ({ ...c, icon: siteIcons.get(c.url) })) };
+    },
+    'history.reopenClosed': (a) => { if (browser.cur !== 'private') browser.reopenClosed(false, Number(a.id)); return { ok: true }; },
     'history.open': (a) => { if (/^https?:/i.test(a.url || '')) { if (a.newTab) browser.createTab({ url: a.url, background: true }); else browser.navigate(browser.activeId, a.url); } },
 
     'reader.open': () => openReader(),

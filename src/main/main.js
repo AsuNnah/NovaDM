@@ -704,6 +704,7 @@ function handleShortcut(tab, action) {
     case 'devtools-console': return wc && devTools(wc, 'DevToolsAPI.showPanel("console")');
     case 'devtools-inspect': return wc && devTools(wc, 'DevToolsAPI.enterInspectElementMode()');
     case 'menu': setPanel(true); return sendUI('open-panel', { name: 'menu' });
+    case 'history-panel': setPanel(true); overlayView.webContents.focus(); return sendUI('open-panel', { name: 'history', toggle: true });
     case 'tab-search': setPanel(true); overlayView.webContents.focus(); return sendUI('open-panel', { name: 'tabsearch' });
     case 'task-manager': return showTaskManager();
     case 'shortcut-list': return showShortcutList();

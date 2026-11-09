@@ -538,6 +538,7 @@ function togglePanel(name) {
   openPanel = name;
   call('panel.open', { name });
 }
+$('history-btn').onclick = () => togglePanel('history');
 $('media-btn').onclick = () => togglePanel('media');
 $('grab-btn').onclick = () => togglePanel('grabber');
 $('dl-btn').onclick = () => togglePanel('downloads');
