@@ -258,8 +258,7 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
   if (priv && w.setAppDetails) w.setAppDetails({ appId: 'app.novadm.browser.private', appIconPath: icon, appIconIndex: 0 });
   const query = priv ? { private: '1' } : {};
 
-  // shortcut: not sandboxed, because its preload loads the extension buttons (electron-chrome-extensions/browser-action),
-  // which a sandboxed preload can't require; bundle that into one preload file to sandbox it too.
+  // Sandboxed: the extension-buttons code is joined into this one preload by tools/build-ui-preload.js.
   const cv = new WebContentsView({ webPreferences: { preload: TOOLBAR_PRELOAD, contextIsolation: true, sandbox: true } });
   cv.setBackgroundColor('#00000000');
   cv.webContents.loadFile(path.join(UI_DIR, 'chrome.html'), { query });
