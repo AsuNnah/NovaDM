@@ -18,6 +18,7 @@ const PLACE = {
   prompt: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '420px' },
   dialog: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '480px', top: '40px' },
   bookmark: { width: '340px' },
+  history: { right: '220px', width: '360px', height: 'min(500px, calc(100% - 20px))' },
   tabsearch: { left: '50%', right: 'auto', transform: 'translateX(-50%)', width: '520px', top: '8px' },
 };
 function place(name) {
@@ -37,6 +38,8 @@ document.getElementById('backdrop').addEventListener('mousedown', close);
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
 
 api.on('open-panel', (d) => {
+  if (d.toggle && current === d.name) return close();
+  if (d.name === 'history') hist.menu = false;
   if (d.name === 'media' && current !== 'media') ytdlpView = null;
   current = d.name;
   place(d.name);
@@ -218,6 +221,7 @@ function render() {
   if (current === 'shields') return renderShields();
   if (current === 'menu') return renderMenu();
   if (current === 'tabsearch') return renderTabSearch();
+  if (current === 'history') return renderHistory();
 }
 
 // ---- media ----
@@ -530,6 +534,98 @@ async function renderTabSearch() {
   };
   content.append(box, list);
   draw();
+  box.focus();
+}
+
+// ---- History panel (toolbar clock, Ctrl+Shift+H) ----
+const GLOBE_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.6 2.5 14.4 0 17M12 3.5c-2.5 2.6-2.5 14.4 0 17"/></svg>';
+const TRASH_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/></svg>';
+const DOTS_SVG = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg>';
+const hist = { tab: 'all', q: '', menu: false, seq: 0 };
+const hmTime = (t) => new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+function hmDay(t) {
+  const d = new Date(t); const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff = Math.round((today - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 864e5);
+  return diff <= 0 ? 'Today' : diff === 1 ? 'Yesterday' : d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long', year: today.getFullYear() === d.getFullYear() ? undefined : 'numeric' });
+}
+function hmIcon(src) {
+  const ic = el('span', 'sic');
+  if (src) { const img = el('img'); img.src = src; img.width = img.height = 16; img.alt = ''; ic.append(img); } else ic.innerHTML = GLOBE_SVG;
+  return ic;
+}
+
+async function renderHistory() {
+  // Ask first, then draw everything at once: a second render started meanwhile wins, never both.
+  const seq = ++hist.seq;
+  const d = await api.call('history.panel', { q: hist.q });
+  if (current !== 'history' || seq !== hist.seq) return;
+  content.innerHTML = '';
+  const hdr = el('div', 'hdr');
+  hdr.append(el('div', 't', 'History'), el('div', 'sp'));
+  const trash = el('div', 'iconbtn', TRASH_SVG); trash.title = 'Clear browsing data'; trash.setAttribute('role', 'button');
+  const more = el('div', 'iconbtn', DOTS_SVG); more.title = 'More'; more.setAttribute('role', 'button');
+  const clearData = () => { api.call('tabs.new', { url: 'novadm://history?clear=1' }); close(); };
+  trash.onclick = clearData;
+  more.onclick = () => { hist.menu = !hist.menu; renderHistory(); };
+  if (!d.private) hdr.append(trash, more); // a private window gets no way into the normal History page
+  content.append(hdr);
+  if (hist.menu && !d.private) {
+    const m = el('div', 'sugg');
+    const item = (label, fn) => { const r = el('div', 'menuitem', `<span class="ml">${esc(label)}</span>`); r.onclick = fn; m.append(r); };
+    item('Open the full History page', () => { api.call('tabs.new', { url: 'novadm://history' }); close(); });
+    item('Clear browsing data…', clearData);
+    m.append(el('div', 'msep'));
+    content.append(m);
+  }
+  if (d.private) {
+    content.append(el('div', 'empty', 'History isn’t kept in private windows.'));
+    return;
+  }
+  const box = el('input', 'inp'); box.placeholder = 'Search history'; box.spellcheck = false; box.value = hist.q;
+  box.style.cssText = 'margin:10px 14px 8px;width:calc(100% - 28px);';
+  const seg = el('div', 'seg hseg'); seg.style.margin = '0 14px 6px';
+  for (const [k, label] of [['all', 'All'], ['closed', 'Recently closed']]) {
+    const b = el('button', hist.tab === k ? 'on' : '', label);
+    b.onclick = () => { hist.tab = k; renderHistory(); };
+    seg.append(b);
+  }
+  const list = el('div', 'body hl'); list.style.cssText = 'flex:1;min-height:0;';
+  content.append(box, seg, list);
+  const words = () => hist.q.toLowerCase().split(/\s+/).filter(Boolean);
+  const draw = (items, closed) => {
+    list.innerHTML = '';
+    if (hist.tab === 'closed') {
+      const shown = closed.filter((c) => words().every((w) => `${c.title || ''} ${c.url || ''}`.toLowerCase().includes(w)));
+      for (const c of shown) {
+        const row = el('div', 'srow hrow');
+        row.append(hmIcon(c.icon), el('div', 'stx', `<span class="stt">${esc(c.window ? `Window (${c.tabs} tab${c.tabs === 1 ? '' : 's'}): ${c.title || ''}` : (c.title || c.url))}</span>`), el('span', 'htm', esc(hmTime(c.t))));
+        row.onclick = () => { api.call('history.reopenClosed', { id: c.id }); close(); };
+        list.append(row);
+      }
+      if (!shown.length) list.append(el('div', 'empty', 'No recently closed tabs.'));
+      return;
+    }
+    let day = '';
+    for (const v of items) {
+      const dd = hmDay(v.t);
+      if (dd !== day) { day = dd; list.append(el('div', 'hday', esc(dd))); }
+      const row = el('div', 'srow hrow'); row.title = v.url;
+      const x = el('div', 'iconbtn hx', xSvg()); x.title = 'Remove from history';
+      row.append(hmIcon(v.icon), el('div', 'stx', `<span class="stt">${esc(v.title || v.url)}</span>`), el('span', 'htm', esc(hmTime(v.t))), x);
+      x.onclick = async (e) => { e.stopPropagation(); await api.call('history.remove', { ids: [v.id] }); row.remove(); };
+      row.onclick = (e) => { api.call('history.open', { url: v.url, newTab: e.ctrlKey || e.metaKey }); if (!(e.ctrlKey || e.metaKey)) close(); };
+      row.onauxclick = (e) => { if (e.button === 1) api.call('history.open', { url: v.url, newTab: true }); };
+      list.append(row);
+    }
+    if (!items.length) list.append(el('div', 'empty', hist.q ? 'Nothing in your history matches.' : 'Your history is empty.'));
+  };
+  draw(d.items, d.closed);
+  let timer;
+  box.oninput = () => {
+    hist.q = box.value; clearTimeout(timer);
+    if (hist.tab === 'closed') return draw([], d.closed);
+    timer = setTimeout(async () => { const q = hist.q; const r = await api.call('history.panel', { q }); if (current === 'history' && q === hist.q && seq === hist.seq) draw(r.items, r.closed); }, 150);
+  };
   box.focus();
 }
 

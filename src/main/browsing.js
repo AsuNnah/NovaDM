@@ -9,6 +9,7 @@ const { app, WebContentsView, Menu, dialog, nativeImage } = require('electron');
 const diagnostics = require('./diagnostics');
 const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeeping');
 const { History, Bookmarks, TabSession } = require('./library');
+const { SiteIcons } = require('./site-icons');
 const bookmarkImport = require('./bookmarks-import');
 const { menuText } = require('./util');
 const { guardFor } = require('./netguard');
@@ -26,6 +27,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   const history = new History(userDataDir);
   const bookmarks = new Bookmarks(userDataDir);
   const tabSession = new TabSession(userDataDir);
+  const siteIcons = new SiteIcons(userDataDir);
   const shields = new Shields(settings);
   browser.shields = shields;
   browser.isBookmarked = (url) => !!url && bookmarks.has(url);
@@ -176,20 +178,27 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     history._push = setTimeout(() => { for (const t of browser.internalTabs('history')) t.wc.send('novadm:internal-event', 'history', {}); }, 800);
   });
 
-  // The site's icon, kept with the bookmark (fetched once through the browsing session).
+  // A page's icon, fetched through the browsing session. A private tab's icon is asked for in the private session,
+  // never with the normal session's cookies; a page on the internet cannot point its icon at this PC or the home
+  // network. Resolves to { type, body }.
+  async function fetchIcon(pageUrl, favicon, incognito) {
+    const guard = guardFor(pageUrl);
+    await guard(favicon);
+    const r = await net.fetchBuffer(favicon, { session: incognito ? browser.incognitoSession : browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000, guard });
+    return { type: String(r.headers['content-type'] || '').split(';')[0].trim(), body: r.body };
+  }
+  // The site's icon, kept with the bookmark (fetched once).
   async function addIcon(b, favicon, incognito) {
     if (!b || !/^https?:\/\//i.test(favicon || '')) return;
     try {
-      // A private tab's icon is asked for in the private session, never with the normal session's cookies.
-      const guard = guardFor(b.url); // a page on the internet cannot point its icon at this PC or the home network
-      await guard(favicon);
-      const r = await net.fetchBuffer(favicon, { session: incognito ? browser.incognitoSession : browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000, guard });
-      const type = String(r.headers['content-type'] || '').split(';')[0].trim();
-      if (!/^image\/(png|x-icon|vnd\.microsoft\.icon|svg\+xml|gif|jpeg|webp)$/.test(type) || !r.body.length) return;
-      b.icon = `data:${type};base64,${r.body.toString('base64')}`;
+      const { type, body } = await fetchIcon(b.url, favicon, incognito);
+      if (!/^image\/(png|x-icon|vnd\.microsoft\.icon|svg\+xml|gif|jpeg|webp)$/.test(type) || !body.length) return;
+      b.icon = `data:${type};base64,${body.toString('base64')}`;
       bookmarks.changed();
     } catch {}
   }
+  // The History panel's icon for the site (normal tabs only; SiteIcons checks).
+  browser.on('favicon', (tab) => { siteIcons.learn(tab, (icon) => fetchIcon(tab.url, icon, false)).catch(() => {}); });
 
   // The star / Ctrl+D: bookmark the page in the folder used last (a page already bookmarked is left as it is),
   // and open the popup under the star: name, folder, Done, Remove.
@@ -298,7 +307,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // ---- clear browsing data ----
   const RANGES = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity };
   async function clearData({ range = 'all', history: h = true, cookies = false, cache = false } = {}) {
-    if (h) { history.clear(RANGES[range] || Infinity); if (range === 'all') tabSession.clear(); }
+    if (h) { history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
     if (cookies) {
       await browser.normalSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers', 'cachestorage', 'filesystem', 'shadercache'] });
     }
@@ -309,12 +318,13 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   /** Settings → "When NovaDM closes, clear…". */
   async function onQuit() {
     const jobs = [];
-    if (settings.get('clearHistoryOnExit')) history.clear();
+    if (settings.get('clearHistoryOnExit')) { history.clear(); siteIcons.keepOnly([]); }
     if (settings.get('clearCookiesOnExit') || settings.get('clearCacheOnExit')) {
       jobs.push(clearData({ history: false, cookies: !!settings.get('clearCookiesOnExit'), cache: !!settings.get('clearCacheOnExit') }).catch(() => {}));
     }
     await Promise.all(jobs);
     history.flush();
+    siteIcons.flush();
     bookmarks.flush();
     if (settings.get('restoreTabs') === false) tabSession.clear();
     tabSession.flush();
@@ -481,8 +491,15 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     },
 
     'history.search': (a) => ({ items: history.search({ q: a.q || '', limit: Math.min(Number(a.limit) || 150, 500), before: Number(a.before) || Infinity }) }),
-    'history.remove': (a) => { history.remove((a.ids || []).map(Number)); return { ok: true }; },
+    'history.remove': (a) => { history.remove((a.ids || []).map(Number)); siteIcons.keepOnly(history.visits.map((v) => v.url)); return { ok: true }; },
     'history.clear': (a) => clearData(a),
+    // The History panel (Ctrl+Shift+H): nothing from a private window, neither visits nor closed tabs.
+    'history.panel': (a) => {
+      if (browser.cur === 'private') return { private: true, items: [], closed: [] };
+      const items = history.search({ q: a.q || '', limit: 200 }).map((v) => ({ id: v.id, t: v.t, url: v.url, title: v.title, icon: siteIcons.get(v.url) }));
+      return { private: false, items, closed: browser.closedList(false).map((c) => ({ ...c, icon: siteIcons.get(c.url) })) };
+    },
+    'history.reopenClosed': (a) => { if (browser.cur !== 'private') browser.reopenClosed(false, Number(a.id)); return { ok: true }; },
     'history.open': (a) => { if (/^https?:/i.test(a.url || '')) { if (a.newTab) browser.createTab({ url: a.url, background: true }); else browser.navigate(browser.activeId, a.url); } },
 
     'reader.open': () => openReader(),
@@ -492,7 +509,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   };
 
   return {
-    history, bookmarks, tabSession, shields, handlers,
+    history, bookmarks, tabSession, siteIcons, shields, handlers,
     chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData,
     toggleActiveBookmark, openReader, bookmarkState, memoryCheck,
     get findView() { return find.view; },

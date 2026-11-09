@@ -14,7 +14,7 @@ test('shortcuts: every key combination maps to its action', () => {
     [ctrl('t'), 'new-tab'], [ctrl('n'), 'new-window'], [ctrl('w'), 'close-tab'], [ctrl('F4'), 'close-tab'],
     [ctrl('T', { shift: true }), 'reopen-tab'], [ctrl('N', { shift: true }), 'new-private'], [ctrl('W', { shift: true }), 'close-window'],
     [ctrl('l'), 'focus-address'], [ctrl('k'), 'focus-address'], [ctrl('e'), 'focus-address'], [key('d', { alt: true }), 'focus-address'], [key('F6'), 'focus-address'],
-    [ctrl('j'), 'downloads'], [ctrl('h'), 'history'], [ctrl('O', { shift: true }), 'bookmarks'], [ctrl('d'), 'bookmark'], [ctrl('D', { shift: true }), 'bookmark-all'], [ctrl('B', { shift: true }), 'bookmarks-bar'],
+    [ctrl('j'), 'downloads'], [ctrl('h'), 'history'], [ctrl('H', { shift: true }), 'history-panel'], [ctrl('O', { shift: true }), 'bookmarks'], [ctrl('d'), 'bookmark'], [ctrl('D', { shift: true }), 'bookmark-all'], [ctrl('B', { shift: true }), 'bookmarks-bar'],
     [ctrl('Delete', { shift: true }), 'clear-data'], [ctrl('/'), 'shortcut-list'], [ctrl('?', { shift: true }), 'shortcut-list'],
     [ctrl('r'), 'reload'], [key('F5'), 'reload'], [key('F5', { shift: true }), 'hard-reload'], [ctrl('R', { shift: true }), 'hard-reload'],
     [ctrl('f'), 'find'], [ctrl('g'), 'find-next'], [key('F3'), 'find-next'], [key('F3', { shift: true }), 'find-prev'], [ctrl('G', { shift: true }), 'find-prev'],

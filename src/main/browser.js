@@ -381,7 +381,7 @@ class Browser extends EventEmitter {
       update();
       if (!tab.incognito) this.emit('visit', tab, url);
     });
-    wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons && icons[0] || ''; update(); });
+    wc.on('page-favicon-updated', (_e, icons) => { tab.favicon = icons && icons[0] || ''; update(); if (!tab.incognito) this.emit('favicon', tab); });
     wc.on('media-started-playing', update);
     wc.on('enter-html-full-screen', () => this.emit('fullscreen', tab, true));
     wc.on('leave-html-full-screen', () => this.emit('fullscreen', tab, false));
@@ -408,11 +408,28 @@ class Browser extends EventEmitter {
     this.emit('zoom', tab, Math.round(Math.pow(1.2, level) * 100));
   }
 
-  /** Ctrl+Shift+T: the last closed (non-private) tab, back where it was; from a private window, nothing. */
-  reopenClosed(fromPrivate = this.cur === 'private') {
+  /** A closed tab or window, for Ctrl+Shift+T and the History panel's Recently closed list (at most 25). */
+  rememberClosed(entry) {
+    this.closedSeq = (this.closedSeq || 0) + 1;
+    this.closed.push({ ...entry, id: this.closedSeq, t: Date.now() });
+    if (this.closed.length > 25) this.closed.shift();
+  }
+
+  /** Recently closed, newest first; from a private window, nothing (private tabs are never kept). */
+  closedList(fromPrivate = this.cur === 'private') {
+    if (fromPrivate) return [];
+    return this.closed.slice().reverse().map((c) => (c.window
+      ? { id: c.id, t: c.t, window: true, tabs: c.window.tabs.length, title: c.window.tabs[0].title, url: c.window.tabs[0].url }
+      : { id: c.id, t: c.t, window: false, title: c.title, url: c.url }));
+  }
+
+  /** Ctrl+Shift+T: the last closed (non-private) tab, back where it was; from a private window, nothing.
+   * With `entryId` (the History panel), that entry instead of the last one. */
+  reopenClosed(fromPrivate = this.cur === 'private', entryId = null) {
     if (fromPrivate) return null;
-    const last = this.closed.pop();
-    if (!last) return null;
+    const i = entryId == null ? this.closed.length - 1 : this.closed.findIndex((c) => c.id === entryId);
+    if (i < 0) return null;
+    const [last] = this.closed.splice(i, 1);
     if (last.window) { // a closed window: back with its tabs and groups
       if (!this.newWindow) return null;
       const win = this.newWindow({ bounds: last.window.bounds, empty: true });
@@ -639,8 +656,7 @@ class Browser extends EventEmitter {
     if (!tab.incognito && !this.groups[this.cur].closing && /^(https?|novadm):/i.test(tab.url || '')) {
       let saved = tab.saved;
       try { if (tab.wc) saved = { entries: tab.wc.navigationHistory.getAllEntries(), index: tab.wc.navigationHistory.getActiveIndex() }; } catch {}
-      this.closed.push({ url: tab.url, title: tab.title, saved });
-      if (this.closed.length > 25) this.closed.shift();
+      this.rememberClosed({ url: tab.url, title: tab.title, saved });
     }
     if (tab.view) { try { if (this.parentView) this.parentView.removeChildView(tab.view); } catch {} }
     if (tab.wc) { try { tab.wc.close(); } catch {} }
@@ -919,8 +935,7 @@ class Browser extends EventEmitter {
     });
     if (!tabs.length) return;
     const groups = [...g.tabGroups.values()].map((x) => ({ ...x }));
-    this.closed.push({ window: { bounds, tabs, groups } });
-    if (this.closed.length > 25) this.closed.shift();
+    this.rememberClosed({ window: { bounds, tabs, groups } });
   }
 
   duplicateTab(id) {

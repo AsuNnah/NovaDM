@@ -84,6 +84,9 @@ function migrateOldProfile() {
 
 const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
+// The toolbar's preload with the extension-button module joined in, so the toolbar can run sandboxed
+// (made by tools/build-ui-preload.js after npm install).
+const TOOLBAR_PRELOAD = path.join(UI_DIR, 'preload-toolbar.gen.js');
 
 let win, chromeView, overlayView;
 let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatcher, transport, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, browsing;
@@ -257,7 +260,7 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
 
   // shortcut: not sandboxed, because its preload loads the extension buttons (electron-chrome-extensions/browser-action),
   // which a sandboxed preload can't require; bundle that into one preload file to sandbox it too.
-  const cv = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: false } });
+  const cv = new WebContentsView({ webPreferences: { preload: TOOLBAR_PRELOAD, contextIsolation: true, sandbox: true } });
   cv.setBackgroundColor('#00000000');
   cv.webContents.loadFile(path.join(UI_DIR, 'chrome.html'), { query });
   diagnostics.watchConsole(cv.webContents, 'toolbar');
@@ -701,6 +704,7 @@ function handleShortcut(tab, action) {
     case 'devtools-console': return wc && devTools(wc, 'DevToolsAPI.showPanel("console")');
     case 'devtools-inspect': return wc && devTools(wc, 'DevToolsAPI.enterInspectElementMode()');
     case 'menu': setPanel(true); return sendUI('open-panel', { name: 'menu' });
+    case 'history-panel': setPanel(true); overlayView.webContents.focus(); return sendUI('open-panel', { name: 'history', toggle: true });
     case 'tab-search': setPanel(true); overlayView.webContents.focus(); return sendUI('open-panel', { name: 'tabsearch' });
     case 'task-manager': return showTaskManager();
     case 'shortcut-list': return showShortcutList();

@@ -1,6 +1,7 @@
 # Dependencies and build output
 node_modules/
 dist/
+src/ui/preload-toolbar.gen.js
 
 # Android packages (never part of this project)
 *.apk

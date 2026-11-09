@@ -22,7 +22,7 @@ function shortcutFor(input) {
     if (shift) {
       return {
         t: 'reopen-tab', n: 'new-private', w: 'close-window', r: 'hard-reload', d: 'bookmark-all', b: 'bookmarks-bar',
-        o: 'bookmarks', a: 'tab-search', i: 'devtools', j: 'devtools-console', c: 'devtools-inspect', g: 'find-prev',
+        o: 'bookmarks', a: 'tab-search', h: 'history-panel', i: 'devtools', j: 'devtools-console', c: 'devtools-inspect', g: 'find-prev',
         k: 'group-new', u: 'group-remove', l: 'group-fold', // tab groups (not taken by Chrome or Brave)
       }[k] || null;
     }
@@ -57,7 +57,7 @@ const LIST = [
   ['Address bar', 'Ctrl+L / Alt+D / F6 / Ctrl+K / Ctrl+E go to the address bar · Ctrl+Enter add www. and .com · Alt+Enter open in a new tab · type a site (youtube, wiki, github…) then Tab to search it'],
   ['Page', 'Alt+← / Alt+→ back / forward · F5 / Ctrl+R reload · Shift+F5 / Ctrl+Shift+R reload without cache · Esc stop · Alt+Home home page · F11 full screen · Ctrl+P print · Ctrl+S save page · Ctrl+O open a file · Ctrl + / − / 0 or Ctrl+wheel zoom'],
   ['Find', 'Ctrl+F find · F3 / Ctrl+G next · Shift+F3 / Ctrl+Shift+G previous'],
-  ['Bookmarks and history', 'Ctrl+D bookmark · Ctrl+Shift+D bookmark all tabs · Ctrl+Shift+B bookmarks bar · Ctrl+Shift+O bookmarks · Ctrl+H history · Ctrl+J downloads · Ctrl+Shift+Delete clear browsing data'],
+  ['Bookmarks and history', 'Ctrl+D bookmark · Ctrl+Shift+D bookmark all tabs · Ctrl+Shift+B bookmarks bar · Ctrl+Shift+O bookmarks · Ctrl+H history · Ctrl+Shift+H history panel · Ctrl+J downloads · Ctrl+Shift+Delete clear browsing data'],
   ['Tools', 'F12 / Ctrl+Shift+I / J / C developer tools · Ctrl+U page source · Shift+Esc task manager · Alt+F / F10 menu · Ctrl+/ this list'],
   ['Mouse', 'Ctrl+click background tab · middle-click new tab · Alt+click download the link with NovaDM'],
 ];
