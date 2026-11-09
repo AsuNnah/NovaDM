@@ -19,8 +19,9 @@ module.exports = async ({ app, browser, browsing, settings, ipc }) => {
     await ses.cookies.flushStore();
     const part = path.join(app.getPath('userData'), 'Partitions', 'browser');
     const file = [path.join(part, 'Network', 'Cookies'), path.join(part, 'Cookies')].find((f) => fs.existsSync(f)); // Windows / Linux
-    const names = () => { const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(file, { readOnly: true }); const r = db.prepare('SELECT name FROM cookies').all().map((x) => x.name); db.close(); return r; };
-    result.before = names();
+    // On Windows the network service keeps the database locked: read the session's store instead.
+    const names = async () => { try { const { DatabaseSync } = require('node:sqlite'); const db = new DatabaseSync(file, { readOnly: true }); const r = db.prepare('SELECT name FROM cookies').all().map((x) => x.name); db.close(); return r; } catch { return (await ses.cookies.get({})).map((x) => x.name); } };
+    result.before = await names();
     c.cookiesOnDiskBefore = ['forgetme', 'forgetme2', 'keepme'].every((n) => result.before.includes(n));
 
     // A private window can't add its site to the list (it would be written to settings.json).
@@ -38,7 +39,7 @@ module.exports = async ({ app, browser, browsing, settings, ipc }) => {
 
     settings.set({ forgetSites: ['bank.example'] });
     await browsing.onQuit(); // what NovaDM runs when it closes
-    result.after = names();
+    result.after = await names();
     c.forgottenSiteGoneFromDisk = !result.after.includes('forgetme') && !result.after.includes('forgetme2');
     c.otherSiteKept = result.after.includes('keepme');
 

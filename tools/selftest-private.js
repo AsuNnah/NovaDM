@@ -31,7 +31,7 @@ module.exports = async ({ app, browser, ipc, browsing }) => {
     result.opened = { windows: BaseWindow.getAllWindows().length, title: pw && pw.getTitle(), privateTabs: browser.groups.private.order.length, normalTabsUnchanged: browser.groups.normal.order.length === normalBefore };
 
     // 2. Its look: purple class, Private badge, private new tab page.
-    const chromeWc = toolbarOf(pw);
+    const chromeWc = await until(() => toolbarOf(pw), 5000); // slower machines load the toolbar later
     result.look = await chromeWc.executeJavaScript(`({ privateClass: document.documentElement.classList.contains('private'), badge: getComputedStyle(document.getElementById('priv-pill')).display, bg: getComputedStyle(document.body).backgroundColor, tabsShown: document.querySelectorAll('.tab').length })`);
     const ptab = browser.tabs.get(browser.groups.private.activeId);
     result.newTabPage = await ptab.wc.executeJavaScript(`({ greet: document.getElementById('greet').textContent, note: getComputedStyle(document.querySelector('.privnote')).display, stats: getComputedStyle(document.querySelector('.stats')).display })`);
