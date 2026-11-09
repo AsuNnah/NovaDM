@@ -367,43 +367,33 @@ function dlRow(d) {
 function renderShields() {
   content.innerHTML = '';
   const s = shieldsData;
-  content.append(el('div', 'hdr', '<div class="t">Guard</div>'));
-  const wrap = el('div'); wrap.style.padding = '12px 14px';
-  const site = el('div'); site.style.cssText = 'color:var(--fg2);font-size:12px;margin-bottom:6px;'; site.textContent = s.site || 'this page';
-  const big = el('div'); big.style.cssText = 'font-size:26px;font-weight:600;'; big.textContent = s.count || 0;
-  const sub = el('div'); sub.style.cssText = 'color:var(--fg3);font-size:12px;margin-bottom:14px;'; sub.textContent = 'items blocked on this page';
-  wrap.append(site, big, sub);
-  const toggle = el('button', 'btn'); toggle.style.width = '100%';
-  toggle.textContent = s.siteEnabled ? 'Guard is ON for this site' : 'Guard is OFF for this site';
-  if (s.siteEnabled) toggle.classList.add('pri');
-  toggle.onclick = () => api.call('shields.toggleSite');
-  wrap.append(toggle);
-  // Guard Extended (fingerprinting protection, security level): off for one site if it breaks.
-  if (s.protection) {
-    const level = { standard: 'Standard', safer: 'Safer', safest: 'Safest' }[s.protection.level] || 'Standard';
-    const p = el('button', 'btn'); p.style.cssText = 'width:100%;margin-top:8px;';
-    p.textContent = s.protection.siteOn ? `Guard Extended is ON for this site (${level})` : 'Guard Extended is OFF for this site';
-    if (s.protection.siteOn) p.classList.add('pri');
-    p.title = "Guard Extended: fingerprinting protection and the security level. Turn it off for a site that doesn't work; the page reloads.";
-    p.onclick = () => api.call('shields.toggleHardening');
-    wrap.append(p);
+  // 1.8.0: one line of facts, one main switch and small switches (the owner found the old buttons too many).
+  const hdr = el('div', 'hdr gh');
+  hdr.append(el('div', 't', 'Guard'), el('span', 'gsite', esc(s.site || 'this page')), el('div', 'sp'), el('span', 'gcount', `${s.count || 0} blocked`));
+  content.append(hdr);
+  const openSettings = () => { api.call('tabs.new', { url: 'novadm://settings?section=privacy' }); close(); };
+  if (s.dnsFallback) { // REQ-307
+    const bar = el('div', 'dnsbar', '<span>⚠ Secure DNS isn’t working</span>');
+    const fix = el('button', 'link'); fix.textContent = 'Fix'; fix.title = 'Lookups use your network’s DNS. Open the Secure DNS setting.'; fix.onclick = openSettings;
+    bar.append(fix); content.append(bar);
   }
-  // Pop-ups from this site: always blocked (no more questions), or as the general setting says.
-  if (s.popups) {
-    const pb = el('button', 'btn'); pb.style.cssText = 'width:100%;margin-top:8px;';
-    pb.textContent = s.popups === 'blocked' ? 'Pop-ups always blocked on this site' : s.popups === 'allowed' ? 'Pop-ups allowed on this site: always block them' : 'Always block pop-ups on this site';
-    if (s.popups === 'blocked') pb.classList.add('pri');
-    pb.title = s.popups === 'blocked' ? 'Click to stop always blocking: pop-ups from this site follow the general setting again.' : 'Pop-ups and new tabs this site opens on its own are blocked without asking. Your own clicks on its links still work.';
-    pb.onclick = () => api.call('shields.togglePopupBlock');
-    wrap.append(pb);
-  }
-  if (!s.ready) wrap.append(el('div', 'note', 'Filter lists are still loading…'));
-  content.append(wrap);
+  const row = (label, on, call, cls, title) => {
+    const r = el('label', 'srow' + (cls ? ' ' + cls : ''));
+    const box = el('input'); box.type = 'checkbox'; box.checked = !!on; box.setAttribute('aria-label', label);
+    box.onchange = () => api.call(call);
+    const sw = el('span', 'sw'); sw.append(box, el('i'));
+    r.append(el('span', null, esc(label)), sw);
+    if (title) r.title = title;
+    content.append(r);
+  };
+  if (!s.global) content.append(el('div', 'note', 'Ad blocking is off for all sites (Settings).'));
+  row('Guard on this site', s.siteEnabled, 'shields.toggleSite', 'main');
+  if (s.protection) row('Guard Extended', s.protection.siteOn, 'shields.toggleHardening', null, "Fingerprinting protection and the security level. Turn it off for a site that doesn't work; the page reloads.");
+  if (s.popups) row('Block pop-ups', s.popups === 'blocked', 'shields.togglePopupBlock', null, 'Always block the pop-ups and new tabs this site opens on its own.');
+  if (!s.ready) content.append(el('div', 'note', 'Filter lists are still loading…'));
   const foot = el('div', 'foot');
-  foot.append(el('span', null, 'Ad blocking (all sites)'), el('div', 'sp'));
-  const g = el('button', 'btn sm'); g.textContent = s.global ? 'On' : 'Off'; if (s.global) g.classList.add('pri');
-  g.onclick = () => api.call('shields.setGlobal', { enabled: !s.global });
-  foot.append(g);
+  const link = el('button', 'link'); link.textContent = 'Guard settings'; link.onclick = openSettings;
+  foot.append(link);
   content.append(foot);
 }
 

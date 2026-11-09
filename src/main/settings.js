@@ -22,6 +22,7 @@ function defaults() {
     restoreTabs: true,
     secureDns: 'cloudflare', // off | cloudflare | google | quad9 | adguard | custom
     secureDnsCustom: '',
+    secureDnsStrict: false, // 1.8.0 (SEC-105): never fall back to the network's DNS
 
     // Downloads
     downloadDir: path.join(app.getPath('downloads'), 'NovaDM'),

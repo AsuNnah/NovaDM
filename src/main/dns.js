@@ -50,11 +50,15 @@ async function applySecureDns(settings) {
   }
   app.configureHostResolver({ secureDnsMode: 'secure', secureDnsServers: servers });
   const ok = (await reachable(servers[0])) || (servers[1] && (await reachable(servers[1])));
+  if (!ok && settings.get('secureDnsStrict')) {
+    // Strict only (SEC-105): stay encrypted; lookups fail instead of going to the network's DNS.
+    return { mode: 'secure', strict: true, unreachable: true, servers, note: "Secure DNS servers unreachable; Strict only is on, so pages won't load." };
+  }
   if (!ok) {
     app.configureHostResolver({ secureDnsMode: 'automatic', secureDnsServers: servers });
     return { mode: 'automatic', servers, note: 'Secure DNS servers unreachable on this network; using normal DNS as fallback.' };
   }
-  return { mode: 'secure', servers };
+  return { mode: 'secure', strict: !!settings.get('secureDnsStrict'), servers };
 }
 
 module.exports = { applySecureDns, PROVIDERS };

@@ -3,7 +3,7 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract', 'showBookmarksBar', 'restoreTabs', 'blockThirdPartyCookies', 'httpsUpgrade', 'debounceLinks', 'stripTrackingParams', 'deAmp', 'clearHistoryOnExit', 'clearCookiesOnExit', 'clearCacheOnExit', 'breachCheck', 'phishingCheck', 'updateCheck', 'ytdlpAuto', 'memorySaver'];
+const TOGGLES = ['secureDnsStrict', 'adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract', 'showBookmarksBar', 'restoreTabs', 'blockThirdPartyCookies', 'httpsUpgrade', 'debounceLinks', 'stripTrackingParams', 'deAmp', 'clearHistoryOnExit', 'clearCookiesOnExit', 'clearCacheOnExit', 'breachCheck', 'phishingCheck', 'updateCheck', 'ytdlpAuto', 'memorySaver'];
 const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser', 'afterArgs', 'webhookUrl'];
 const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7], apiPort: [1024, 65535] };
 const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads', 'theme', 'accent', 'uiScale', 'discardTabsAfter', 'fingerprinting', 'securityLevel'];
@@ -20,7 +20,7 @@ async function save(patch) {
   render();
   flashSaved();
   // DNS status updates after the new servers are tested.
-  if ('secureDns' in patch || 'secureDnsCustom' in patch) setTimeout(async () => { current = await bridge.getSettings(); renderDns(); }, 4500);
+  if ('secureDns' in patch || 'secureDnsCustom' in patch || 'secureDnsStrict' in patch) setTimeout(async () => { current = await bridge.getSettings(); renderDns(); }, 4500);
 }
 
 function fillOptions() {
@@ -38,7 +38,8 @@ function renderDns() {
   const st = current.dnsStatus || {};
   const el = $('dnsStatus');
   el.className = 'status';
-  if (st.mode === 'secure') { el.textContent = 'Active: lookups are encrypted.'; el.classList.add('ok'); }
+  if (st.mode === 'secure' && st.unreachable) { el.textContent = st.note; el.classList.add('warn'); }
+  else if (st.mode === 'secure') { el.textContent = 'Active: lookups are encrypted.'; el.classList.add('ok'); }
   else if (st.mode === 'automatic') { el.textContent = st.note || 'Encrypted when possible, normal DNS as fallback.'; el.classList.add('warn'); }
   else if (st.mode === 'off') { el.textContent = 'Off: using your network’s DNS.'; }
   else {
@@ -48,6 +49,7 @@ function renderDns() {
     renderDns.retry = setTimeout(async () => { current = await bridge.getSettings(); renderDns(); }, 1000);
   }
   $('customRow').hidden = current.secureDns !== 'custom';
+  $('strictRow').hidden = current.secureDns === 'off';
 }
 
 function render() {

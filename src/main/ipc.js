@@ -545,6 +545,7 @@ function registerIpc(ctx) {
       protection: t && /^https?:/i.test(t.url || '') ? { siteOn: !(settings.get('hardeningOff') || []).includes(siteOf(t.url)), level: settings.get('securityLevel'), fingerprinting: settings.get('fingerprinting') } : null,
       popups: t && /^https?:/i.test(t.url || '') ? (getManagers().popup.siteBlocked(t.url) ? 'blocked' : getManagers().popup.siteAllowed(t.url) ? 'allowed' : 'default') : null,
       ready: adblock.ready,
+      dnsFallback: !!getManagers().getDnsStatus && getManagers().getDnsStatus().mode === 'automatic', // REQ-307
     };
   }
   function pushShields() { sendUI('shields', shieldsState()); }

@@ -99,11 +99,15 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     </div>
   </div>
 
-  <h2>Privacy and security</h2>
+  <h2 id="privacy">Privacy and security</h2>
   <div class="card">
     <div class="row">
       <div class="lbl"><b>Secure DNS</b><span>Looks up sites over an encrypted connection. Fixes sites that open in other browsers but show a certificate error here.</span><div class="status" id="dnsStatus"></div></div>
       <select id="secureDns"></select>
+    </div>
+    <div class="row" id="strictRow">
+      <div class="lbl"><b>Strict only</b><span>Never fall back to your network's DNS. If the secure servers don't answer, pages won't load.</span></div>
+      <label class="sw"><input type="checkbox" id="secureDnsStrict"><i></i></label>
     </div>
     <div class="row" id="customRow" hidden>
       <div class="lbl"><b>Custom DNS-over-HTTPS address</b><span>For example https://dns.nextdns.io/your-id</span></div>

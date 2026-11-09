@@ -221,7 +221,7 @@ function restack() {
 }
 
 // Downloads, add-ons and bookmarks show in every window; everything else in the current one.
-const TO_ALL = new Set(['downloads', 'addons', 'bookmarks', 'download-complete', 'adblock-ready']);
+const TO_ALL = new Set(['dns-warning', 'downloads', 'addons', 'bookmarks', 'download-complete', 'adblock-ready']);
 function sendUI(name, data) {
   for (const c of TO_ALL.has(name) ? Object.values(wins) : [wins[curKind]]) {
     for (const v of c ? [c.chromeView, c.overlayView] : []) {
@@ -822,10 +822,12 @@ app.whenReady().then(async () => {
   if (!isFirstInstance) return;
   settings = new Settings();
   // Secure DNS first, before any page loads (strict mode is set synchronously inside).
-  applySecureDns(settings).then((s) => { dnsStatus = s; }).catch(() => {});
-  settings.on('change', (c) => {
-    if ('secureDns' in c || 'secureDnsCustom' in c) applySecureDns(settings).then((s) => { dnsStatus = s; }).catch(() => {});
-  });
+  // The Guard button shows when lookups fell back to the network's DNS (REQ-307); checked again every 5 minutes
+  // while the servers don't answer, so the warning goes when they do.
+  const dns = () => applySecureDns(settings).then((s) => { dnsStatus = s; sendUI('dns-warning', { on: s.mode === 'automatic' }); }).catch(() => {});
+  dns();
+  settings.on('change', (c) => { if ('secureDns' in c || 'secureDnsCustom' in c || 'secureDnsStrict' in c) dns(); });
+  setInterval(() => { if (dnsStatus.mode === 'automatic' || dnsStatus.unreachable) dns(); }, 5 * 60 * 1000).unref();
   popup = new PopupGuard(settings);
   media = new MediaRegistry({
     getSetting: (k) => settings.get(k),
@@ -1025,7 +1027,7 @@ app.whenReady().then(async () => {
     .catch((e) => console.error('extensions init failed', e));
 
   ipcHandlers = registerIpc({
-    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, toolDownloadFn: () => toolDownloadRef, getApiStatus: () => apiStatus }),
+    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, toolDownloadFn: () => toolDownloadRef, getApiStatus: () => apiStatus, getDnsStatus: () => dnsStatus }),
     setPanel, sendUI, sendMediaState,
     inSenderCtx: (sender, fn) => inCtx(viewKind.get(sender.id) || curKind, fn), // a call from a window's toolbar acts in that window
     downloadItem,
