@@ -543,6 +543,10 @@ $('media-btn').onclick = () => togglePanel('media');
 $('grab-btn').onclick = () => togglePanel('grabber');
 $('dl-btn').onclick = () => togglePanel('downloads');
 $('shield-pill').onclick = () => togglePanel('shields');
+// REQ-307: a mark on the Guard button while Secure DNS has fallen back to the network's DNS.
+const dnsMark = (on) => { $('dns-mark').hidden = !on; };
+api.on('dns-warning', (d) => dnsMark(d && d.on));
+api.call('shields.state').then((s) => dnsMark(s && s.dnsFallback)).catch(() => {});
 $('menu-btn').onclick = () => togglePanel('menu');
 api.on('close-panel', () => { openPanel = null; });
 // Panels can also be opened from inside another panel (e.g. the menu).

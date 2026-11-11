@@ -2,6 +2,7 @@
 // In-app self-test for 1.5.1: a site with an untrusted certificate (self-signed, NOVADM_TLS_DIR with
 // key.pem / cert.pem) shows Chrome's style of warning; Advanced → "Proceed to … (unsafe)" opens it
 // with no lock; the exception covers that certificate only, normal windows only, until NovaDM closes.
+// 1.8.0: no Proceed for a site that sent Strict-Transport-Security.
 // Screenshot: %TEMP%\novadm-cert-warning.png
 const fs = require('fs');
 const os = require('os');
@@ -29,6 +30,7 @@ module.exports = async ({ app, browser }) => {
       buttons: [...document.querySelectorAll('.buttons button')].map((b) => b.textContent + (getComputedStyle(b).order === '-1' ? ' (left)' : '')),
       advHidden: document.getElementById('adv') && document.getElementById('adv').hidden,
       proceed: document.getElementById('proceed') && document.getElementById('proceed').textContent,
+      proceedHidden: document.getElementById('proceed') && document.getElementById('proceed').hidden,
       page: document.title,
     }))()`).catch(() => null);
 
@@ -43,6 +45,10 @@ module.exports = async ({ app, browser }) => {
     await tab.wc.executeJavaScript("document.getElementById('proceed').click()");
     result.opened = !!(await until(() => tab.wc.getTitle() === 'Router page'));
     result.lockAfterProceed = tab.secure;
+    // 1.8.0 (REQ-308): the fast engine gets the accepted certificate in the format it computes itself.
+    const crypto = require('crypto');
+    result.acceptedFp = browser.acceptedCerts(host);
+    result.fpMatches = result.acceptedFp.includes('sha256/' + crypto.createHash('sha256').update(new crypto.X509Certificate(fs.readFileSync(path.join(dir, 'cert.pem'))).raw).digest('base64'));
 
     // The same site again in a new tab: no warning this time.
     const id2 = browser.createTab({ url });
@@ -53,6 +59,13 @@ module.exports = async ({ app, browser }) => {
     const pw = await until(async () => { const r = await read(ptab.wc); return r && r.title ? r : null; });
     result.privateWarns = !!(pw && pw.title === 'Your connection is not private');
     browser.closeTab(pid);
+    // 1.8.0 (SEC-107): a site that asked for HTTPS only gets no Proceed (localhost: another host, same server).
+    browser.hsts.n.note('localhost', 'max-age=1000');
+    const hurl = `https://localhost:${server.address().port}/`;
+    const hid = browser.createTab({ url: hurl });
+    result.hsts = await until(async () => { const r = await read(browser.tabs.get(hid).wc); return r && r.title ? r : null; });
+    result.hstsRefused = browser.allowCert(browser.tabs.get(hid), hurl) === false;
+    browser.closeTab(hid);
     // Only the certificate that was trusted: the same address with another certificate (key2.pem /
     // cert2.pem, if present) warns again.
     if (fs.existsSync(path.join(dir, 'cert2.pem'))) {
@@ -77,8 +90,10 @@ module.exports = async ({ app, browser }) => {
       advanced: a.advHidden === false && a.proceed === `Proceed to ${host} (unsafe)` && a.buttons.includes('Hide advanced (left)'),
       proceeds: result.opened,
       noLock: result.lockAfterProceed === false,
+      fastEngineFingerprint: result.fpMatches,
       secondTab: result.secondTabOpens,
       privateApart: result.privateWarns,
+      hstsNoProceed: !!(result.hsts && result.hsts.title === 'Your connection is not private' && result.hsts.proceedHidden === true) && result.hstsRefused,
       certSpecific: result.otherCertWarns === true || typeof result.otherCertWarns === 'string',
     };
     result.ok = Object.values(result.checks).every(Boolean);

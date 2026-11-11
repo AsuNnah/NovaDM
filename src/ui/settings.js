@@ -3,7 +3,7 @@ const bridge = window.novadmInternal;
 const $ = (id) => document.getElementById(id);
 let current = {};
 
-const TOGGLES = ['adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract', 'showBookmarksBar', 'restoreTabs', 'blockThirdPartyCookies', 'httpsUpgrade', 'debounceLinks', 'stripTrackingParams', 'deAmp', 'clearHistoryOnExit', 'clearCookiesOnExit', 'clearCacheOnExit', 'breachCheck', 'phishingCheck', 'updateCheck', 'ytdlpAuto', 'memorySaver'];
+const TOGGLES = ['secureDnsStrict', 'adblock', 'categoryFolders', 'convertTsToMp4', 'pageTitleNames', 'autoResume', 'notifyOnComplete', 'clipboardWatch', 'startWithWindows', 'preventSleep', 'markOfTheWeb', 'torrentAskFiles', 'openTorrentFiles', 'torrentTrackerList', 'apiEnabled', 'magnetHandler', 'extractArchives', 'deleteAfterExtract', 'showBookmarksBar', 'restoreTabs', 'blockThirdPartyCookies', 'httpsUpgrade', 'debounceLinks', 'stripTrackingParams', 'deAmp', 'clearHistoryOnExit', 'clearCookiesOnExit', 'clearCacheOnExit', 'breachCheck', 'phishingCheck', 'updateCheck', 'ytdlpAuto', 'memorySaver'];
 const TEXTS = ['clipboardExtensions', 'proxyServer', 'proxyBypass', 'proxyPac', 'proxyUser', 'afterArgs', 'webhookUrl'];
 const NUMBERS = { connections: [1, 32], maxActive: [1, 10], speedLimitKBps: [0, 1e7], minMediaKB: [0, 1e6], torrentSeedMinutes: [0, 100000], torrentUploadKBps: [0, 1e7], apiPort: [1024, 65535] };
 const SELECTS = ['secureDns', 'popupMode', 'searchEngine', 'downloadTransport', 'proxyMode', 'proxyType', 'closeToTray', 'scanDownloads', 'theme', 'accent', 'uiScale', 'discardTabsAfter', 'fingerprinting', 'securityLevel'];
@@ -20,7 +20,7 @@ async function save(patch) {
   render();
   flashSaved();
   // DNS status updates after the new servers are tested.
-  if ('secureDns' in patch || 'secureDnsCustom' in patch) setTimeout(async () => { current = await bridge.getSettings(); renderDns(); }, 4500);
+  if ('secureDns' in patch || 'secureDnsCustom' in patch || 'secureDnsStrict' in patch) setTimeout(async () => { current = await bridge.getSettings(); renderDns(); }, 4500);
 }
 
 function fillOptions() {
@@ -34,11 +34,40 @@ function fillOptions() {
   for (const [key, e] of Object.entries(current.searchEngines || {})) se.add(new Option(e.name, key));
 }
 
+// REQ-309: the sites forgotten when NovaDM closes, each with a remove button.
+function renderForget() {
+  const box = $('forgetList');
+  box.textContent = '';
+  const sites = current.forgetSites || [];
+  if (!sites.length) { const e = document.createElement('div'); e.className = 'fempty'; e.textContent = 'No sites yet.'; box.append(e); return; }
+  for (const site of sites) {
+    const r = document.createElement('div'); r.className = 'frow';
+    const n = document.createElement('span'); n.textContent = site;
+    const x = document.createElement('button'); x.className = 'fx'; x.textContent = '✕'; x.title = 'Stop forgetting ' + site; x.setAttribute('aria-label', 'Remove ' + site);
+    x.onclick = () => save({ forgetSites: sites.filter((s) => s !== site) });
+    r.append(n, x); box.append(r);
+  }
+}
+
+// REQ-311: how many of My filters are on, and the lines that are not rules.
+function renderMyFilters(error) {
+  const el = $('myFiltersStatus');
+  const st = current.myFiltersStatus || { rules: 0, bad: [] };
+  el.className = 'status';
+  if (error) { el.textContent = error; el.classList.add('warn'); return; }
+  const on = `${st.rules} rule${st.rules === 1 ? '' : 's'} on.`;
+  if (!st.bad.length) { el.textContent = on; return; }
+  el.textContent = `${on} Not understood: ${st.bad.map((b) => `line ${b.line}`).join(', ')}${st.more ? ` and ${st.more} more` : ''}.`;
+  el.title = st.bad.map((b) => `${b.line}: ${b.text}`).join('\n');
+  el.classList.add('warn');
+}
+
 function renderDns() {
   const st = current.dnsStatus || {};
   const el = $('dnsStatus');
   el.className = 'status';
-  if (st.mode === 'secure') { el.textContent = 'Active: lookups are encrypted.'; el.classList.add('ok'); }
+  if (st.mode === 'secure' && st.unreachable) { el.textContent = st.note; el.classList.add('warn'); }
+  else if (st.mode === 'secure') { el.textContent = 'Active: lookups are encrypted.'; el.classList.add('ok'); }
   else if (st.mode === 'automatic') { el.textContent = st.note || 'Encrypted when possible, normal DNS as fallback.'; el.classList.add('warn'); }
   else if (st.mode === 'off') { el.textContent = 'Off: using your network’s DNS.'; }
   else {
@@ -48,6 +77,7 @@ function renderDns() {
     renderDns.retry = setTimeout(async () => { current = await bridge.getSettings(); renderDns(); }, 1000);
   }
   $('customRow').hidden = current.secureDns !== 'custom';
+  $('strictRow').hidden = current.secureDns === 'off';
 }
 
 function render() {
@@ -65,6 +95,9 @@ function render() {
   $('proxyPass').placeholder = current.proxyHasPassword ? 'Password saved' : 'Password';
   $('afterProgramShow').textContent = current.afterProgram || 'None';
   renderRules();
+  renderForget();
+  if (document.activeElement !== $('myFilters')) $('myFilters').value = current.myFilters || '';
+  renderMyFilters();
   if (document.activeElement !== $('secureDnsCustom')) $('secureDnsCustom').value = current.secureDnsCustom || '';
   $('downloadDir').textContent = current.downloadDir || '';
   $('downloadDir').title = current.downloadDir || '';
@@ -267,6 +300,13 @@ function rowsOf(id) {
 function saveRules() { return save({ categoryRules: rowsOf('ruleList').filter((r) => r.value) }); }
 function saveSites() { return save({ siteSettings: rowsOf('siteList').filter((s) => s.site) }); }
 $('clearNow').onclick = () => bridge.navigate('novadm://history?clear=1');
+$('myFiltersSave').onclick = () => {
+  const text = $('myFilters').value;
+  // The same limits as main (settings.js refuses anything bigger and keeps the saved rules).
+  if (new TextEncoder().encode(text).length > 64 * 1024) return renderMyFilters('Too big: My filters can hold at most 64 KB. Nothing was saved.');
+  if (text.split('\n').length > 2000) return renderMyFilters('Too many lines: My filters can hold at most 2,000. Nothing was saved.');
+  save({ myFilters: text });
+};
 
 function initRules() {
   $('ruleAdd').onclick = async () => { await save({ categoryRules: [...(current.categoryRules || []), { by: 'type', value: '', category: 'other', folder: '' }] }); renderRules(); };

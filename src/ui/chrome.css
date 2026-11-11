@@ -75,6 +75,7 @@ browser-action-list::part(action):hover { background-color: var(--hover); }
 .pill { display: flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 999px; font-size: 12px; }
 .pill.shield { background: color-mix(in srgb,var(--accent) 16%,transparent); color: var(--accent); cursor: default; }
 .pill.shield.off { background: var(--hover); color: var(--fg3); }
+.dnsmark { width: 14px; height: 14px; border-radius: 50%; background: #e6a23c; color: #000; font: 700 10px/14px var(--font, sans-serif); text-align: center; }
 .pill.popblk { background: rgba(230,162,60,.16); color: #e6a23c; cursor: default; }
 .pill.popblk.pulse { animation: pulse .9s ease-out 1; }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(230,162,60,.6); } 100% { box-shadow: 0 0 0 10px rgba(230,162,60,0); } }

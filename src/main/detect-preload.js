@@ -9,7 +9,7 @@ const DOC_EXT = /\.(pdf|zip|rar|7z|gz|exe|msi|apk|iso|docx?|xlsx?|pptx?|epub|tor
 
 // Preloads also run in embedded frames (for shield-preload.js); this one works for the top page only.
 const TOP = window.top === window;
-const INTERNAL = location.protocol === 'file:' && /[\\/]ui[\\/]\w+\.html$/.test(location.pathname);
+const INTERNAL = TOP && location.protocol === 'app:' && location.host === 'ui' && /^\/\w+\.html$/.test(location.pathname);
 
 function abs(u) { try { return new URL(u, location.href).href; } catch { return ''; } }
 function send(channel, payload) { try { ipcRenderer.send('novadm:tab', { ch: channel, payload }); } catch {} }

@@ -12,6 +12,8 @@ const { normalizeOrder, nextColor, cleanGroup, stepTab, COLOR_HEX } = require('.
 const DETECT_PRELOAD = path.join(__dirname, 'detect-preload.js');
 const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
 const { normalizeUrl, NEWTAB } = require('./address');
+const { uiUrl } = require('./app-scheme');
+const { Hsts } = require('./hsts');
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
@@ -58,6 +60,8 @@ class Browser extends EventEmitter {
     // that exact certificate until NovaDM closes (private windows apart). A changed certificate warns again.
     this.certSeen = new Map(); // 'n|host' or 'p|host' -> fingerprint of the certificate it showed last
     this.certAllowed = new Set(); // 'n|host|fingerprint'
+    // Sites that asked for HTTPS only (SEC-107): their certificate errors get no Proceed.
+    this.hsts = { n: new Hsts(path.join(app.getPath('userData'), 'hsts.json')), p: new Hsts(null) };
     app.on('certificate-error', (event, wc, url, _error, cert, callback) => {
       const key = certKey(wc.session === this.incognitoSession, url);
       if (key && cert && this.certAllowed.has(`${key}|${cert.fingerprint}`)) { event.preventDefault(); callback(true); return; }
@@ -112,6 +116,7 @@ class Browser extends EventEmitter {
       this.media.recordRequestHeaders(details.id, net.replayableHeaders(details.requestHeaders));
     });
     ses.webRequest.onResponseStarted({ urls: ['http://*/*', 'https://*/*'] }, (details) => {
+      this.noteHsts(ses === this.incognitoSession, details);
       if (details.method && details.method !== 'GET' && details.resourceType === 'mainFrame') {
         this._nonGet.set(details.url, Date.now());
         if (this._nonGet.size > 50) this._nonGet.delete(this._nonGet.keys().next().value);
@@ -336,6 +341,11 @@ class Browser extends EventEmitter {
     wc.on('will-navigate', (e) => {
       if (/^magnet:\?/i.test(e.url || '')) { e.preventDefault(); this.emit('magnet', tab, e.url); }
     });
+    // NovaDM's own pages (app://) open only when NovaDM loads them, never from a web page (SEC-108).
+    const toApp = (e) => { if (/^app:/i.test(e.url || '') && !/^app:/i.test(wc.getURL())) e.preventDefault(); };
+    wc.on('will-navigate', toApp);
+    wc.on('will-frame-navigate', (e) => { if (/^app:/i.test(e.url || '') && !e.isMainFrame) e.preventDefault(); });
+    wc.on('will-redirect', (e) => { if (/^app:/i.test(e.url || '')) e.preventDefault(); });
     wc.on('did-start-navigation', (e) => {
       // Only a real page change resets per-page state; SPA URL changes (same document) keep it.
       if (!e.isMainFrame || e.isSameDocument) return;
@@ -373,7 +383,7 @@ class Browser extends EventEmitter {
       tab.failed = { url, code, desc };
       tab.loading = false;
       const phishing = code === -20 && !!this.adblock && this.adblock.phishBlocked.delete(url); // -20: blocked by NovaDM
-      wc.loadFile(path.join(__dirname, '..', 'ui', 'error.html'), { query: { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '' } }).catch(() => {});
+      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '', h: this.hstsFor(tab.incognito, url) ? '1' : '' })).catch(() => {});
     });
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
       if (!isMain) return;
@@ -502,6 +512,7 @@ class Browser extends EventEmitter {
   }
 
   handleWindowOpen(tab, details) {
+    if (/^app:/i.test(details.url || '')) return { action: 'deny' }; // SEC-108
     if (/^magnet:\?/i.test(details.url || '')) { this.emit('magnet', tab, details.url); return { action: 'deny' }; }
     // Always deny the raw request and decide a moment later: the preload's click report travels
     // on a separate channel and may arrive just after this call. Allowed windows open as tabs.
@@ -569,11 +580,11 @@ class Browser extends EventEmitter {
     if (target.startsWith('novadm://')) {
       const rest = target.slice('novadm://'.length);
       const page = rest.split(/[?#]/)[0] || 'newtab';
-      if (!INTERNAL_PAGES.has(page)) { tab.url = target; tab.wc.loadFile(path.join(__dirname, '..', 'ui', 'newtab.html')).catch(() => {}); return; }
+      if (!INTERNAL_PAGES.has(page)) { tab.url = target; tab.wc.loadURL(uiUrl('newtab.html')).catch(() => {}); return; }
       const query = Object.fromEntries(new URLSearchParams(rest.includes('?') ? rest.slice(rest.indexOf('?') + 1) : ''));
       if (tab.incognito) query.private = '1'; // the page shows the private look (theme.css)
       tab.url = 'novadm://' + page; tab.title = INTERNAL_PAGES.get(page);
-      tab.wc.loadFile(path.join(__dirname, '..', 'ui', `${page}.html`), { query }).catch(() => {});
+      tab.wc.loadURL(uiUrl(`${page}.html`, query)).catch(() => {});
     } else {
       tab.url = target;
       tab.wc.loadURL(target).catch(() => {});
@@ -711,11 +722,11 @@ class Browser extends EventEmitter {
     };
   }
 
-  /** "Proceed (unsafe)": trust the certificate the site showed last; false when there is none. */
+  /** "Proceed (unsafe)": trust the certificate the site showed last; false when there is none, or for an HSTS site. */
   allowCert(tab, url) {
     const key = certKey(tab.incognito, url);
     const fp = key && this.certSeen.get(key);
-    if (!fp) return false;
+    if (!fp || this.hstsFor(tab.incognito, url)) return false;
     this.certAllowed.add(`${key}|${fp}`);
     return true;
   }
@@ -723,6 +734,23 @@ class Browser extends EventEmitter {
   forgetPrivateCerts() {
     for (const k of [...this.certSeen.keys()]) if (k.startsWith('p|')) this.certSeen.delete(k);
     for (const k of [...this.certAllowed]) if (k.startsWith('p|')) this.certAllowed.delete(k);
+    this.hsts.p.clear();
+  }
+  /** A Strict-Transport-Security header, counted only over HTTPS the user didn't have to accept by hand. */
+  noteHsts(incognito, details) {
+    if (!/^https:/i.test(details.url)) return;
+    const k = Object.keys(details.responseHeaders || {}).find((x) => x.toLowerCase() === 'strict-transport-security');
+    if (!k || this.certBypassed({ incognito }, details.url)) return;
+    const v = details.responseHeaders[k];
+    try { this.hsts[incognito ? 'p' : 'n'].note(new URL(details.url).hostname, Array.isArray(v) ? v[0] : v); } catch {}
+  }
+  hstsFor(incognito, url) {
+    try { return this.hsts[incognito ? 'p' : 'n'].has(new URL(url).hostname); } catch { return false; }
+  }
+  /** The certificates the user proceeded past for host[:port] in normal windows (the fast download engine, REQ-308). */
+  acceptedCerts(host) {
+    const pre = `n|${String(host).toLowerCase()}|`;
+    return [...this.certAllowed].filter((x) => x.startsWith(pre)).map((x) => x.slice(pre.length));
   }
   certBypassed(tab, url) {
     const key = certKey(tab.incognito, url);
@@ -999,8 +1027,7 @@ function cleanUserAgent(ua) {
 
 // Map the on-disk UI file URL back to its novadm:// address (so the omnibox stays clean).
 function internalUrl(u) {
-  if (!/^file:/i.test(u || '')) return '';
-  const m = /[\\/]ui[\\/](\w+)\.html(?:[?#]|$)/.exec(u || '');
+  const m = /^app:\/\/ui\/(\w+)\.html(?:[?#]|$)/i.exec(u || '');
   return m ? 'novadm://' + (m[1] === 'newtab' ? 'newtab' : m[1]) : '';
 }
 

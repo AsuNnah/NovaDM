@@ -11,7 +11,7 @@ function markPrivate() { // the preload runs before <html> exists: tag it as soo
 if (new URLSearchParams(location.search).has('private')) markPrivate();
 
 // The toolbar gets the <browser-action-list> element for Chrome extension buttons.
-if (/[\\/]ui[\\/]chrome\.html$/.test(decodeURIComponent(location.pathname))) {
+if (location.href.startsWith('app://ui/chrome.html')) { // the toolbar view (app://, SEC-108)
   try { require('electron-chrome-extensions/browser-action').injectBrowserAction(); } catch (e) { console.error('extension buttons unavailable', e); }
 }
 

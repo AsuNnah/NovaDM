@@ -22,6 +22,7 @@ function defaults() {
     restoreTabs: true,
     secureDns: 'cloudflare', // off | cloudflare | google | quad9 | adguard | custom
     secureDnsCustom: '',
+    secureDnsStrict: false, // 1.8.0 (SEC-105): never fall back to the network's DNS
 
     // Downloads
     downloadDir: path.join(app.getPath('downloads'), 'NovaDM'),
@@ -84,6 +85,7 @@ function defaults() {
     fingerprinting: 'standard', // off | standard (noise, like Brave) | strict (blocked, like Tor)
     securityLevel: 'standard', // standard | safer | safest (Tor Browser's levels; JIT part after a restart)
     hardeningOff: [], // sites where Guard Extended is off (Guard panel)
+    forgetSites: [], // 1.8.0 (REQ-309): sites whose cookies and site data are deleted when NovaDM closes
     ffmpegPath: '', // the user's own ffmpeg.exe (empty: NovaDM's copy, if installed)
     ytdlpPath: '', // the user's own yt-dlp.exe
 
@@ -126,6 +128,7 @@ function defaults() {
     adblock: true,
     adblockWhitelist: [], // sites where ad blocking is off
     adblockUpdatedAt: 0,
+    myFilters: '', // 1.8.0 (REQ-311): the user's own rules, one per line; only here, never in the engine cache
 
     // Pop-ups
     popupMode: 'ask', // ask | block | allow
@@ -165,6 +168,7 @@ class Settings extends EventEmitter {
     }
     for (const [k, v] of Object.entries(patch || {})) {
       if (!(k in defaults())) continue;
+      if (k === 'myFilters' && require('./adblock').myFiltersTooBig(v)) continue; // too big: the saved rules stay
       if (JSON.stringify(this.data[k]) === JSON.stringify(v)) continue;
       this.data[k] = v;
       changed[k] = v;

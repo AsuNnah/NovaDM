@@ -11,8 +11,8 @@ const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeepin
 const { History, Bookmarks, TabSession } = require('./library');
 const { SiteIcons } = require('./site-icons');
 const bookmarkImport = require('./bookmarks-import');
-const { menuText } = require('./util');
-const { guardFor } = require('./netguard');
+const { menuText, siteOf } = require('./util');
+const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
 
@@ -121,7 +121,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     if (f.view) return;
     const view = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
     view.setBackgroundColor('#00000000');
-    view.webContents.loadFile(path.join(UI_DIR, 'find.html'));
+    view.webContents.loadURL(require('./app-scheme').uiUrl('find.html'));
     view.setVisible(false);
     f.parent.addChildView(view);
     view.webContents.on('did-finish-load', () => view.webContents.setZoomFactor(scale()));
@@ -182,9 +182,10 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // never with the normal session's cookies; a page on the internet cannot point its icon at this PC or the home
   // network. Resolves to { type, body }.
   async function fetchIcon(pageUrl, favicon, incognito) {
-    const guard = guardFor(pageUrl);
+    const session = incognito ? browser.incognitoSession : browser.normalSession;
+    const guard = guardFor(pageUrl, { lookup: sessionLookup(session) });
     await guard(favicon);
-    const r = await net.fetchBuffer(favicon, { session: incognito ? browser.incognitoSession : browser.normalSession, maxBytes: 64 * 1024, timeoutMs: 8000, guard });
+    const r = await net.fetchBuffer(favicon, { session, maxBytes: 64 * 1024, timeoutMs: 8000, guard, opener: openerFor(session, pageUrl) });
     return { type: String(r.headers['content-type'] || '').split(';')[0].trim(), body: r.body };
   }
   // The site's icon, kept with the bookmark (fetched once).
@@ -307,7 +308,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // ---- clear browsing data ----
   const RANGES = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity };
   async function clearData({ range = 'all', history: h = true, cookies = false, cache = false } = {}) {
-    if (h) { history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
+    if (h) { if (range === 'all') browser.hsts.n.clear(); history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
     if (cookies) {
       await browser.normalSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers', 'cachestorage', 'filesystem', 'shadercache'] });
     }
@@ -315,16 +316,40 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     return { ok: true };
   }
 
+  // 1.8.0 (SEC-109): the sites marked "Forget this site when NovaDM closes" lose their cookies (sub-domains too) and
+  // site data, when NovaDM closes and again at the next start (after a crash or a kill). Only site names are kept.
+  const FORGET_DATA = ['backgroundFetch', 'cache', 'fileSystems', 'indexedDB', 'localStorage', 'serviceWorkers', 'webSQL'];
+  async function forgetSites(list = settings.get('forgetSites')) {
+    const sites = (Array.isArray(list) ? list : []).filter((x) => typeof x === 'string' && x);
+    if (!sites.length) return;
+    const set = new Set(sites);
+    const ses = browser.normalSession;
+    const host = (c) => String(c.domain || '').replace(/^\./, '');
+    const cookies = (await ses.cookies.get({}).catch(() => [])).filter((c) => set.has(siteOf('https://' + host(c))));
+    await Promise.all(cookies.map((c) => ses.cookies.remove(`${c.secure ? 'https' : 'http'}://${host(c)}${c.path || '/'}`, c.name).catch(() => {})));
+    // Storage is kept per origin: the bare and www names, every host of its cookies, and every origin in the history.
+    // shortcut: a sub-domain with no cookie and no history entry (an iframe only) keeps its storage; upgrade with a
+    // list of the origins Electron stores, if it ever offers one.
+    const origins = new Set();
+    for (const c of cookies) for (const p of ['https://', 'http://']) origins.add(p + host(c));
+    for (const s of sites) for (const p of ['https://', 'http://']) { origins.add(p + s); origins.add(p + 'www.' + s); }
+    for (const v of history.visits) { try { if (set.has(siteOf(v.url))) origins.add(new URL(v.url).origin); } catch {} }
+    await ses.clearData({ dataTypes: FORGET_DATA, origins: [...origins] }).catch(() => {});
+    await ses.cookies.flushStore().catch(() => {});
+  }
+
   /** Settings → "When NovaDM closes, clear…". */
   async function onQuit() {
+    await forgetSites().catch(() => {}); // first: it reads the history for the sites' origins
     const jobs = [];
-    if (settings.get('clearHistoryOnExit')) { history.clear(); siteIcons.keepOnly([]); }
+    if (settings.get('clearHistoryOnExit')) { history.clear(); siteIcons.keepOnly([]); if (browser.hsts) browser.hsts.n.clear(); }
     if (settings.get('clearCookiesOnExit') || settings.get('clearCacheOnExit')) {
       jobs.push(clearData({ history: false, cookies: !!settings.get('clearCookiesOnExit'), cache: !!settings.get('clearCacheOnExit') }).catch(() => {}));
     }
     await Promise.all(jobs);
     history.flush();
     siteIcons.flush();
+    if (browser.hsts) browser.hsts.n.store.flush();
     bookmarks.flush();
     if (settings.get('restoreTabs') === false) tabSession.clear();
     tabSession.flush();
@@ -490,9 +515,10 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       return { ok: true };
     },
 
-    'history.search': (a) => ({ items: history.search({ q: a.q || '', limit: Math.min(Number(a.limit) || 150, 500), before: Number(a.before) || Infinity }) }),
-    'history.remove': (a) => { history.remove((a.ids || []).map(Number)); siteIcons.keepOnly(history.visits.map((v) => v.url)); return { ok: true }; },
-    'history.clear': (a) => clearData(a),
+    // A private window keeps no history and must not see or change the normal one (SEC-110).
+    'history.search': (a) => (browser.cur === 'private' ? { private: true, items: [] } : { items: history.search({ q: a.q || '', limit: Math.min(Number(a.limit) || 150, 500), before: Number(a.before) || Infinity }) }),
+    'history.remove': (a) => { if (browser.cur === 'private') return { ok: false }; history.remove((a.ids || []).map(Number)); siteIcons.keepOnly(history.visits.map((v) => v.url)); return { ok: true }; },
+    'history.clear': (a) => (browser.cur === 'private' ? { ok: false } : clearData(a)),
     // The History panel (Ctrl+Shift+H): nothing from a private window, neither visits nor closed tabs.
     'history.panel': (a) => {
       if (browser.cur === 'private') return { private: true, items: [], closed: [] };
@@ -500,7 +526,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
       return { private: false, items, closed: browser.closedList(false).map((c) => ({ ...c, icon: siteIcons.get(c.url) })) };
     },
     'history.reopenClosed': (a) => { if (browser.cur !== 'private') browser.reopenClosed(false, Number(a.id)); return { ok: true }; },
-    'history.open': (a) => { if (/^https?:/i.test(a.url || '')) { if (a.newTab) browser.createTab({ url: a.url, background: true }); else browser.navigate(browser.activeId, a.url); } },
+    'history.open': (a) => { if (browser.cur !== 'private' && /^https?:/i.test(a.url || '')) { if (a.newTab) browser.createTab({ url: a.url, background: true }); else browser.navigate(browser.activeId, a.url); } },
 
     'reader.open': () => openReader(),
     'reader.get': (a) => { const p = readerPages.get(String(a.id)); return p ? { ok: true, ...p } : { ok: false }; },
@@ -510,7 +536,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
 
   return {
     history, bookmarks, tabSession, siteIcons, shields, handlers,
-    chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData,
+    chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData, forgetSites,
     toggleActiveBookmark, openReader, bookmarkState, memoryCheck,
     get findView() { return find.view; },
     get findOpen() { return find.open; },

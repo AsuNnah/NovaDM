@@ -1,7 +1,7 @@
 {
   "name": "novadm",
   "productName": "NovaDM",
-  "version": "1.7.14",
+  "version": "1.8.0",
   "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
   "author": "NovaDM",
   "license": "GPL-3.0-or-later",
@@ -23,6 +23,7 @@
     "electron-chrome-web-store": "0.13.0",
     "electron-updater": "6.8.11",
     "mux.js": "6.3.0",
+    "tldts-experimental": "7.4.19",
     "undici": "8.12.4"
   },
   "devDependencies": {
@@ -58,7 +59,7 @@
       "enableNodeCliInspectArguments": false,
       "enableEmbeddedAsarIntegrityValidation": true,
       "onlyLoadAppFromAsar": true,
-      "grantFileProtocolExtraPrivileges": true
+      "grantFileProtocolExtraPrivileges": false
     },
     "nsis": {
       "oneClick": false,

@@ -9,7 +9,7 @@ const { PopupGuard } = require('./popup');
 const { MediaRegistry } = require('./media/registry');
 const { DownloadManager } = require('./download/manager');
 const { Transport } = require('./transport');
-const { guardFor } = require('./netguard');
+const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { AddFlow, specFromUrl } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
@@ -39,6 +39,8 @@ diagnostics.install(app); // keeps the last errors for "Report a problem"
 const { isLocalHost } = require('./shields');
 // Must load before the app is ready (registers the crx:// scheme for extension icons).
 const { Extensions } = require('./extensions');
+const appScheme = require('./app-scheme');
+appScheme.registerPrivileged(protocol); // before ready, like crx://
 
 let dnsStatus = { mode: 'starting', servers: [] };
 
@@ -219,7 +221,7 @@ function restack() {
 }
 
 // Downloads, add-ons and bookmarks show in every window; everything else in the current one.
-const TO_ALL = new Set(['downloads', 'addons', 'bookmarks', 'download-complete', 'adblock-ready']);
+const TO_ALL = new Set(['dns-warning', 'downloads', 'addons', 'bookmarks', 'download-complete', 'adblock-ready']);
 function sendUI(name, data) {
   for (const c of TO_ALL.has(name) ? Object.values(wins) : [wins[curKind]]) {
     for (const v of c ? [c.chromeView, c.overlayView] : []) {
@@ -258,16 +260,15 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
   if (priv && w.setAppDetails) w.setAppDetails({ appId: 'app.novadm.browser.private', appIconPath: icon, appIconIndex: 0 });
   const query = priv ? { private: '1' } : {};
 
-  // shortcut: not sandboxed, because its preload loads the extension buttons (electron-chrome-extensions/browser-action),
-  // which a sandboxed preload can't require; bundle that into one preload file to sandbox it too.
+  // Sandboxed: the extension-buttons code is joined into this one preload by tools/build-ui-preload.js.
   const cv = new WebContentsView({ webPreferences: { preload: TOOLBAR_PRELOAD, contextIsolation: true, sandbox: true } });
   cv.setBackgroundColor('#00000000');
-  cv.webContents.loadFile(path.join(UI_DIR, 'chrome.html'), { query });
+  cv.webContents.loadURL(appScheme.uiUrl('chrome.html', query));
   diagnostics.watchConsole(cv.webContents, 'toolbar');
 
   const ov = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
   ov.setBackgroundColor('#00000000');
-  ov.webContents.loadFile(path.join(UI_DIR, 'panel.html'), { query });
+  ov.webContents.loadURL(appScheme.uiUrl('panel.html', query));
   diagnostics.watchConsole(ov.webContents, 'panel');
   ov.setVisible(false);
 
@@ -331,7 +332,8 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
 
   // The tabs from last time (Settings → Restore tabs), or a new tab. NOVADM_OPEN (debug) opens a
   // given address instead.
-  if (restore) browsing.openStartTabs(process.env.NOVADM_OPEN || '');
+  // Sites to forget are cleared first, in case NovaDM was killed before it could (SEC-109).
+  if (restore) browsing.forgetSites().catch(() => {}).finally(() => browsing.openStartTabs(process.env.NOVADM_OPEN || ''));
 }
 
 /** A new normal window (Ctrl+N, a tab dragged out, a closed window reopened); returns its id. */
@@ -581,7 +583,7 @@ function createSiteExtSandbox() {
   wc.session.setPermissionRequestHandler((_w, _p, cb) => cb(false));
   const box = {
     webContents: wc, onResult: null,
-    run(job) { wc.loadFile(path.join(UI_DIR, 'siteext-host.html')).then(() => wc.send('siteext:run', job)).catch((e) => box.onResult && box.onResult({ error: e.message })); },
+    run(job) { wc.loadURL(appScheme.uiUrl('siteext-host.html')).then(() => wc.send('siteext:run', job)).catch((e) => box.onResult && box.onResult({ error: e.message })); },
     destroy() { siteExtSandboxes.delete(wc.id); try { wc.close(); } catch {} },
   };
   siteExtSandboxes.set(wc.id, box);
@@ -821,10 +823,12 @@ app.whenReady().then(async () => {
   if (!isFirstInstance) return;
   settings = new Settings();
   // Secure DNS first, before any page loads (strict mode is set synchronously inside).
-  applySecureDns(settings).then((s) => { dnsStatus = s; }).catch(() => {});
-  settings.on('change', (c) => {
-    if ('secureDns' in c || 'secureDnsCustom' in c) applySecureDns(settings).then((s) => { dnsStatus = s; }).catch(() => {});
-  });
+  // The Guard button shows when lookups fell back to the network's DNS (REQ-307); checked again every 5 minutes
+  // while the servers don't answer, so the warning goes when they do.
+  const dns = (opts) => applySecureDns(settings, opts).then((s) => { dnsStatus = s; sendUI('dns-warning', { on: s.mode === 'automatic' }); }).catch(() => {});
+  dns();
+  settings.on('change', (c) => { if ('secureDns' in c || 'secureDnsCustom' in c || 'secureDnsStrict' in c) dns(); });
+  setInterval(() => { if (dnsStatus.mode === 'automatic' || dnsStatus.unreachable) dns({ recheck: true }); }, 5 * 60 * 1000).unref();
   popup = new PopupGuard(settings);
   media = new MediaRegistry({
     getSetting: (k) => settings.get(k),
@@ -832,10 +836,11 @@ app.whenReady().then(async () => {
       // The playlist and its variants are named by the page: a page on the internet must not make NovaDM ask for an
       // address on this PC or a private network (also not through a redirect).
       const tab = browser.tabs.get(opts.tabId);
-      const guard = guardFor((tab && tab.url) || '');
-      await guard(url);
       const session = tab && tab.incognito ? browser.incognitoSession : browser.normalSession;
-      const r = await net.fetchText(url, { session, headers: opts.headers, timeoutMs: 20000, guard });
+      const page = (tab && tab.url) || '';
+      const guard = guardFor(page, { lookup: sessionLookup(session) });
+      await guard(url);
+      const r = await net.fetchText(url, { session, headers: opts.headers, timeoutMs: 20000, guard, opener: openerFor(session, page) });
       return { text: r.text, finalUrl: r.finalUrl };
     },
   });
@@ -862,7 +867,7 @@ app.whenReady().then(async () => {
       .catch(() => {}); // offline or service down: no warning
   });
   adblock.protection = (url) => hardening.protectionFor(settings, url);
-  transport = new Transport({ session: browser.normalSession, settings });
+  transport = new Transport({ session: browser.normalSession, settings, certFor: (host) => browser.acceptedCerts(host) });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
   // Helper tools on demand (FFmpeg, aria2): downloaded with NovaDM's own engine (speed limit and
@@ -905,6 +910,7 @@ app.whenReady().then(async () => {
   settings.on('change', (c) => {
     if ('apiEnabled' in c || 'apiPort' in c) api.update().then((st) => { apiStatus = st; });
     if ('magnetHandler' in c) registerLinkHandlers();
+    if ('myFilters' in c) adblock.applyMyFilters();
   });
   registerLinkHandlers();
 
@@ -963,6 +969,9 @@ app.whenReady().then(async () => {
     }
   });
 
+  // NovaDM's own pages (SEC-108): the UI views use the default session, internal pages in tabs the tab sessions.
+  for (const p of [protocol, browser.normalSession.protocol, browser.incognitoSession.protocol, electronSession.fromPartition('novadm-siteext').protocol]) p.handle(appScheme.SCHEME, (req) => appScheme.serve(req)); // every session that shows NovaDM's own pages
+
   // Grabber thumbnails: novadm-thumb://img/?u=<image url>&r=<page url>[&p=1]. Fetched through the browsing
   // session (the private one with p=1) with the page as Referer, so hotlink-protected images still preview.
   // Only NovaDM's own UI views (default session) can load this scheme.
@@ -1020,7 +1029,7 @@ app.whenReady().then(async () => {
     .catch((e) => console.error('extensions init failed', e));
 
   ipcHandlers = registerIpc({
-    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, toolDownloadFn: () => toolDownloadRef, getApiStatus: () => apiStatus }),
+    getManagers: () => ({ settings, adblock, popup, media, downloads, browser, win, extensions, addFlow, scheduler, background, ffmpeg, aria2, api, ytdlp, siteExt, toolDownloadFn: () => toolDownloadRef, getApiStatus: () => apiStatus, getDnsStatus: () => dnsStatus }),
     setPanel, sendUI, sendMediaState,
     inSenderCtx: (sender, fn) => inCtx(viewKind.get(sender.id) || curKind, fn), // a call from a window's toolbar acts in that window
     downloadItem,
@@ -1088,7 +1097,7 @@ app.whenReady().then(async () => {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });
       if (!r.canceled && r.filePaths[0]) settings.set({ downloadDir: r.filePaths[0] });
     }
-    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS };
+    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS, myFiltersStatus: adblock.myStatus };
   });
   // Actions for internal pages (Downloads page). Same sender check plus an allow list.
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {

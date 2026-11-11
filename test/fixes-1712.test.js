@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const { Browser } = require('../src/main/browser');
 
 test('closing the private window forgets only its certificate exceptions', () => {
-  const b = { certSeen: new Map([['n|a.test', 'f1'], ['p|a.test', 'f2']]), certAllowed: new Set(['n|a.test|f1', 'p|a.test|f2', 'p|b.test|f3']) };
+  const b = { certSeen: new Map([['n|a.test', 'f1'], ['p|a.test', 'f2']]), certAllowed: new Set(['n|a.test|f1', 'p|a.test|f2', 'p|b.test|f3']), hsts: { p: { clear() {} } } };
   Browser.prototype.forgetPrivateCerts.call(b);
   assert.deepStrictEqual([...b.certSeen.keys()], ['n|a.test']);
   assert.deepStrictEqual([...b.certAllowed], ['n|a.test|f1']);

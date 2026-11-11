@@ -1,4 +1,5 @@
 'use strict';
+const { getDomain } = require('tldts-experimental');
 const path = require('path');
 const fs = require('fs');
 
@@ -127,28 +128,13 @@ function hostOf(u) {
   try { return new URL(u).hostname.toLowerCase(); } catch { return ''; }
 }
 
-// Registrable-ish site key: last two labels (three for common second-level TLDs).
-// shortcut: a short list of hosts that hand sub-domains to unrelated sites (the Public Suffix List's private part has
-// thousands); each name under one of these is its own site. Add the next one that matters here.
-const SHARED_HOSTS = [
-  'github.io', 'gitlab.io', 'bitbucket.io', 'codeberg.page', 'pages.dev', 'workers.dev', 'netlify.app', 'vercel.app', 'now.sh',
-  'herokuapp.com', 'onrender.com', 'fly.dev', 'glitch.me', 'repl.co', 'replit.app', 'surge.sh', 'neocities.org', 'itch.io', 'notion.site',
-  'blogspot.com', 'wordpress.com', 'tumblr.com', 'substack.com', 'weebly.com', 'wixsite.com', 'webflow.io', 'myshopify.com', 'carrd.co',
-  'web.app', 'firebaseapp.com', 'appspot.com', 'azurewebsites.net', 'cloudfront.net', 'amazonaws.com', 'ngrok.io', 'ngrok-free.app',
-  'trycloudflare.com', '000webhostapp.com', 'infinityfreeapp.com',
-];
+// Site key (SEC-106): the registrable domain from the Public Suffix List, with its private part, so each name on a
+// shared host (alice.github.io) is its own site. IP addresses, localhost and a bare suffix are their own site.
 function siteOf(u) {
   const host = hostOf(u);
   if (!host) return '';
-  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host === 'localhost') return host;
-  const parts = host.split('.');
-  if (parts.length <= 2) return host;
-  const shared = SHARED_HOSTS.find((s) => host.endsWith('.' + s));
-  if (shared) { const label = host.slice(0, -(shared.length + 1)).split('.').pop(); return label === 'www' ? shared : label + '.' + shared; }
-  const sld = parts[parts.length - 2];
-  const twoLevel = ['co', 'com', 'net', 'org', 'gov', 'ac', 'edu', 'or', 'ne', 'go', 'my', 'web', 'sch', 'mil', 'ltd', 'plc', 'nom', 'gob'];
-  if (twoLevel.includes(sld) && parts[parts.length - 1].length === 2) return parts.slice(-3).join('.');
-  return parts.slice(-2).join('.');
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.startsWith('[') || host === 'localhost') return host;
+  return getDomain(host, { allowPrivateDomains: true }) || host;
 }
 
 /** Text for a native menu item: Windows reads "&" as a keyboard-shortcut mark, so a literal one is doubled. */

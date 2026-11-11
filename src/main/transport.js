@@ -30,8 +30,12 @@ const HOP_HEADERS = new Set(['host', 'connection', 'keep-alive', 'transfer-encod
 
 class Transport {
   /** browserOpen (tests): replaces net.open for the browser stack. */
-  constructor({ session, settings, browserOpen }) {
+  /** refuse (guarded fetches, SEC-104): address -> true to refuse connecting to it; checked at connect time. */
+  /** certFor (REQ-308): host[:port] -> fingerprints ('sha256/<base64>') the user proceeded past, normal session only. */
+  constructor({ session, settings, browserOpen, refuse, certFor }) {
     this.session = session;
+    this.refuse = refuse || null;
+    this.certFor = certFor || null;
     this.settings = settings;
     this.browserOpen = browserOpen || net.open;
     this.agents = new Map(); // proxy key -> undici dispatcher
@@ -94,7 +98,8 @@ class Transport {
     // undici reaches every site through a proxy with a CONNECT tunnel, which many proxies only allow
     // for HTTPS. Plain http:// links behind a proxy stay with the browser (it forwards them normally).
     if (/^(PROXY|HTTPS)\s/i.test(first) && /^http:/i.test(url)) { const e = new Error('http through a proxy: browser stack only'); e.code = 'NOVADM_PROXY_HTTP'; throw e; }
-    const key = first || 'DIRECT';
+    // The certificates the user accepted apply to the normal session only: other sessions get their own agents.
+    const key = (first || 'DIRECT') + (ses === this.session ? '' : '|other');
     let d = this.agents.get(key);
     if (d) return d;
     const connect = {
@@ -107,6 +112,7 @@ class Transport {
           .then((r) => {
             const list = (r.endpoints || []).map((e) => ({ address: e.address, family: e.family === 'ipv6' ? 6 : 4 }));
             if (!list.length) return cb(Object.assign(new Error('DNS lookup failed for ' + hostname), { code: 'ENOTFOUND' }));
+            if (this.refuse && list.some((x) => this.refuse(x.address))) return cb(refused());
             if (options && options.all) return cb(null, list);
             const v4 = list.find((x) => x.family === 4) || list[0];
             cb(null, v4.address, v4.family);
@@ -122,10 +128,30 @@ class Transport {
       d = new ProxyAgent({ uri: `${scheme}://${m[1]}`, token, connections: 64, requestTls: { ca: caCertificates() } });
     } else {
       // Many sockets per origin: the whole point of direct mode. HTTP/1.1 so each range is its own TCP stream.
-      d = new Agent({ connections: 64, pipelining: 0, connect, allowH2: false, keepAliveTimeout: 20000 });
+      d = new Agent({ connections: 64, pipelining: 0, connect: this.certFor && ses === this.session ? this.acceptedCertConnector(connect) : connect, allowH2: false, keepAliveTimeout: 20000 });
     }
     this.agents.set(key, d);
     return d;
+  }
+
+  /** A host the user proceeded past (REQ-308): its certificate passes when its SHA-256 fingerprint is the accepted one. */
+  acceptedCertConnector(connect) {
+    const { buildConnector } = getUndici();
+    const strict = buildConnector(connect);
+    const loose = buildConnector({ ...connect, rejectUnauthorized: false });
+    return (opts, cb) => {
+      const port = opts.port && String(opts.port) !== '443' ? ':' + opts.port : '';
+      const fps = opts.protocol === 'https:' ? this.certFor(String(opts.hostname).toLowerCase() + port) : null;
+      if (!fps || !fps.length) return strict(opts, cb);
+      return loose(opts, (err, socket) => {
+        if (err) return cb(err);
+        const cert = socket.getPeerCertificate();
+        const fp = cert && cert.raw ? 'sha256/' + require('crypto').createHash('sha256').update(cert.raw).digest('base64') : '';
+        if (socket.authorized || fps.includes(fp)) return cb(null, socket);
+        socket.destroy();
+        cb(Object.assign(new Error('certificate is not the one accepted for ' + opts.hostname), { code: 'NOVADM_CERT' }));
+      });
+    };
   }
 
   async cookieHeader(url, ses) {
@@ -145,6 +171,8 @@ class Transport {
     const explicitCookie = headers.cookie || headers.Cookie || '';
     const host = (u) => { try { return new URL(u).host.toLowerCase(); } catch { return ''; } };
     for (let hop = 0; hop < 15; hop++) {
+      // A literal address (also after a redirect) never reaches the lookup above: check it here.
+      if (this.refuse) { const hn = new URL(current).hostname.replace(/^\[|\]$/g, ''); if (require('net').isIP(hn) && this.refuse(hn)) throw refused(); }
       const h = {};
       const sameHost = host(current) === host(url);
       for (const [k, v] of Object.entries(headers)) {
@@ -203,6 +231,8 @@ class Transport {
     this.agents.clear();
   }
 }
+
+function refused() { return Object.assign(new Error('Not fetched: a page on the internet asked for an address on this PC or a private network'), { code: 'NOVADM_GUARD' }); }
 
 function isRefusal(err) {
   const code = (err && (err.code || (err.cause && err.cause.code))) || '';
