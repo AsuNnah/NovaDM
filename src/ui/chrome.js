@@ -546,7 +546,14 @@ $('shield-pill').onclick = () => togglePanel('shields');
 // REQ-307: a mark on the Guard button while Secure DNS has fallen back to the network's DNS.
 const dnsMark = (on) => { $('dns-mark').hidden = !on; };
 api.on('dns-warning', (d) => dnsMark(d && d.on));
-api.call('shields.state').then((s) => dnsMark(s && s.dnsFallback)).catch(() => {});
+// 1.8.1 (REQ-312): once a country profile exists, a chip says where pages are browsed from.
+const routeChip = (s) => {
+  const el = $('route-pill'); const ps = (s && s.profiles) || []; const cur = ps.find((p) => p.id === s.profile);
+  el.hidden = !ps.length; el.textContent = cur ? (cur.country ? `${cur.name} · ${cur.country}` : cur.name) : 'Your connection'; el.classList.toggle('on', !!cur);
+};
+$('route-pill').onclick = () => togglePanel('shields');
+api.on('route', routeChip);
+api.call('shields.state').then((s) => { dnsMark(s && s.dnsFallback); routeChip(s); }).catch(() => {});
 $('menu-btn').onclick = () => togglePanel('menu');
 api.on('close-panel', () => { openPanel = null; });
 // Panels can also be opened from inside another panel (e.g. the menu).

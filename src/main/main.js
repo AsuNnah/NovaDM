@@ -928,6 +928,7 @@ app.whenReady().then(async () => {
     if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => { transport.close(); return proxyWebRTC(); });
     if ('proxyPassEnc' in c || 'proxyProfiles' in c || 'siteSettings' in c) primeCredentials(settings).catch(() => {});
     if ('proxyProfile' in c || 'proxyProfiles' in c) {
+      sendUI('route', { profiles: (settings.get('proxyProfiles') || []).map((p) => ({ id: p.id, name: p.name, country: p.country })), profile: (country.activeProfile(settings) || {}).id || '' });
       // REQ-313: every tab takes the profile's time zone and language (or drops them); only when it really changed.
       const p = country.activeProfile(settings);
       const key = p ? JSON.stringify([p.id, p.timeZone, p.lang]) : '';
@@ -1123,7 +1124,7 @@ app.whenReady().then(async () => {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });
       if (!r.canceled && r.filePaths[0]) settings.set({ downloadDir: r.filePaths[0] });
     }
-    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS, myFiltersStatus: adblock.myStatus };
+    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS, myFiltersStatus: adblock.myStatus, countries: country.COUNTRIES };
   });
   // Actions for internal pages (Downloads page). Same sender check plus an allow list.
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {

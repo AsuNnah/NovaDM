@@ -392,10 +392,59 @@ function renderShields() {
   if (s.popups) row('Block pop-ups', s.popups === 'blocked', 'shields.togglePopupBlock', null, 'Always block the pop-ups and new tabs this site opens on its own.');
   if (s.forget !== null && s.forget !== undefined) row('Forget this site when NovaDM closes', s.forget, 'shields.toggleForget', null, 'Its cookies and site data are deleted when NovaDM closes, so you are signed out. Its tabs still come back.');
   if (!s.ready) content.append(el('div', 'note', 'Filter lists are still loading…'));
+  renderRoute(s);
   const foot = el('div', 'foot');
   const link = el('button', 'link'); link.textContent = 'Guard settings'; link.onclick = openSettings;
   foot.append(link);
   content.append(foot);
+}
+
+// "Browse from" and "Check what sites see" (1.8.1, REQ-312, REQ-314).
+let routeCheck = null; // the last check's result, until the profile changes
+function renderRoute(s) {
+  const profiles = s.profiles || [];
+  const cur = profiles.find((p) => p.id === s.profile);
+  content.append(el('div', 'msep'));
+  const r = el('div', 'srow route');
+  const sub = cur ? `Time zone ${cur.timeZone} · language ${cur.lang}` : 'Sites see your own address and country';
+  r.append(el('span', null, `Browse from<small class="rsub">${esc(sub)}</small>`));
+  if (profiles.length) {
+    const sel = el('select', 'gsel'); sel.setAttribute('aria-label', 'Browse from');
+    for (const [id, name] of [['', 'Your connection'], ...profiles.map((p) => [p.id, p.country ? `${p.name} · ${p.country}` : p.name])]) {
+      const o = el('option'); o.value = id; o.textContent = name; o.selected = id === (s.profile || ''); sel.append(o);
+    }
+    sel.onchange = async () => { routeCheck = null; await api.call('shields.setProfile', { id: sel.value }); };
+    r.append(sel);
+  } else {
+    const add = el('button', 'link'); add.textContent = 'Add a country…';
+    add.title = 'Country profiles use a proxy or VPN exit you have (Settings › Network).';
+    add.onclick = () => { api.call('tabs.new', { url: 'novadm://settings?section=network' }); close(); };
+    r.append(add);
+  }
+  content.append(r);
+  const box = el('div', 'rcheck'); box.setAttribute('aria-live', 'polite');
+  const btn = el('button', 'link'); btn.textContent = routeCheck ? 'Check again' : 'Check what sites see';
+  btn.onclick = async () => {
+    btn.disabled = true; btn.textContent = 'Checking…';
+    try { routeCheck = await api.call('shields.checkRoute'); } catch { routeCheck = { error: 'The check failed' }; }
+    if (current === 'shields') renderShields();
+  };
+  if (routeCheck) {
+    const c = routeCheck;
+    const line = (k, v, cls) => { const d = el('div', 'rl'); d.append(el('span', 'k', esc(k)), el('span', cls || '', esc(v))); box.append(d); };
+    if (c.error) line('Address', c.error, 'bad');
+    else {
+      line('Address', c.ip);
+      line('Country (Cloudflare)', c.countryMatches === false ? `${c.country}, profile says ${c.profileCountry}` : c.country + (c.countryMatches ? ' ✓' : ''), c.countryMatches === false ? 'warn' : c.countryMatches ? 'ok' : '');
+    }
+    line('Time zone', c.timeZone);
+    line('Language', c.lang);
+    line('WebRTC', c.webrtcProtected ? 'no other address ✓' : 'may show your own address', c.webrtcProtected ? 'ok' : '');
+    if (c.locationRefused) line('Location requests', 'refused ✓', 'ok');
+    if (c.countryMatches === false) box.append(el('div', 'rnote', 'The proxy’s exit is in another country. Edit the profile, or ask your provider for that country.'));
+    content.append(box);
+  }
+  const brow = el('div', 'srow'); brow.append(btn); content.append(brow);
 }
 
 // ---- menu ----

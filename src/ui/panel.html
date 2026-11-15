@@ -46,6 +46,14 @@ select{height:24px;border-radius:6px;background:var(--bg3);color:var(--fg);borde
 .srow{display:flex;align-items:center;gap:10px;padding:9px 14px;cursor:default;}
 .srow:hover{background:var(--hover);}
 label.srow>span:first-child{flex:1;}
+.route>span:first-child{flex:1;min-width:0;}
+.rsub{display:block;color:var(--fg3);font-size:12px;}
+.gsel{font:inherit;line-height:normal;height:28px;color:var(--fg);background:var(--bg3);border:1px solid var(--line);border-radius:var(--r-sm);padding:0 6px;max-width:160px;flex:none;}
+.rcheck{margin:2px 14px 0;border-radius:var(--r);background:var(--bg3);padding:6px 10px;}
+.rcheck:empty{display:none;}
+.rl{display:flex;justify-content:space-between;gap:8px;padding:2px 0;}
+.rl .k{color:var(--fg2);} .rl .ok{color:#3fb950;} .rl .warn{color:#e6a23c;} .rl .bad{color:#e5534b;}
+.rnote{color:var(--fg2);font-size:12px;padding:4px 0 2px;}
 .srow.main{font-weight:600;border-bottom:1px solid var(--line);margin-bottom:4px;padding-bottom:11px;}
 .sw{position:relative;width:34px;height:20px;flex:none;}
 .sw input{position:absolute;inset:0;margin:0;opacity:0;}
