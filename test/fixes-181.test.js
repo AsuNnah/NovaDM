@@ -31,3 +31,20 @@ test('REQ-315: visits in a row with the same site and title show once, with a co
   ]);
   assert.deepStrictEqual(out.map((x) => [x.id, x.n, x.ids]), [[5, 3, [5, 4, 3]], [2, 1, [2]], [1, 1, [1]]]);
 });
+
+test('Guard off for a site also skips the Shields rewrites there (known bug 2026-11-07)', () => {
+  const { AdBlocker } = require('../src/main/adblock');
+  const { Shields } = require('../src/main/shields');
+  const data = { adblock: true, adblockWhitelist: ['off.example'] };
+  const settings = { get: (k) => data[k] };
+  const b = Object.create(AdBlocker.prototype);
+  Object.assign(b, { settings, shields: new Shields(settings), _ipcDone: true, ready: false, engine: null, phish: null, counts: new Map() });
+  let before = null;
+  b.attach({ registerPreloadScript() {}, webRequest: { onBeforeRequest: (_f, cb) => { before = cb; }, onHeadersReceived() {} } });
+  const run = (url, resourceType, top) => { let r; before({ url, resourceType, method: 'GET', webContents: { isDestroyed: () => false, getURL: () => top || url } }, (x) => { r = x; }); return r; };
+  const tracked = (host) => `https://${host}/page?fbclid=x&id=1`;
+  assert.deepStrictEqual(run(tracked('off.example'), 'mainFrame'), {}, 'page of a Guard-off site: untouched');
+  assert.deepStrictEqual(run(tracked('ads.other.example'), 'subFrame', 'https://off.example/'), {}, 'frame inside a Guard-off site: untouched');
+  assert.strictEqual(run('http://off.example/', 'mainFrame').redirectURL, undefined, 'no HTTPS upgrade there');
+  assert.strictEqual(run(tracked('on.example'), 'mainFrame').redirectURL, 'https://on.example/page?id=1', 'other sites still cleaned');
+});

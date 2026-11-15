@@ -485,6 +485,7 @@ class Browser extends EventEmitter {
         // De-AMP: open the publisher's own page; the AMP copy is taken out of the back list.
         if (this.settings.get('deAmp') === false || !payload || !/^https?:/i.test(payload.canonical || '')) break;
         if (!tab.wc || payload.from !== tab.wc.getURL() || tab.ampFrom === payload.from) break;
+        if (this.adblock && this.adblock.isWhitelisted(payload.from)) break; // Guard off for this site
         tab.ampFrom = payload.from;
         if (this.shields) this.shields.stats.deAmp++;
         tab.wc.loadURL(payload.canonical).catch(() => {});

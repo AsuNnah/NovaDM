@@ -200,7 +200,8 @@ class AdBlocker extends EventEmitter {
     session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
       const isMain = details.resourceType === 'mainFrame';
       if (isMain && this.isPhishing(details)) { this.phishBlocked.add(details.url); return callback({ cancel: true }); }
-      if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents) {
+      // Guard off for a site turns its Shields off too, as in Brave: a page by its own address, a frame by its page's.
+      if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents && !this.isWhitelisted(isMain ? details.url : this.pageUrlFor(details))) {
         const to = this.shields.rewrite(details.url, { isMain });
         if (to && to !== details.url) return callback({ redirectURL: to });
       }
