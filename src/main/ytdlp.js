@@ -183,7 +183,10 @@ class YtDlp {
     const exe = this.exe();
     if (!exe) { const e = new Error('yt-dlp is not installed (Settings → Add-ons)'); e.code = 'NEEDS_YTDLP'; return Promise.reject(e); }
     return new Promise((resolve, reject) => {
-      execFile(exe, args, { windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024 }, (err, out, errOut) => {
+      // A country profile on (SEC-111): yt-dlp asks the site through the profile's proxy (in the environment, so the
+      // password isn't on the command line).
+      const viaProfile = require('./proxy').profileProxyEnv(this.settings);
+      execFile(exe, args, { windowsHide: true, timeout: 120000, maxBuffer: 64 * 1024 * 1024, ...(viaProfile ? { env: { ...process.env, ...viaProfile } } : {}) }, (err, out, errOut) => {
         if (err) {
           const line = String(errOut || err.message).trim().split(/\r?\n/).filter((l) => /ERROR/.test(l)).pop() || String(errOut || err.message).trim().split(/\r?\n/).pop();
           return reject(new Error(String(line || 'yt-dlp failed').replace(/^ERROR:\s*/, '')));

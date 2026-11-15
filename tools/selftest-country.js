@@ -42,9 +42,10 @@ module.exports = async ({ app, browser, settings }) => {
     result.failedTo = await until(() => /error\.html/.test(wc.getURL()) ? wc.getURL() : null, 10000);
     result.errorText = result.failedTo ? await wc.executeJavaScript('document.body.innerText').catch(() => '') : '';
 
-    // Back to your connection: the time zone is the machine's again.
-    settings.set({ proxyProfile: '' });
-    await sleep(500);
+    // "Browse from your connection" on that page: the profile goes off, and the time zone is the machine's again.
+    if (result.failedTo) await wc.executeJavaScript("document.getElementById('settings').click()").catch(() => {});
+    result.switchedBack = !!(await until(() => settings.get('proxyProfile') === '', 3000));
+    await sleep(800);
     result.tzAfter = await wc.executeJavaScript('Intl.DateTimeFormat().resolvedOptions().timeZone');
 
     const p = result.page || {};
@@ -56,6 +57,7 @@ module.exports = async ({ app, browser, settings }) => {
       locationRefused: /^refused 1$/.test(p.geo || ''),
       failsClosed: !!result.failedTo && result.seen.length === before,
       saysProxyDown: /proxy for "Selftest exit" isn't answering/i.test(result.errorText),
+      switchBackButton: result.switchedBack,
       backToRealTimeZone: result.tzAfter === realTz,
     };
     result.ok = Object.values(result.checks).every(Boolean);

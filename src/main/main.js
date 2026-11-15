@@ -932,6 +932,15 @@ app.whenReady().then(async () => {
       const p = country.activeProfile(settings);
       const key = p ? JSON.stringify([p.id, p.timeZone, p.lang]) : '';
       if (key !== lastProfileKey) { lastProfileKey = key; browser.applyProfile(p); }
+      // SEC-111: torrent peers can't go through a proxy, so running and seeding torrents stop until it's off again.
+      if (p) {
+        for (const rec of downloads.records.values()) {
+          if (rec.kind !== 'torrent') continue;
+          if (['downloading', 'connecting', 'queued'].includes(rec.state)) downloads.pause(rec.id);
+          if (rec.seeding) downloads.stopSeeding(rec.id).catch(() => {});
+        }
+        aria2.stop();
+      }
     }
   });
   let lastProfileKey = (() => { const p = country.activeProfile(settings); return p ? JSON.stringify([p.id, p.timeZone, p.lang]) : ''; })();

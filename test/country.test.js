@@ -50,3 +50,19 @@ test('REQ-312: saving keeps stored passwords; deleting the profile in use goes b
   s.set({ proxyProfiles: [] });
   assert.strictEqual(s.get('proxyProfile'), '');
 });
+
+test('SEC-111: yt-dlp gets the profile\'s proxy in its environment; none without a profile', () => {
+  const { profileProxyEnv } = require('../src/main/proxy');
+  const data = { proxyProfiles: [{ ...good, user: 'a b', passEnc: '' }], proxyProfile: 'p1' };
+  const env = profileProxyEnv(fake(data));
+  assert.strictEqual(env.https_proxy, 'socks5://a%20b:@proxy.example:1080');
+  assert.strictEqual(env.no_proxy, '', 'no host is let around the proxy');
+  data.proxyProfile = '';
+  assert.strictEqual(profileProxyEnv(fake(data)), null);
+});
+
+test('SEC-111: torrents refuse to start while a profile is on (peers would see the real address)', async () => {
+  const { Aria2 } = require('../src/main/torrent/aria2');
+  const a = new Aria2({ settings: fake({ proxyProfiles: [good], proxyProfile: 'p1' }), userDataDir: 'x' });
+  await assert.rejects(a.start(), (e) => e.code === 'NOVADM_PROFILE' && /Work VPN/.test(e.message));
+});

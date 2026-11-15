@@ -71,4 +71,13 @@ function proxyCredentials(settings) {
   return { user, pass: decryptedPassword(settings.get('proxyPassEnc')) };
 }
 
-module.exports = { proxyConfig, applyProxy, encryptPassword, decryptPassword, primeCredentials, decryptedPassword, proxyCredentials, TYPES };
+/** For programs NovaDM starts (yt-dlp): the profile's proxy as environment variables, or null with no profile on. */
+function profileProxyEnv(settings) {
+  const p = activeProfile(settings);
+  if (!p) return null;
+  const auth = p.user ? `${encodeURIComponent(p.user)}:${encodeURIComponent(decryptedPassword(p.passEnc))}@` : '';
+  const u = `${p.type}://${auth}${p.server}`;
+  return { http_proxy: u, https_proxy: u, HTTP_PROXY: u, HTTPS_PROXY: u, no_proxy: '', NO_PROXY: '' };
+}
+
+module.exports = { profileProxyEnv, proxyConfig, applyProxy, encryptPassword, decryptPassword, primeCredentials, decryptedPassword, proxyCredentials, TYPES };

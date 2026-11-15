@@ -4,7 +4,9 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, net } = require('electron');
+// List downloads go through Chromium's network stack, so a proxy or country profile applies (SEC-111), not Node's fetch.
+const fetch = (...a) => net.fetch(...a);
 const { ElectronBlocker, fromElectronDetails, adsAndTrackingLists, parseFilter } = require('@ghostery/adblocker-electron');
 const { siteOf } = require('./util');
 

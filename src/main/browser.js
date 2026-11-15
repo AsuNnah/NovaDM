@@ -15,6 +15,8 @@ const { normalizeUrl, NEWTAB } = require('./address');
 const { uiUrl } = require('./app-scheme');
 const { Hsts } = require('./hsts');
 const country = require('./country');
+// Chromium's proxy failures: tunnel, proxy connection, SOCKS, proxy sign-in, proxy certificate.
+const PROXY_ERRORS = new Set([-111, -115, -120, -121, -127, -130, -175, -336]);
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
@@ -395,7 +397,9 @@ class Browser extends EventEmitter {
       tab.failed = { url, code, desc };
       tab.loading = false;
       const phishing = code === -20 && !!this.adblock && this.adblock.phishBlocked.delete(url); // -20: blocked by NovaDM
-      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '', h: this.hstsFor(tab.incognito, url) ? '1' : '' })).catch(() => {});
+      // SEC-111: the country profile's proxy failed; the page says so and offers to switch back.
+      const profile = PROXY_ERRORS.has(code) ? country.activeProfile(this.settings) : null;
+      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '', h: this.hstsFor(tab.incognito, url) ? '1' : '', x: profile ? profile.name : '' })).catch(() => {});
     });
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
       if (!isMain) return;

@@ -103,6 +103,9 @@ class Aria2 extends EventEmitter {
 
   /** Start aria2 if it isn't running. Resolves when its RPC answers. */
   start() {
+    // SEC-111: torrent peers connect directly, never through a proxy: no torrents while a country profile is on.
+    const profile = require('../country').activeProfile(this.settings);
+    if (profile) { const e = new Error(`Torrents wait while "${profile.name}" is on: torrent peers would see your own address. Switch to your connection to resume.`); e.code = 'NOVADM_PROFILE'; return Promise.reject(e); }
     if (this.external || this.proc) return Promise.resolve();
     if (this.starting) return this.starting;
     this.starting = (async () => {

@@ -41,7 +41,7 @@ const ytdlpKey = (tab) => `${tab.incognito ? 'p' : 'n'} ${tab.url}`;
 // NovaDM's own pages (app://ui/…, SEC-108), and only their top frame: a page can't be framed, but don't rely on it.
 const fromUi = (e) => !!(e && e.senderFrame && !e.senderFrame.parent && isUiUrl(e.senderFrame.url));
 // What an internal page (novadm://downloads, settings …) may call.
-const INTERNAL = /^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update)\.[A-Za-z]+$/;
+const INTERNAL = /^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update|profile)\.[A-Za-z]+$/;
 
 // The private window closed: what yt-dlp found for its pages goes with it.
 function forgetPrivate() {
@@ -451,6 +451,15 @@ function registerIpc(ctx) {
       adblock.allowPhishing(a.url);
       const t = browser.activeTab();
       if (t) browser.navigate(t.id, a.url);
+      return { ok: true };
+    },
+
+    // "Browse from your connection" on the proxy-down page (SEC-111): the profile goes off, the page loads again.
+    'profile.off': (a) => {
+      const { settings, browser } = getManagers();
+      settings.set({ proxyProfile: '' });
+      const t = browser.activeTab();
+      if (t && /^https?:\/\//i.test(String(a.url || ''))) setTimeout(() => browser.navigate(t.id, a.url), 300); // after the proxy change
       return { ok: true };
     },
 
