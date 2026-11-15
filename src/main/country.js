@@ -102,3 +102,38 @@ async function emulate(wc, profile) {
 }
 
 module.exports = { COUNTRIES, TYPES, cleanProfiles, validTimeZone, activeProfile, acceptLanguage, emulate };
+
+/** Cloudflare's /cdn-cgi/trace answer ("ip=…\nloc=…") -> { ip, country }. */
+function parseTrace(text) {
+  const kv = Object.fromEntries(String(text || '').split(/\r?\n/).map((l) => l.split('=')).filter((a) => a.length >= 2).map(([k, ...v]) => [k, v.join('=')]));
+  return { ip: /^[0-9a-f.:]{3,45}$/i.test(kv.ip || '') ? kv.ip : '', country: /^[A-Z]{2}$/.test(kv.loc || '') ? kv.loc : '' };
+}
+
+/**
+ * "What do sites see" (REQ-314), only when the user presses Check: Cloudflare's trace page through the normal browsing
+ * session (so the active route), plus what NovaDM itself sets. fetchFn(url) -> Response; realTz/realLang: the machine's.
+ */
+async function checkRoute({ fetchFn, profile, webrtcPolicy, realTz, realLang }) {
+  let trace = { ip: '', country: '' };
+  let error = '';
+  try {
+    const r = await fetchFn('https://www.cloudflare.com/cdn-cgi/trace');
+    trace = parseTrace(await r.text());
+    if (!trace.ip) error = 'Cloudflare gave no address';
+  } catch (e) {
+    error = profile ? `No answer through "${profile.name}"` : 'No answer from Cloudflare';
+  }
+  return {
+    ...trace,
+    error,
+    profileCountry: profile ? profile.country : '',
+    countryMatches: !profile || !profile.country || !trace.country ? null : trace.country === profile.country,
+    timeZone: profile ? profile.timeZone : realTz,
+    lang: profile ? profile.lang : realLang,
+    webrtcProtected: webrtcPolicy === 'disable_non_proxied_udp',
+    locationRefused: !!profile,
+  };
+}
+
+module.exports.parseTrace = parseTrace;
+module.exports.checkRoute = checkRoute;

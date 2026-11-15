@@ -66,3 +66,17 @@ test('SEC-111: torrents refuse to start while a profile is on (peers would see t
   const a = new Aria2({ settings: fake({ proxyProfiles: [good], proxyProfile: 'p1' }), userDataDir: 'x' });
   await assert.rejects(a.start(), (e) => e.code === 'NOVADM_PROFILE' && /Work VPN/.test(e.message));
 });
+
+test('REQ-314: the check reads Cloudflare\'s trace and compares the country with the profile', async () => {
+  const { checkRoute, parseTrace } = require('../src/main/country');
+  assert.deepStrictEqual(parseTrace('fl=1\nip=203.0.113.7\nloc=NL\nts=1'), { ip: '203.0.113.7', country: 'NL' });
+  assert.deepStrictEqual(parseTrace('ip=<script>\nloc=nl'), { ip: '', country: '' }, 'odd answers are not shown');
+  const fetchFn = async () => ({ text: async () => 'ip=203.0.113.7\nloc=NL\n' });
+  const de = { ...good, name: 'Home', country: 'DE', timeZone: 'Europe/Berlin', lang: 'de-DE' };
+  const r = await checkRoute({ fetchFn, profile: de, webrtcPolicy: 'disable_non_proxied_udp', realTz: 'Asia/Jakarta', realLang: 'id-ID' });
+  assert.deepStrictEqual([r.ip, r.country, r.countryMatches, r.timeZone, r.webrtcProtected, r.locationRefused], ['203.0.113.7', 'NL', false, 'Europe/Berlin', true, true]);
+  const none = await checkRoute({ fetchFn: async () => { throw new Error('down'); }, profile: de, realTz: 'Asia/Jakarta' });
+  assert.match(none.error, /No answer through "Home"/);
+  const mine = await checkRoute({ fetchFn, profile: null, webrtcPolicy: 'default_public_interface_only', realTz: 'Asia/Jakarta', realLang: 'id-ID' });
+  assert.deepStrictEqual([mine.countryMatches, mine.timeZone, mine.locationRefused], [null, 'Asia/Jakarta', false]);
+});
