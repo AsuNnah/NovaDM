@@ -172,7 +172,14 @@ class Settings extends EventEmitter {
     if (patch && 'proxyProfiles' in patch) {
       // Profiles saved from the settings page keep their stored passwords (by id).
       const old = new Map((this.data.proxyProfiles || []).map((p) => [p.id, p.passEnc]));
-      patch = { ...patch, proxyProfiles: require('./country').cleanProfiles((Array.isArray(patch.proxyProfiles) ? patch.proxyProfiles : []).map((p) => (p && typeof p === 'object' ? { ...p, passEnc: p.passEnc !== undefined ? p.passEnc : old.get(p.id) || '' } : p))) };
+      const sent = (Array.isArray(patch.proxyProfiles) ? patch.proxyProfiles : []).map((p) => (p && typeof p === 'object' ? { ...p, passEnc: p.passEnc !== undefined ? p.passEnc : old.get(p.id) || '' } : p));
+      const clean = require('./country').cleanProfiles(sent);
+      // One bad entry refuses the whole list: a failed edit must never delete the profile in use (SEC-111).
+      if (clean.length < sent.length) { const { proxyProfiles, ...rest } = patch; patch = rest; } else patch = { ...patch, proxyProfiles: clean };
+    }
+    if (patch && 'proxyProfile' in patch && patch.proxyProfile !== '') {
+      const list = 'proxyProfiles' in patch ? patch.proxyProfiles : this.data.proxyProfiles || [];
+      if (!list.some((p) => p.id === patch.proxyProfile)) { const { proxyProfile, ...rest } = patch; patch = rest; }
     }
     for (const [k, v] of Object.entries(patch || {})) {
       if (!(k in defaults())) continue;

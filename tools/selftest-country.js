@@ -16,7 +16,9 @@ module.exports = async ({ app, browser, settings }) => {
   const proxy = http.createServer((req, res) => {
     result.seen.push({ url: req.url, lang: req.headers['accept-language'] || '' });
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end('<!doctype html><title>via proxy</title><p>ok</p>');
+    // A cross-site frame runs in its own process: it must get the profile's time zone too.
+    if (req.url.startsWith('http://frame-selftest.test/')) return res.end('<script>parent.postMessage(Intl.DateTimeFormat().resolvedOptions().timeZone, "*")</script>');
+    res.end('<!doctype html><title>via proxy</title><p>ok</p><iframe src="http://frame-selftest.test/f"></iframe><script>onmessage = (e) => { window.frameTz = e.data; };</script>');
   });
   try {
     await new Promise((r) => proxy.listen(0, '127.0.0.1', r));
@@ -30,6 +32,7 @@ module.exports = async ({ app, browser, settings }) => {
     const id = browser.createTab({ url: 'http://country-selftest.test/page' });
     const wc = browser.tabs.get(id).wc;
     await until(() => !wc.isLoading() && /via proxy/.test(wc.getTitle()), 10000);
+    result.frameTz = await until(() => wc.executeJavaScript('window.frameTz').catch(() => null), 5000);
     result.page = await wc.executeJavaScript(`new Promise((r) => {
       const out = { tz: Intl.DateTimeFormat().resolvedOptions().timeZone, lang: navigator.language, langs: navigator.languages.join(','), locale: Intl.NumberFormat().resolvedOptions().locale };
       navigator.geolocation.getCurrentPosition(() => r({ ...out, geo: 'given' }), (e) => r({ ...out, geo: 'refused ' + e.code }), { timeout: 3000 });
@@ -53,6 +56,7 @@ module.exports = async ({ app, browser, settings }) => {
       wentThroughProxy: result.seen.some((s) => s.url === 'http://country-selftest.test/page'),
       acceptLanguage: result.seen.length > 0 && /^de-DE,de;q=0\.9/.test(result.seen[0].lang),
       timeZone: p.tz === tz,
+      frameTimeZone: result.frameTz === tz,
       language: p.lang === 'de-DE' && /^de-DE/.test(p.langs) && /^de/.test(p.locale),
       locationRefused: /^refused 1$/.test(p.geo || ''),
       failsClosed: !!result.failedTo && result.seen.length === before,

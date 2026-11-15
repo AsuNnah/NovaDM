@@ -36,12 +36,14 @@ module.exports = async ({ app, browser, settings, chromeView }) => {
       document.getElementById('pfPass').value = 'secret-pass';
     })()`);
     result.filled = await wc.executeJavaScript("({ tz: document.getElementById('pfTz').value, lang: document.getElementById('pfLang').value })");
+    // India's zone is listed by ICU under its old name only: the editor must still take the table's name.
+    result.filledIN = await wc.executeJavaScript("(() => { const c = document.getElementById('pfCountry'); c.value = 'IN'; c.dispatchEvent(new Event('change')); const v = document.getElementById('pfTz').value; c.value = 'DE'; c.dispatchEvent(new Event('change')); return v; })()");
     await wc.executeJavaScript("document.getElementById('profileEdit').scrollIntoView({ block: 'center' })"); await sleep(300);
     await shot(wc, 'edit');
     await wc.executeJavaScript("document.getElementById('pfSave').click()");
     const saved = await until(() => { const p = (settings.get('proxyProfiles') || [])[0]; return p && p.passEnc ? p : null; }, 5000);
     result.saved = saved ? { ...saved, passEnc: saved.passEnc ? '(set)' : '' } : null;
-    c.countryFillsTimeZone = result.filled.tz === 'Europe/Berlin' && result.filled.lang === 'de-DE';
+    c.countryFillsTimeZone = result.filled.tz === 'Europe/Berlin' && result.filled.lang === 'de-DE' && result.filledIN === 'Asia/Kolkata';
     c.profileSaved = !!saved && saved.name === 'Test exit' && saved.country === 'DE' && saved.timeZone === 'Europe/Berlin';
     c.passwordEncryptedNotShown = !!saved && !/secret-pass/.test(saved.passEnc) && !(await wc.executeJavaScript('document.body.innerHTML.includes("secret-pass")'));
     c.listedInSettings = /Test exit · DE/.test(await wc.executeJavaScript("document.getElementById('profileList').innerText"));

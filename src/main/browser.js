@@ -16,7 +16,7 @@ const { uiUrl } = require('./app-scheme');
 const { Hsts } = require('./hsts');
 const country = require('./country');
 // Chromium's proxy failures: tunnel, proxy connection, SOCKS, proxy sign-in, proxy certificate.
-const PROXY_ERRORS = new Set([-111, -115, -120, -121, -127, -130, -175, -336]);
+const PROXY_ERRORS = new Set([-115, -120, -127, -130, -175, -336]); // not -111 / -121: a site the proxy can't reach causes those
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],

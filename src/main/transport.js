@@ -226,8 +226,8 @@ class Transport {
     throw new Error('Too many redirects');
   }
 
-  async close() {
-    for (const d of this.agents.values()) { try { await d.close(); } catch {} }
+  async close({ now = false } = {}) {
+    for (const d of this.agents.values()) { try { await (now ? d.destroy() : d.close()); } catch {} }
     this.agents.clear();
   }
 }

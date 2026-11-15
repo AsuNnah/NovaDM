@@ -380,7 +380,7 @@ function registerIpc(ctx) {
     'shields.checkRoute': () => {
       const { browser, settings } = getManagers();
       return require('./country').checkRoute({
-        fetchFn: (u) => browser.normalSession.fetch(u, { cache: 'no-store', credentials: 'omit' }),
+        fetchFn: (u) => require('./net').fetchText(u, { session: browser.normalSession, cookies: false, timeoutMs: 15000 }).then((r) => ({ text: async () => r.text })), // signs in to the proxy
         profile: require('./country').activeProfile(settings),
         webrtcPolicy: browser.webrtcPolicy,
         realTz: Intl.DateTimeFormat().resolvedOptions().timeZone,

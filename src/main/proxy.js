@@ -12,7 +12,7 @@ function proxyConfig(s) {
   // A country profile (SEC-111): only its proxy, never a direct connection, not even when the profile is missing.
   if (s.get('proxyProfile')) {
     const p = activeProfile(s);
-    return { mode: 'fixed_servers', proxyRules: p ? `${p.type}://${p.server}` : 'http://127.0.0.1:9', proxyBypassRules: '<local>' };
+    return { mode: 'fixed_servers', proxyRules: p ? `${p.type}://${p.server}` : 'http://127.0.0.1:9', proxyBypassRules: '' };
   }
   const mode = s.get('proxyMode');
   if (mode === 'none') return { mode: 'direct' };
@@ -76,7 +76,7 @@ function profileProxyEnv(settings) {
   const p = activeProfile(settings);
   if (!p) return null;
   const auth = p.user ? `${encodeURIComponent(p.user)}:${encodeURIComponent(decryptedPassword(p.passEnc))}@` : '';
-  const u = `${p.type}://${auth}${p.server}`;
+  const u = `${p.type === 'socks5' ? 'socks5h' : p.type}://${auth}${p.server}`; // socks5h: names resolved at the proxy
   return { http_proxy: u, https_proxy: u, HTTP_PROXY: u, HTTPS_PROXY: u, no_proxy: '', NO_PROXY: '' };
 }
 

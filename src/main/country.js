@@ -79,29 +79,70 @@ function acceptLanguage(lang) {
 
 /**
  * Make one web tab agree with the profile (null: back to normal), through Chromium's DevTools protocol on that tab,
- * so it takes effect at once and stays across the tab's navigations. Returns false when the tab couldn't be reached
- * (for example another debugger holds it).
+ * so it takes effect at once and stays across the tab's navigations. Cross-site frames run in their own process and
+ * are reached by auto-attaching to them (they wait until they have the overrides). No user-agent override: it would
+ * drop the client hints (navigator.userAgentData), a fingerprint of its own; the session sends the language header.
+ * Returns false when the tab couldn't be reached (for example another debugger holds it).
  */
-async function emulate(wc, profile) {
-  if (!wc || wc.isDestroyed()) return false;
+const emulating = new WeakMap(); // webContents -> the last emulate call, so calls run in order
+const state = new WeakMap(); // webContents -> { profile, frames: Set of child session ids }
+const AUTO = { autoAttach: true, waitForDebuggerOnStart: true, flatten: true };
+// Chromium's own client hints (navigator.userAgentData, Sec-CH-UA), read from NovaDM's toolbar page: a user-agent
+// override without them leaves a tab with no hints at all, which few browsers do.
+let uaHints = null;
+const setUaHints = (h) => { uaHints = h && Array.isArray(h.brands) ? h : null; };
+const overrides = (p, ua) => [
+  ['Emulation.setTimezoneOverride', { timezoneId: p ? p.timeZone : '' }],
+  ['Emulation.setLocaleOverride', p ? { locale: p.lang } : {}],
+  // navigator.language(s) come only from here; the session's Accept-Language covers the header alone.
+  ['Emulation.setUserAgentOverride', { userAgent: ua, ...(p ? { acceptLanguage: acceptLanguage(p.lang) } : {}), ...(p && uaHints ? { userAgentMetadata: uaHints } : {}) }],
+];
+
+function emulate(wc, profile) {
+  if (!wc || wc.isDestroyed()) return Promise.resolve(false);
+  const next = (emulating.get(wc) || Promise.resolve()).then(() => emulateNow(wc, profile));
+  emulating.set(wc, next);
+  return next;
+}
+async function emulateNow(wc, profile) {
+  if (wc.isDestroyed()) return false;
   const d = wc.debugger;
   try {
-    if (!profile && !d.isAttached()) return true;
-    if (!d.isAttached()) d.attach('1.3');
+    if (!profile) {
+      if (d.isAttached()) d.detach(); // detaching drops every override, in the tab and its frames
+      state.delete(wc);
+      return true;
+    }
+    let st = state.get(wc);
+    if (!d.isAttached() || !st) {
+      if (!d.isAttached()) d.attach('1.3');
+      st = { profile, frames: new Set() };
+      state.set(wc, st);
+      d.removeAllListeners('message');
+      d.on('message', (_e, method, params) => {
+        const cur = state.get(wc);
+        if (!cur) return;
+        if (method === 'Target.detachedFromTarget') { cur.frames.delete(params.sessionId); return; }
+        if (method !== 'Target.attachedToTarget') return;
+        const sid = params.sessionId;
+        const send = (m, a) => d.sendCommand(m, a, sid).catch(() => {});
+        cur.frames.add(sid);
+        // A frame or worker that can't take an override still starts: never leave it waiting.
+        Promise.all(overrides(cur.profile, wc.getUserAgent()).map(([m, a]) => send(m, a))).then(() => send('Target.setAutoAttach', AUTO)).finally(() => send('Runtime.runIfWaitingForDebugger', {}));
+      });
+    }
+    st.profile = profile;
     // Sent together, before anything else is asked of the tab, so a load that starts right after already has them.
-    await Promise.all([
-      d.sendCommand('Emulation.setTimezoneOverride', { timezoneId: profile ? profile.timeZone : '' }),
-      d.sendCommand('Emulation.setLocaleOverride', profile ? { locale: profile.lang } : {}),
-      d.sendCommand('Emulation.setUserAgentOverride', { userAgent: wc.getUserAgent(), ...(profile ? { acceptLanguage: acceptLanguage(profile.lang) } : {}) }),
-    ]);
-    if (!profile) d.detach();
+    await Promise.all(overrides(profile, wc.getUserAgent()).map(([m, a]) => d.sendCommand(m, a)));
+    await Promise.all([...st.frames].flatMap((sid) => overrides(profile, wc.getUserAgent()).map(([m, a]) => d.sendCommand(m, a, sid).catch(() => {}))));
+    await d.sendCommand('Target.setAutoAttach', AUTO);
     return true;
   } catch {
     return false;
   }
 }
 
-module.exports = { COUNTRIES, TYPES, cleanProfiles, validTimeZone, activeProfile, acceptLanguage, emulate };
+module.exports = { COUNTRIES, TYPES, cleanProfiles, validTimeZone, activeProfile, acceptLanguage, emulate, setUaHints };
 
 /** Cloudflare's /cdn-cgi/trace answer ("ip=…\nloc=…") -> { ip, country }. */
 function parseTrace(text) {

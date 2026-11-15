@@ -5,8 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
 const { app, ipcMain, net } = require('electron');
-// List downloads go through Chromium's network stack, so a proxy or country profile applies (SEC-111), not Node's fetch.
-const fetch = (...a) => net.fetch(...a);
+// List downloads go through Chromium's network stack, so a proxy or country profile applies (SEC-111), not Node's fetch;
+// through net.js, which signs in to a proxy that asks (net.fetch has no sign-in and gets 407).
+const fetch = (url) => require('./net').fetchBuffer(url, { timeoutMs: 60000 }).then((r) => new Response(r.body, { status: r.status }));
 const { ElectronBlocker, fromElectronDetails, adsAndTrackingLists, parseFilter } = require('@ghostery/adblocker-electron');
 const { siteOf } = require('./util');
 

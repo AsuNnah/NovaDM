@@ -545,7 +545,9 @@ function initProfiles() {
   const c = $('pfCountry');
   c.add(new Option('Choose…', ''));
   for (const [code, [name]] of Object.entries(current.countries || {}).sort((a, b) => a[1][0].localeCompare(b[1][0]))) c.add(new Option(`${name} (${code})`, code));
-  for (const tz of Intl.supportedValuesOf('timeZone')) $('pfTz').add(new Option(tz, tz));
+  // ICU lists some zones by their old names (Asia/Calcutta): the table's current names are added so a country always fills in.
+  const zones = new Set([...Intl.supportedValuesOf('timeZone'), ...Object.values(current.countries || {}).map((r) => r[1])]);
+  for (const tz of [...zones].sort()) $('pfTz').add(new Option(tz, tz));
   c.onchange = () => { const row = (current.countries || {})[c.value]; if (row) { $('pfTz').value = row[1]; $('pfLang').value = row[2]; } };
   $('profileAdd').onclick = () => openProfile(null);
   $('pfCancel').onclick = () => { editing = null; $('profileEdit').hidden = true; };

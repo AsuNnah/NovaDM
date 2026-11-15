@@ -37,6 +37,9 @@ Hide your country, with the fixes from the known-issue list.
   pages show *The proxy isn't answering* with a way back to your connection, instead of loading directly. The
   ad-block and phishing list updates and the Secure DNS check go through the same route, and yt-dlp uses the proxy.
   Torrents wait: their peers connect directly, so torrents pause while a profile is on; resume them after switching back.
+- **Behind any proxy, site icons and video playlists no longer look up the site's name outside the proxy**; the
+  proxy resolves it, as it does for pages.
+- Profile passwords are not put in backup files, and a backup can't switch a profile on.
 - Build tools only: glob 14.0.2 and minimatch 11.0.1 (code-scanning alerts).
 
 ## [1.8.0] — 2026-11-09

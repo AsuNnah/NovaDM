@@ -8,7 +8,7 @@ const SECRET_SETTINGS = new Set(['proxyPassEnc', 'apiKey', 'apiKeyEnc']);
 const { withoutSignIn } = require('./download/manager');
 // Paths of this PC, and what runs or is sent after each download: a backup someone else made must not set them.
 // The download folder too: imported downloads are kept inside it (manager.importRecord), so the file can't move it.
-const MACHINE_SETTINGS = new Set(['downloadDir', 'ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl']);
+const MACHINE_SETTINGS = new Set(['downloadDir', 'ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl', 'proxyProfile']);
 
 function exportData({ settings, downloads, version, includeSettings = true, includeDownloads = true }) {
   const out = { app: 'NovaDM', format: 1, version, exportedAt: new Date().toISOString() };
@@ -17,6 +17,7 @@ function exportData({ settings, downloads, version, includeSettings = true, incl
     for (const [k, v] of Object.entries(settings.data)) if (!SECRET_SETTINGS.has(k) && !MACHINE_SETTINGS.has(k)) out.settings[k] = v;
     // Site sign-in passwords are encrypted for this PC only: not exported.
     if (Array.isArray(out.settings.siteSettings)) out.settings.siteSettings = out.settings.siteSettings.map(({ passEnc, ...s }) => s);
+    if (Array.isArray(out.settings.proxyProfiles)) out.settings.proxyProfiles = out.settings.proxyProfiles.map(({ passEnc, ...p }) => p);
   }
   if (includeDownloads) {
     out.downloads = [...downloads.records.values()].filter((r) => !r.incognito && r.kind !== 'convert').map((r) => ({

@@ -25,7 +25,7 @@ test('REQ-312: every country in the table has a valid time zone and language', (
 
 test('SEC-111: a profile on means its proxy only, with no direct fallback', () => {
   const data = { proxyMode: 'none', proxyProfiles: [good], proxyProfile: 'p1', proxyUser: 'other' };
-  assert.deepStrictEqual(proxyConfig(fake(data)), { mode: 'fixed_servers', proxyRules: 'socks5://proxy.example:1080', proxyBypassRules: '<local>' });
+  assert.deepStrictEqual(proxyConfig(fake(data)), { mode: 'fixed_servers', proxyRules: 'socks5://proxy.example:1080', proxyBypassRules: '' }, 'no local-name bypass either');
   assert.strictEqual(activeProfile(fake(data)).name, 'Work VPN');
   assert.strictEqual(proxyCredentials(fake(data)).user, 'me', 'the profile\'s sign-in, not the normal proxy\'s');
   data.proxyProfile = 'gone';
@@ -47,6 +47,14 @@ test('REQ-312: saving keeps stored passwords; deleting the profile in use goes b
   assert.strictEqual(page.hasPassword, true);
   s.set({ proxyProfiles: [{ ...page, name: 'Renamed' }] });
   assert.strictEqual(s.get('proxyProfiles')[0].passEnc, 'enc', 'kept on save');
+  s.set({ proxyProfiles: [{ ...page, server: 'no-port' }] });
+  assert.strictEqual(s.get('proxyProfile'), 'p1', 'a failed edit keeps the profile in use on');
+  assert.strictEqual(s.get('proxyProfiles')[0].name, 'Renamed', 'and the saved profile unchanged');
+  s.set({ proxyProfile: 'nope' });
+  assert.strictEqual(s.get('proxyProfile'), 'p1', 'only a saved profile can be switched on');
+  const { exportData } = require('../src/main/backup');
+  const out = exportData({ settings: s, downloads: { records: new Map() }, version: 'x', includeDownloads: false }).settings;
+  assert.ok(!('proxyProfile' in out) && out.proxyProfiles[0].passEnc === undefined, 'a backup carries no password and switches nothing on');
   s.set({ proxyProfiles: [] });
   assert.strictEqual(s.get('proxyProfile'), '');
 });
@@ -55,7 +63,7 @@ test('SEC-111: yt-dlp gets the profile\'s proxy in its environment; none without
   const { profileProxyEnv } = require('../src/main/proxy');
   const data = { proxyProfiles: [{ ...good, user: 'a b', passEnc: '' }], proxyProfile: 'p1' };
   const env = profileProxyEnv(fake(data));
-  assert.strictEqual(env.https_proxy, 'socks5://a%20b:@proxy.example:1080');
+  assert.strictEqual(env.https_proxy, 'socks5h://a%20b:@proxy.example:1080', 'names resolved at the proxy');
   assert.strictEqual(env.no_proxy, '', 'no host is let around the proxy');
   data.proxyProfile = '';
   assert.strictEqual(profileProxyEnv(fake(data)), null);
@@ -79,4 +87,14 @@ test('REQ-314: the check reads Cloudflare\'s trace and compares the country with
   assert.match(none.error, /No answer through "Home"/);
   const mine = await checkRoute({ fetchFn, profile: null, webrtcPolicy: 'default_public_interface_only', realTz: 'Asia/Jakarta', realLang: 'id-ID' });
   assert.deepStrictEqual([mine.countryMatches, mine.timeZone, mine.locationRefused], [null, 'Asia/Jakarta', false]);
+});
+
+test('SEC-111: a host the session sends through a proxy is not looked up here (the lookup would leak around it)', async () => {
+  const { sessionLookup } = require('../src/main/netguard');
+  let looked = 0;
+  const ses = { resolveProxy: async () => 'PROXY proxy.example:1080', resolveHost: async () => { looked++; return { endpoints: [{ address: '10.0.0.1' }] }; } };
+  assert.deepStrictEqual(await sessionLookup(ses)('a.example'), []);
+  assert.strictEqual(looked, 0);
+  ses.resolveProxy = async () => 'DIRECT';
+  assert.deepStrictEqual(await sessionLookup(ses)('a.example'), [{ address: '10.0.0.1' }]);
 });
