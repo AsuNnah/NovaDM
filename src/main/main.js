@@ -915,7 +915,7 @@ app.whenReady().then(async () => {
   registerLinkHandlers();
 
   // Proxy for pages and downloads (system settings unless the user chose otherwise).
-  const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession];
+  const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession, electronSession.fromPartition('novadm-siteext')];
   // With any proxy (NovaDM's or Windows'), WebRTC may only use it: no direct connections that show the real address.
   const proxyWebRTC = async () => {
     const via = await browser.normalSession.resolveProxy('https://www.example.com/').catch(() => 'DIRECT');
@@ -925,7 +925,7 @@ app.whenReady().then(async () => {
   primeCredentials(settings).catch(() => {});
   settings.on('change', (c) => {
     if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => { transport.close(); return proxyWebRTC(); });
-    if ('proxyPassEnc' in c || 'siteSettings' in c) primeCredentials(settings).catch(() => {});
+    if ('proxyPassEnc' in c || 'proxyProfiles' in c || 'siteSettings' in c) primeCredentials(settings).catch(() => {});
   });
   net.setProxyCredentials(() => proxyCredentials(settings));
   net.setSiteCredentials((host) => siteCredentials(host));
@@ -1089,6 +1089,14 @@ app.whenReady().then(async () => {
     if (op === 'chooseFolder') {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
       return { folder: r.canceled ? '' : r.filePaths[0] || '' };
+    }
+    if (op === 'profilePassword') {
+      // { id, password }: stored encrypted on that country profile.
+      try {
+        const enc = arg && arg.password ? await encryptPassword(String(arg.password)) : '';
+        settings.set({ proxyProfiles: (settings.get('proxyProfiles') || []).map((p) => (p.id === String(arg && arg.id) ? { ...p, passEnc: enc } : p)) });
+        await primeCredentials(settings);
+      } catch (e) { return { ok: false, error: e.message }; }
     }
     if (op === 'proxyPassword') {
       try { settings.set({ proxyPassEnc: await encryptPassword(String(arg || '')) }); await primeCredentials(settings); } catch (e) { return { ok: false, error: e.message }; }

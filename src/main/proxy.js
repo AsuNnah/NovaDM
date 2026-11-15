@@ -4,10 +4,16 @@
 // it up through session.resolveProxy(). The password is kept encrypted with Windows' DPAPI
 // (Electron safeStorage), never in plain text.
 const { safeStorage } = require('electron');
+const { activeProfile } = require('./country');
 
 const TYPES = ['http', 'https', 'socks4', 'socks5'];
 
 function proxyConfig(s) {
+  // A country profile (SEC-111): only its proxy, never a direct connection, not even when the profile is missing.
+  if (s.get('proxyProfile')) {
+    const p = activeProfile(s);
+    return { mode: 'fixed_servers', proxyRules: p ? `${p.type}://${p.server}` : 'http://127.0.0.1:9', proxyBypassRules: '<local>' };
+  }
   const mode = s.get('proxyMode');
   if (mode === 'none') return { mode: 'direct' };
   if (mode === 'manual') {
@@ -49,7 +55,7 @@ async function encryptPassword(pw) {
 // synchronous, so they read this cache; primeCredentials fills it at start and whenever those settings change.
 const plain = new Map();
 async function primeCredentials(settings) {
-  const encs = [settings.get('proxyPassEnc'), ...(settings.get('siteSettings') || []).map((s) => s && s.passEnc)].filter((e) => e && !plain.has(e));
+  const encs = [settings.get('proxyPassEnc'), ...(settings.get('proxyProfiles') || []).map((p) => p && p.passEnc), ...(settings.get('siteSettings') || []).map((s) => s && s.passEnc)].filter((e) => e && !plain.has(e));
   await Promise.all(encs.map(async (enc) => {
     try { plain.set(enc, await decryptPassword(enc)); } catch {} // left out: tried again on the next change
   }));
@@ -58,6 +64,8 @@ function decryptedPassword(enc) { return (enc && plain.get(enc)) || ''; }
 
 /** { user, pass } for the configured proxy, or null. */
 function proxyCredentials(settings) {
+  const p = activeProfile(settings);
+  if (p) return p.user ? { user: p.user, pass: decryptedPassword(p.passEnc) } : null;
   const user = settings.get('proxyUser');
   if (!user || settings.get('proxyMode') === 'none') return null;
   return { user, pass: decryptedPassword(settings.get('proxyPassEnc')) };

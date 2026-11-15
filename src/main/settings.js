@@ -115,6 +115,8 @@ function defaults() {
     proxyPac: '',
     proxyUser: '',
     proxyPassEnc: '', // encrypted with Windows DPAPI (safeStorage)
+    proxyProfiles: [], // 1.8.1 country profiles (country.js): proxy, time zone, language; passwords encrypted
+    proxyProfile: '', // the profile in use; '' = your connection (the settings above)
 
     // Auto downloader
     clipboardWatch: true,
@@ -156,6 +158,7 @@ class Settings extends EventEmitter {
     const { proxyPassEnc, apiKey, apiKeyEnc, ...rest } = this.data; // the API key reaches the page only through integration.status
     // Site sign-in passwords stay here (encrypted); the settings page only learns that one is set.
     rest.siteSettings = (rest.siteSettings || []).map(({ passEnc, ...s }) => ({ ...s, hasPassword: !!passEnc }));
+    rest.proxyProfiles = (rest.proxyProfiles || []).map(({ passEnc, ...p }) => ({ ...p, hasPassword: !!passEnc }));
     return { ...rest, proxyHasPassword: !!proxyPassEnc, searchEngines: SEARCH_ENGINES };
   }
 
@@ -166,6 +169,11 @@ class Settings extends EventEmitter {
       const old = new Map((this.data.siteSettings || []).map((s) => [String(s.site).toLowerCase(), s.passEnc]));
       patch = { ...patch, siteSettings: patch.siteSettings.map(({ hasPassword, passEnc, ...s }) => ({ ...s, passEnc: passEnc !== undefined ? passEnc : old.get(String(s.site).toLowerCase()) || '' })) };
     }
+    if (patch && 'proxyProfiles' in patch) {
+      // Profiles saved from the settings page keep their stored passwords (by id).
+      const old = new Map((this.data.proxyProfiles || []).map((p) => [p.id, p.passEnc]));
+      patch = { ...patch, proxyProfiles: require('./country').cleanProfiles((Array.isArray(patch.proxyProfiles) ? patch.proxyProfiles : []).map((p) => (p && typeof p === 'object' ? { ...p, passEnc: p.passEnc !== undefined ? p.passEnc : old.get(p.id) || '' } : p))) };
+    }
     for (const [k, v] of Object.entries(patch || {})) {
       if (!(k in defaults())) continue;
       if (k === 'myFilters' && require('./adblock').myFiltersTooBig(v)) continue; // too big: the saved rules stay
@@ -173,6 +181,8 @@ class Settings extends EventEmitter {
       this.data[k] = v;
       changed[k] = v;
     }
+    // The profile in use was deleted: back to your connection (a profile that is merely unreadable still fails closed).
+    if ('proxyProfiles' in changed && this.data.proxyProfile && !this.data.proxyProfiles.some((p) => p.id === this.data.proxyProfile)) { this.data.proxyProfile = ''; changed.proxyProfile = ''; }
     if (this.data.connections < 1) this.data.connections = 1;
     if (this.data.connections > 32) this.data.connections = 32;
     if (this.data.maxActive < 1) this.data.maxActive = 1;
