@@ -601,9 +601,11 @@ async function renderHistory() {
       const dd = hmDay(v.t);
       if (dd !== day) { day = dd; list.append(el('div', 'hday', esc(dd))); }
       const row = el('div', 'srow hrow'); row.title = v.url;
-      const x = el('div', 'iconbtn hx', xSvg()); x.title = 'Remove from history';
-      row.append(hmIcon(v.icon), el('div', 'stx', `<span class="stt">${esc(v.title || v.url)}</span>`), el('span', 'htm', esc(hmTime(v.t))), x);
-      x.onclick = async (e) => { e.stopPropagation(); await api.call('history.remove', { ids: [v.id] }); row.remove(); };
+      const x = el('div', 'iconbtn hx', xSvg()); x.title = 'Remove from history'; // a collapsed row removes all its visits
+      row.append(hmIcon(v.icon), el('div', 'stx', `<span class="stt">${esc(v.title || v.url)}</span>`));
+      if (v.n > 1) { const n = el('span', 'hn', '×' + v.n); n.title = `${v.n} visits in a row`; row.append(n); }
+      row.append(el('span', 'htm', esc(hmTime(v.t))), x);
+      x.onclick = async (e) => { e.stopPropagation(); await api.call('history.remove', { ids: v.ids || [v.id] }); row.remove(); };
       row.onclick = (e) => { api.call('history.open', { url: v.url, newTab: e.ctrlKey || e.metaKey }); if (!(e.ctrlKey || e.metaKey)) close(); };
       row.onauxclick = (e) => { if (e.button === 1) api.call('history.open', { url: v.url, newTab: true }); };
       list.append(row);
