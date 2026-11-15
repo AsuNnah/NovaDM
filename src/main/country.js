@@ -71,10 +71,10 @@ function activeProfile(settings) {
   return id ? (settings.get('proxyProfiles') || []).find((p) => p.id === id) || null : null;
 }
 
-/** "de-DE" -> "de-DE,de;q=0.9": what Chrome sends for one chosen language. */
+/** "de-DE" -> "de-DE,de": the language list for one chosen language (Chromium adds the q= weights itself). */
 function acceptLanguage(lang) {
   const base = lang.split('-')[0];
-  return base === lang ? lang : `${lang},${base};q=0.9`;
+  return base === lang ? lang : `${lang},${base}`;
 }
 
 /**
@@ -88,9 +88,12 @@ async function emulate(wc, profile) {
   try {
     if (!profile && !d.isAttached()) return true;
     if (!d.isAttached()) d.attach('1.3');
-    await d.sendCommand('Emulation.setTimezoneOverride', { timezoneId: profile ? profile.timeZone : '' });
-    await d.sendCommand('Emulation.setLocaleOverride', profile ? { locale: profile.lang } : {});
-    await d.sendCommand('Emulation.setUserAgentOverride', { userAgent: wc.getUserAgent(), ...(profile ? { acceptLanguage: acceptLanguage(profile.lang) } : {}) });
+    // Sent together, before anything else is asked of the tab, so a load that starts right after already has them.
+    await Promise.all([
+      d.sendCommand('Emulation.setTimezoneOverride', { timezoneId: profile ? profile.timeZone : '' }),
+      d.sendCommand('Emulation.setLocaleOverride', profile ? { locale: profile.lang } : {}),
+      d.sendCommand('Emulation.setUserAgentOverride', { userAgent: wc.getUserAgent(), ...(profile ? { acceptLanguage: acceptLanguage(profile.lang) } : {}) }),
+    ]);
     if (!profile) d.detach();
     return true;
   } catch {

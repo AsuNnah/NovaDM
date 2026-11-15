@@ -14,6 +14,7 @@ const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
 const { normalizeUrl, NEWTAB } = require('./address');
 const { uiUrl } = require('./app-scheme');
 const { Hsts } = require('./hsts');
+const country = require('./country');
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
@@ -228,6 +229,15 @@ class Browser extends EventEmitter {
     return id;
   }
 
+  /** A country profile was switched on, changed or off (null): every open tab follows at once, the visible one reloads. */
+  applyProfile(profile) {
+    // Requests the browser makes itself (site icons, prefetch) carry the profile's language too.
+    for (const ses of [this.normalSession, this.incognitoSession]) ses.setUserAgent(ses.getUserAgent(), country.acceptLanguage(profile ? profile.lang : app.getLocale()));
+    for (const t of this.tabs.values()) if (t.wc && !t.wc.isDestroyed()) country.emulate(t.wc, profile);
+    const a = this.activeTab();
+    if (a && a.wc && !a.wc.isDestroyed() && /^https?:/i.test(a.wc.getURL())) a.wc.reload();
+  }
+
   /** 'disable_non_proxied_udp' while a proxy is in use: WebRTC would otherwise reveal the real address. */
   setWebRTCPolicy(policy) {
     this.webrtcPolicy = policy;
@@ -252,6 +262,8 @@ class Browser extends EventEmitter {
     tab.wc = view.webContents;
     tab.wcId = tab.wc.id;
     tab.discarded = false;
+    const profile = country.activeProfile(this.settings);
+    if (profile) country.emulate(tab.wc, profile); // REQ-313: before the first load
     this.wireTab(tab);
     if (this.parentView) { this.parentView.addChildView(view); if (this.onRestack) this.onRestack(); }
     if (tab.id !== this.activeId) view.setVisible(false);
@@ -539,6 +551,7 @@ class Browser extends EventEmitter {
   }
 
   handlePermission(tab, permission, details, callback) {
+    if (permission === 'geolocation' && country.activeProfile(this.settings)) return callback(false); // REQ-313: a country profile hides where you are
     // A magnet: link opens in NovaDM instead of asking Windows for another torrent app.
     if (permission === 'openExternal' && details && /^magnet:\?/i.test(details.externalURL || '')) {
       callback(false);
@@ -555,6 +568,7 @@ class Browser extends EventEmitter {
   }
 
   checkPermission(origin, permission, incognito = false) {
+    if (permission === 'geolocation' && country.activeProfile(this.settings)) return false;
     const stored = this.getStoredPermission(originOf(origin), permission, incognito);
     return stored === 'granted';
   }

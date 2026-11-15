@@ -20,7 +20,7 @@ test('REQ-312: every country in the table has a valid time zone and language', (
     assert.match(code, /^[A-Z]{2}$/);
     assert.ok(cleanProfiles([{ ...good, timeZone: tz, lang }])[0].lang === lang, code);
   }
-  assert.strictEqual(acceptLanguage('de-DE'), 'de-DE,de;q=0.9');
+  assert.strictEqual(acceptLanguage('de-DE'), 'de-DE,de');
 });
 
 test('SEC-111: a profile on means its proxy only, with no direct fallback', () => {

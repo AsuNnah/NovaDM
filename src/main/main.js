@@ -13,6 +13,7 @@ const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { AddFlow, specFromUrl } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
+const country = require('./country');
 const { applyProxy, proxyCredentials, encryptPassword, primeCredentials, decryptedPassword } = require('./proxy');
 const { Scheduler } = require('./scheduler');
 const { Background } = require('./background');
@@ -926,7 +927,15 @@ app.whenReady().then(async () => {
   settings.on('change', (c) => {
     if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => { transport.close(); return proxyWebRTC(); });
     if ('proxyPassEnc' in c || 'proxyProfiles' in c || 'siteSettings' in c) primeCredentials(settings).catch(() => {});
+    if ('proxyProfile' in c || 'proxyProfiles' in c) {
+      // REQ-313: every tab takes the profile's time zone and language (or drops them); only when it really changed.
+      const p = country.activeProfile(settings);
+      const key = p ? JSON.stringify([p.id, p.timeZone, p.lang]) : '';
+      if (key !== lastProfileKey) { lastProfileKey = key; browser.applyProfile(p); }
+    }
   });
+  let lastProfileKey = (() => { const p = country.activeProfile(settings); return p ? JSON.stringify([p.id, p.timeZone, p.lang]) : ''; })();
+  if (lastProfileKey) browser.applyProfile(country.activeProfile(settings)); // started with a profile on
   net.setProxyCredentials(() => proxyCredentials(settings));
   net.setSiteCredentials((host) => siteCredentials(host));
   transport.proxyCredentials = () => proxyCredentials(settings);
