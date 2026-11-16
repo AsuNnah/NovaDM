@@ -8,7 +8,7 @@ const path = require('path');
 const { app, WebContentsView, Menu, dialog, nativeImage } = require('electron');
 const diagnostics = require('./diagnostics');
 const { underPressure, appMemoryBytes, cleanLeftovers } = require('./housekeeping');
-const { History, Bookmarks, TabSession } = require('./library');
+const { History, Bookmarks, TabSession, collapseVisits } = require('./library');
 const { SiteIcons } = require('./site-icons');
 const bookmarkImport = require('./bookmarks-import');
 const { menuText, siteOf } = require('./util');
@@ -522,7 +522,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
     // The History panel (Ctrl+Shift+H): nothing from a private window, neither visits nor closed tabs.
     'history.panel': (a) => {
       if (browser.cur === 'private') return { private: true, items: [], closed: [] };
-      const items = history.search({ q: a.q || '', limit: 200 }).map((v) => ({ id: v.id, t: v.t, url: v.url, title: v.title, icon: siteIcons.get(v.url) }));
+      const items = collapseVisits(history.search({ q: a.q || '', limit: 200 })).map((v) => ({ id: v.id, ids: v.ids, n: v.n, t: v.t, url: v.url, title: v.title, icon: siteIcons.get(v.url) }));
       return { private: false, items, closed: browser.closedList(false).map((c) => ({ ...c, icon: siteIcons.get(c.url) })) };
     },
     'history.reopenClosed': (a) => { if (browser.cur !== 'private') browser.reopenClosed(false, Number(a.id)); return { ok: true }; },

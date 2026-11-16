@@ -41,7 +41,7 @@ const ytdlpKey = (tab) => `${tab.incognito ? 'p' : 'n'} ${tab.url}`;
 // NovaDM's own pages (app://ui/…, SEC-108), and only their top frame: a page can't be framed, but don't rely on it.
 const fromUi = (e) => !!(e && e.senderFrame && !e.senderFrame.parent && isUiUrl(e.senderFrame.url));
 // What an internal page (novadm://downloads, settings …) may call.
-const INTERNAL = /^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update)\.[A-Za-z]+$/;
+const INTERNAL = /^(downloads|extensions|ffmpeg|torrents|integration|ytdlp|siteext|history|bookmarks|reader|phishing|cert|about|update|profile)\.[A-Za-z]+$/;
 
 // The private window closed: what yt-dlp found for its pages goes with it.
 function forgetPrivate() {
@@ -375,6 +375,18 @@ function registerIpc(ctx) {
     // The Guard panel's "always block pop-ups on this site" (and back to asking / the general setting).
     'shields.toggleForget': () => { const t = getManagers().browser.activeTab(); const st = getManagers().settings; const site = t && !t.incognito && /^https?:/i.test(t.url || '') ? siteOf(t.url) : ''; /* a private window's site is never written to disk */ if (site) { const l = new Set(st.get('forgetSites') || []); if (l.has(site)) l.delete(site); else l.add(site); st.set({ forgetSites: [...l] }); } pushShields(); },
     'shields.togglePopupBlock': () => { const t = getManagers().browser.activeTab(); const p = getManagers().popup; if (t) p.blockSite(t.url, !p.siteBlocked(t.url)); setTimeout(pushShields, 100); },
+    'shields.setProfile': (a) => { const { settings } = getManagers(); const id = String(a.id || ''); if (!id || (settings.get('proxyProfiles') || []).some((p) => p.id === id)) settings.set({ proxyProfile: id }); setTimeout(pushShields, 100); return { ok: true }; },
+    // REQ-314: only when the user presses Check; through the normal browsing session, so the active route.
+    'shields.checkRoute': () => {
+      const { browser, settings } = getManagers();
+      return require('./country').checkRoute({
+        fetchFn: (u) => require('./net').fetchText(u, { session: browser.normalSession, cookies: false, timeoutMs: 15000 }).then((r) => ({ text: async () => r.text })), // signs in to the proxy
+        profile: require('./country').activeProfile(settings),
+        webrtcPolicy: browser.webrtcPolicy,
+        realTz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        realLang: require('electron').app.getLocale(),
+      });
+    },
     'shields.setGlobal': (a) => { getManagers().settings.set({ adblock: !!a.enabled }); pushShields(); },
 
     // ---- pop-up guard responses ----
@@ -451,6 +463,15 @@ function registerIpc(ctx) {
       adblock.allowPhishing(a.url);
       const t = browser.activeTab();
       if (t) browser.navigate(t.id, a.url);
+      return { ok: true };
+    },
+
+    // "Browse from your connection" on the proxy-down page (SEC-111): the profile goes off, the page loads again.
+    'profile.off': (a) => {
+      const { settings, browser } = getManagers();
+      settings.set({ proxyProfile: '' });
+      const t = browser.activeTab();
+      if (t && /^https?:\/\//i.test(String(a.url || ''))) setTimeout(() => browser.navigate(t.id, a.url), 300); // after the proxy change
       return { ok: true };
     },
 
@@ -548,6 +569,9 @@ function registerIpc(ctx) {
       ready: adblock.ready,
       forget: t && !t.incognito && /^https?:/i.test(t.url || '') ? (settings.get('forgetSites') || []).includes(siteOf(t.url)) : null, // REQ-309
       dnsFallback: !!getManagers().getDnsStatus && getManagers().getDnsStatus().mode === 'automatic', // REQ-307
+      // REQ-312: "Browse from" (no passwords or servers: names, countries, time zones and languages only)
+      profiles: (settings.get('proxyProfiles') || []).map((p) => ({ id: p.id, name: p.name, country: p.country, timeZone: p.timeZone, lang: p.lang })),
+      profile: (require('./country').activeProfile(settings) || {}).id || '',
     };
   }
   function pushShields() { sendUI('shields', shieldsState()); }

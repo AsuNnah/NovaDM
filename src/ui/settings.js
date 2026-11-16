@@ -98,6 +98,7 @@ function render() {
   renderForget();
   if (document.activeElement !== $('myFilters')) $('myFilters').value = current.myFilters || '';
   renderMyFilters();
+  renderProfiles();
   if (document.activeElement !== $('secureDnsCustom')) $('secureDnsCustom').value = current.secureDnsCustom || '';
   $('downloadDir').textContent = current.downloadDir || '';
   $('downloadDir').title = current.downloadDir || '';
@@ -174,6 +175,7 @@ async function init() {
   $('chooseDir').addEventListener('click', async () => { current = await bridge.chooseDownloadDir(); render(); });
   initFfmpeg();
   initAria2();
+  initProfiles();
   initRules();
   initIntegration();
   initYtdlp();
@@ -513,3 +515,48 @@ async function initAbout() {
 // sections above it have filled in, so it doesn't move away.
 const section = $(new URLSearchParams(location.search).get('section') || '-');
 Promise.allSettled([init(), initAbout()]).then(() => { if (section) setTimeout(() => section.scrollIntoView(), 100); });
+
+// ---- Country profiles (1.8.1, REQ-312) ----
+let editing = null; // the profile being edited (a copy), or null
+function renderProfiles() {
+  const list = $('profileList');
+  list.textContent = '';
+  for (const p of current.proxyProfiles || []) {
+    const row = document.createElement('div'); row.className = 'row';
+    const lbl = document.createElement('div'); lbl.className = 'lbl';
+    const b = document.createElement('b'); b.textContent = p.country ? `${p.name} · ${p.country}` : p.name;
+    const s = document.createElement('span'); s.textContent = `${p.type.toUpperCase()} ${p.server} · ${p.timeZone} · ${p.lang}${p.id === current.proxyProfile ? ' · in use' : ''}`;
+    lbl.append(b, s);
+    const edit = document.createElement('button'); edit.textContent = 'Edit'; edit.onclick = () => openProfile(p);
+    const del = document.createElement('button'); del.textContent = 'Delete';
+    del.onclick = () => save({ proxyProfiles: (current.proxyProfiles || []).filter((x) => x.id !== p.id) });
+    row.append(lbl, edit, del);
+    list.append(row);
+  }
+}
+function openProfile(p) {
+  editing = p ? { ...p } : { id: 'p' + Date.now().toString(36), name: '', country: '', type: 'socks5', server: '', user: '', timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, lang: navigator.language };
+  $('pfName').value = editing.name; $('pfCountry').value = editing.country; $('pfType').value = editing.type; $('pfServer').value = editing.server;
+  $('pfUser').value = editing.user || ''; $('pfPass').value = ''; $('pfPass').placeholder = editing.hasPassword ? 'Password saved' : 'Password';
+  $('pfTz').value = editing.timeZone; $('pfLang').value = editing.lang; $('pfError').textContent = '';
+  $('profileEdit').hidden = false; $('pfName').focus();
+}
+function initProfiles() {
+  const c = $('pfCountry');
+  c.add(new Option('Choose…', ''));
+  for (const [code, [name]] of Object.entries(current.countries || {}).sort((a, b) => a[1][0].localeCompare(b[1][0]))) c.add(new Option(`${name} (${code})`, code));
+  // ICU lists some zones by their old names (Asia/Calcutta): the table's current names are added so a country always fills in.
+  const zones = new Set([...Intl.supportedValuesOf('timeZone'), ...Object.values(current.countries || {}).map((r) => r[1])]);
+  for (const tz of [...zones].sort()) $('pfTz').add(new Option(tz, tz));
+  c.onchange = () => { const row = (current.countries || {})[c.value]; if (row) { $('pfTz').value = row[1]; $('pfLang').value = row[2]; } };
+  $('profileAdd').onclick = () => openProfile(null);
+  $('pfCancel').onclick = () => { editing = null; $('profileEdit').hidden = true; };
+  $('pfSave').onclick = async () => {
+    const p = { ...editing, name: $('pfName').value.trim(), country: $('pfCountry').value, type: $('pfType').value, server: $('pfServer').value.trim(), user: $('pfUser').value.trim(), timeZone: $('pfTz').value, lang: $('pfLang').value.trim() };
+    const others = (current.proxyProfiles || []).filter((x) => x.id !== p.id);
+    await save({ proxyProfiles: [...others, p] });
+    if (!(current.proxyProfiles || []).some((x) => x.id === p.id)) { $('pfError').textContent = 'Not saved: check the proxy (host:port), the time zone and the language.'; return; }
+    if ($('pfPass').value) { const r = await bridge.settingsOp('profilePassword', { id: p.id, password: $('pfPass').value }); if (r && r.ok === false) { $('pfError').textContent = r.error; return; } current = await bridge.getSettings(); }
+    editing = null; $('profileEdit').hidden = true; renderProfiles();
+  };
+}

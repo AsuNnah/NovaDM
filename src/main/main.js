@@ -13,6 +13,7 @@ const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { AddFlow, specFromUrl } = require('./add-flow');
 const { ClipboardWatcher } = require('./clipboard-watch');
 const { notify } = require('./notify');
+const country = require('./country');
 const { applyProxy, proxyCredentials, encryptPassword, primeCredentials, decryptedPassword } = require('./proxy');
 const { Scheduler } = require('./scheduler');
 const { Background } = require('./background');
@@ -95,6 +96,7 @@ let settings, adblock, popup, media, downloads, browser, addFlow, clipboardWatch
 const extensions = new Extensions();
 if (process.env.NOVADM_SELFTEST && !app.isPackaged) global.__novadmExtensions = extensions; // test access only
 let panelOpen = false;
+let uaHintsAsked = false; // the toolbar is asked once for Chromium's client hints (country.setUaHints)
 const privateStats = { ads: 0, popups: 0 }; // the private window's new-tab counters, since it opened
 
 // Windows, by id: 'normal' (the first normal window), 'n2', 'n3' … (more normal windows, 1.6) and, while
@@ -264,6 +266,12 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
   const cv = new WebContentsView({ webPreferences: { preload: TOOLBAR_PRELOAD, contextIsolation: true, sandbox: true } });
   cv.setBackgroundColor('#00000000');
   cv.webContents.loadURL(appScheme.uiUrl('chrome.html', query));
+  // shortcut: tabs emulated before the first toolbar loads get the client hints a moment later (re-sent below).
+  if (!uaHintsAsked) {
+    uaHintsAsked = true;
+    cv.webContents.once('did-finish-load', () => cv.webContents.executeJavaScript("navigator.userAgentData.getHighEntropyValues(['architecture', 'bitness', 'model', 'platformVersion', 'fullVersionList', 'wow64'])")
+      .then((h) => { country.setUaHints(h); const p = country.activeProfile(settings); if (p) for (const t of browser.tabs.values()) if (t.wc) country.emulate(t.wc, p); }).catch(() => {}));
+  }
   diagnostics.watchConsole(cv.webContents, 'toolbar');
 
   const ov = new WebContentsView({ webPreferences: { preload: UI_PRELOAD, contextIsolation: true, sandbox: true, transparent: true } });
@@ -826,7 +834,6 @@ app.whenReady().then(async () => {
   // The Guard button shows when lookups fell back to the network's DNS (REQ-307); checked again every 5 minutes
   // while the servers don't answer, so the warning goes when they do.
   const dns = (opts) => applySecureDns(settings, opts).then((s) => { dnsStatus = s; sendUI('dns-warning', { on: s.mode === 'automatic' }); }).catch(() => {});
-  dns();
   settings.on('change', (c) => { if ('secureDns' in c || 'secureDnsCustom' in c || 'secureDnsStrict' in c) dns(); });
   setInterval(() => { if (dnsStatus.mode === 'automatic' || dnsStatus.unreachable) dns({ recheck: true }); }, 5 * 60 * 1000).unref();
   popup = new PopupGuard(settings);
@@ -915,18 +922,38 @@ app.whenReady().then(async () => {
   registerLinkHandlers();
 
   // Proxy for pages and downloads (system settings unless the user chose otherwise).
-  const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession];
+  const proxySessions = () => [browser.normalSession, browser.incognitoSession, electronSession.defaultSession, electronSession.fromPartition('novadm-siteext'), electronSession.fromPartition('electron-updater', { cache: false })];
   // With any proxy (NovaDM's or Windows'), WebRTC may only use it: no direct connections that show the real address.
   const proxyWebRTC = async () => {
     const via = await browser.normalSession.resolveProxy('https://www.example.com/').catch(() => 'DIRECT');
     browser.setWebRTCPolicy(via.trim().toUpperCase() === 'DIRECT' ? 'default_public_interface_only' : 'disable_non_proxied_udp');
   };
-  applyProxy(settings, proxySessions()).then(proxyWebRTC);
+  // Awaited before the Secure DNS probe and the first window: with a profile on, nothing may go out before its proxy.
+  const proxyReady = applyProxy(settings, proxySessions()).then(proxyWebRTC);
   primeCredentials(settings).catch(() => {});
   settings.on('change', (c) => {
-    if (Object.keys(c).some((k) => k.startsWith('proxy'))) applyProxy(settings, proxySessions()).then(() => { transport.close(); return proxyWebRTC(); });
-    if ('proxyPassEnc' in c || 'siteSettings' in c) primeCredentials(settings).catch(() => {});
+    // A new profile drops running direct downloads' connections at once, so they reconnect through the new route.
+    const routed = Object.keys(c).some((k) => k.startsWith('proxy')) ? applyProxy(settings, proxySessions()).then(() => { transport.close({ now: 'proxyProfile' in c }); return proxyWebRTC(); }) : Promise.resolve();
+    if ('proxyPassEnc' in c || 'proxyProfiles' in c || 'siteSettings' in c) primeCredentials(settings).catch(() => {});
+    if ('proxyProfile' in c || 'proxyProfiles' in c) {
+      sendUI('route', { profiles: (settings.get('proxyProfiles') || []).map((p) => ({ id: p.id, name: p.name, country: p.country })), profile: (country.activeProfile(settings) || {}).id || '' });
+      // REQ-313: every tab takes the profile's time zone and language (or drops them); only when it really changed.
+      const p = country.activeProfile(settings);
+      const key = p ? JSON.stringify([p.id, p.timeZone, p.lang]) : '';
+      if (key !== lastProfileKey) { lastProfileKey = key; routed.then(() => browser.applyProfile(p)); } // reload once the new route is set
+      // SEC-111: torrent peers can't go through a proxy, so running and seeding torrents stop until it's off again.
+      if (p) {
+        for (const rec of downloads.records.values()) {
+          if (rec.kind !== 'torrent') continue;
+          if (['downloading', 'connecting', 'queued'].includes(rec.state)) downloads.pause(rec.id);
+          if (rec.seeding) downloads.stopSeeding(rec.id).catch(() => {});
+        }
+        aria2.stop();
+      }
+    }
   });
+  let lastProfileKey = (() => { const p = country.activeProfile(settings); return p ? JSON.stringify([p.id, p.timeZone, p.lang]) : ''; })();
+  if (lastProfileKey) browser.applyProfile(country.activeProfile(settings)); // started with a profile on
   net.setProxyCredentials(() => proxyCredentials(settings));
   net.setSiteCredentials((host) => siteCredentials(host));
   transport.proxyCredentials = () => proxyCredentials(settings);
@@ -995,6 +1022,8 @@ app.whenReady().then(async () => {
   browser.windowBounds = (key) => (wins[key] && !wins[key].win.isDestroyed() ? wins[key].win.getNormalBounds() : null);
   browser.placeWindow = (key, b) => { if (wins[key] && onScreen(b)) wins[key].win.setBounds(b); };
   browser.focusWindow = (key) => { if (wins[key]) { wins[key].win.focus(); useCtx(key); } };
+  await proxyReady;
+  dns();
   createWindow();
   wireEvents();
   // The same check on a timer, for whatever else takes the keyboard away (a menu or dialog closing, a panel...).
@@ -1090,6 +1119,14 @@ app.whenReady().then(async () => {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'] });
       return { folder: r.canceled ? '' : r.filePaths[0] || '' };
     }
+    if (op === 'profilePassword') {
+      // { id, password }: stored encrypted on that country profile.
+      try {
+        const enc = arg && arg.password ? await encryptPassword(String(arg.password)) : '';
+        settings.set({ proxyProfiles: (settings.get('proxyProfiles') || []).map((p) => (p.id === String(arg && arg.id) ? { ...p, passEnc: enc } : p)) });
+        await primeCredentials(settings);
+      } catch (e) { return { ok: false, error: e.message }; }
+    }
     if (op === 'proxyPassword') {
       try { settings.set({ proxyPassEnc: await encryptPassword(String(arg || '')) }); await primeCredentials(settings); } catch (e) { return { ok: false, error: e.message }; }
     }
@@ -1097,7 +1134,7 @@ app.whenReady().then(async () => {
           const r = await dialog.showOpenDialog(win, { properties: ['openDirectory', 'createDirectory'], defaultPath: settings.get('downloadDir') });
       if (!r.canceled && r.filePaths[0]) settings.set({ downloadDir: r.filePaths[0] });
     }
-    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS, myFiltersStatus: adblock.myStatus };
+    return { ...settings.all(), dnsStatus, dnsProviders: PROVIDERS, myFiltersStatus: adblock.myStatus, countries: country.COUNTRIES };
   });
   // Actions for internal pages (Downloads page). Same sender check plus an allow list.
   ipcMain.handle('novadm:internal-call', async (event, method, args) => {

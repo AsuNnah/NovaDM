@@ -10,7 +10,20 @@ const MAX_HISTORY = 20000;
 const HISTORY_DAYS = 90;
 const MERGE_MS = 60 * 1000; // the same address again within a minute updates the last visit
 
-function recordable(url) { return /^https?:\/\//i.test(url || '') && url.length <= 4096; }
+// Cloudflare's check pages ("Just a moment…") carry __cf_chl_ in the address and redirect to the real page.
+function recordable(url) { return /^https?:\/\//i.test(url || '') && url.length <= 4096 && !/[?&]__cf_chl_/.test(url); }
+
+/** For the History panel: visits in a row (newest first) with the same site, title and day show once, with a count. */
+function collapseVisits(items) {
+  const out = [];
+  const key = (v) => { let h = ''; try { h = new URL(v.url).host; } catch {} return h + '\n' + v.title + '\n' + new Date(v.t).toDateString(); };
+  for (const v of items) {
+    const last = out[out.length - 1];
+    if (last && last.key === key(v)) { last.n++; last.ids.push(v.id); continue; }
+    out.push({ ...v, key: key(v), n: 1, ids: [v.id] });
+  }
+  return out.map(({ key: _k, ...v }) => v);
+}
 
 class History extends EventEmitter {
   constructor(dir, now = () => Date.now()) {
@@ -153,4 +166,4 @@ class TabSession {
   flush() { this.store.flush(); }
 }
 
-module.exports = { History, Bookmarks, TabSession, recordable };
+module.exports = { History, Bookmarks, TabSession, recordable, collapseVisits };

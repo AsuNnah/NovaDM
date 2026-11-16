@@ -74,6 +74,9 @@ the SHA-256 of its files so you can check your download.
   Mark of the Web on downloads
 - Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
 - Sites you choose are forgotten (cookies and site data) when NovaDM closes
+- **Country profiles**: browse through a proxy or VPN exit you have in another country, with that country's time
+  zone and language in every tab, location requests refused, and nothing sent around the proxy if it stops; a
+  "what do sites see" check in the Guard panel
 - Certificate warnings, and no way past them on sites that ask for HTTPS only
 - A warning on the menu button while an add-on you may need isn't installed
 - Warning page for phishing and malware sites; updates itself like Chrome (Update button), the portable version shows a notice
@@ -143,7 +146,8 @@ sign-ins are deleted when the private window closes. They take nothing from norm
 in the address bar, no closed normal tabs brought back, no normal downloads in their list, and a site allowed in a
 normal window asks again. Passwords for proxies and sites are
 encrypted with Windows' data protection. Sites you mark *Forget this site when NovaDM closes* lose their cookies and
-site data each time NovaDM closes. My filters, your own ad-block rules, stay in your settings on this PC.
+site data each time NovaDM closes. *Check what sites see* (Guard panel) asks Cloudflare which address and country it
+sees, only when you press it. My filters, your own ad-block rules, stay in your settings on this PC.
 
 **Sign-ins.** Cookies (what keeps you logged in) are encrypted on disk. When you sign in, NovaDM
 warns if the password is in a known data breach (Have I Been Pwned; only the first 5 characters of

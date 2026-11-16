@@ -47,6 +47,10 @@ module.exports = async ({ app, browser, ipc, browsing, chromeView }) => {
     result.button = s1;
     c.buttonOpensPanel = !!s1 && s1.rows.includes('Bravo page') && s1.rows.includes('Alpha page') && s1.days[0] === 'Today';
     c.newestFirst = !!s1 && s1.rows.indexOf('Bravo page') < s1.rows.indexOf('Alpha page');
+    // 1.8.1: the title starts right after the icon (a 1.8.0 rule stretched the icon and pushed it right).
+    const gap = await panel.executeJavaScript(`(() => { const r = content.querySelector('.hrow'); return r.querySelector('.stt').getBoundingClientRect().left - r.getBoundingClientRect().left; })()`);
+    result.titleOffsetPx = gap;
+    c.titleStartsLeft = gap > 0 && gap < 60;
     fs.writeFileSync(path.join(os.tmpdir(), 'novadm-historypanel.png'), (await panel.capturePage()).toPNG());
 
     // 2. Search filters.

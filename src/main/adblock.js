@@ -4,7 +4,10 @@
 const fs = require('fs');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { app, ipcMain } = require('electron');
+const { app, ipcMain, net } = require('electron');
+// List downloads go through Chromium's network stack, so a proxy or country profile applies (SEC-111), not Node's fetch;
+// through net.js, which signs in to a proxy that asks (net.fetch has no sign-in and gets 407).
+const fetch = (url) => require('./net').fetchBuffer(url, { timeoutMs: 60000 }).then((r) => new Response(r.body, { status: r.status }));
 const { ElectronBlocker, fromElectronDetails, adsAndTrackingLists, parseFilter } = require('@ghostery/adblocker-electron');
 const { siteOf } = require('./util');
 
@@ -200,7 +203,8 @@ class AdBlocker extends EventEmitter {
     session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
       const isMain = details.resourceType === 'mainFrame';
       if (isMain && this.isPhishing(details)) { this.phishBlocked.add(details.url); return callback({ cancel: true }); }
-      if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents) {
+      // Guard off for a site turns its Shields off too, as in Brave: a page by its own address, a frame by its page's.
+      if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents && !this.isWhitelisted(isMain ? details.url : this.pageUrlFor(details))) {
         const to = this.shields.rewrite(details.url, { isMain });
         if (to && to !== details.url) return callback({ redirectURL: to });
       }

@@ -1,7 +1,7 @@
 {
   "name": "novadm",
   "productName": "NovaDM",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Browser + download manager for Windows with ad blocker, pop-up guard and media grabber",
   "author": "NovaDM",
   "license": "GPL-3.0-or-later",
@@ -32,7 +32,9 @@
     "electron-builder": "26.18.0"
   },
   "overrides": {
-    "adm-zip": "0.6.1"
+    "adm-zip": "0.6.1",
+    "glob@>=9 <14.0.2": "14.0.2",
+    "minimatch@>=7 <11.0.1": "11.0.1"
   },
   "build": {
     "appId": "app.novadm.browser",

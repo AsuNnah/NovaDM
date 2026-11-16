@@ -14,6 +14,9 @@ const SHIELD_PRELOAD = path.join(__dirname, 'shield-preload.js');
 const { normalizeUrl, NEWTAB } = require('./address');
 const { uiUrl } = require('./app-scheme');
 const { Hsts } = require('./hsts');
+const country = require('./country');
+// Chromium's proxy failures: tunnel, proxy connection, SOCKS, proxy sign-in, proxy certificate.
+const PROXY_ERRORS = new Set([-115, -120, -127, -130, -175, -336]); // not -111 / -121: a site the proxy can't reach causes those
 // novadm:// pages and their tab titles.
 const INTERNAL_PAGES = new Map([
   ['newtab', 'New tab'], ['downloads', 'Downloads'], ['settings', 'Settings'], ['history', 'History'],
@@ -228,6 +231,15 @@ class Browser extends EventEmitter {
     return id;
   }
 
+  /** A country profile was switched on, changed or off (null): every open tab follows at once, the visible one reloads. */
+  applyProfile(profile) {
+    // Requests the browser makes itself (site icons, prefetch) carry the profile's language too.
+    for (const ses of [this.normalSession, this.incognitoSession]) ses.setUserAgent(ses.getUserAgent(), country.acceptLanguage(profile ? profile.lang : app.getLocale()));
+    for (const t of this.tabs.values()) if (t.wc && !t.wc.isDestroyed()) country.emulate(t.wc, profile);
+    const a = this.activeTab();
+    if (a && a.wc && !a.wc.isDestroyed() && /^https?:/i.test(a.wc.getURL())) a.wc.reload();
+  }
+
   /** 'disable_non_proxied_udp' while a proxy is in use: WebRTC would otherwise reveal the real address. */
   setWebRTCPolicy(policy) {
     this.webrtcPolicy = policy;
@@ -252,6 +264,8 @@ class Browser extends EventEmitter {
     tab.wc = view.webContents;
     tab.wcId = tab.wc.id;
     tab.discarded = false;
+    const profile = country.activeProfile(this.settings);
+    if (profile) country.emulate(tab.wc, profile); // REQ-313: before the first load
     this.wireTab(tab);
     if (this.parentView) { this.parentView.addChildView(view); if (this.onRestack) this.onRestack(); }
     if (tab.id !== this.activeId) view.setVisible(false);
@@ -383,7 +397,9 @@ class Browser extends EventEmitter {
       tab.failed = { url, code, desc };
       tab.loading = false;
       const phishing = code === -20 && !!this.adblock && this.adblock.phishBlocked.delete(url); // -20: blocked by NovaDM
-      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '', h: this.hstsFor(tab.incognito, url) ? '1' : '' })).catch(() => {});
+      // SEC-111: the country profile's proxy failed; the page says so and offers to switch back.
+      const profile = PROXY_ERRORS.has(code) ? country.activeProfile(this.settings) : null;
+      wc.loadURL(uiUrl('error.html', { u: url, c: String(code), d: desc || '', p: phishing ? '1' : '', h: this.hstsFor(tab.incognito, url) ? '1' : '', x: profile ? profile.name : '' })).catch(() => {});
     });
     wc.on('did-navigate-in-page', (_e, url, isMain) => {
       if (!isMain) return;
@@ -485,6 +501,7 @@ class Browser extends EventEmitter {
         // De-AMP: open the publisher's own page; the AMP copy is taken out of the back list.
         if (this.settings.get('deAmp') === false || !payload || !/^https?:/i.test(payload.canonical || '')) break;
         if (!tab.wc || payload.from !== tab.wc.getURL() || tab.ampFrom === payload.from) break;
+        if (this.adblock && this.adblock.isWhitelisted(payload.from)) break; // Guard off for this site
         tab.ampFrom = payload.from;
         if (this.shields) this.shields.stats.deAmp++;
         tab.wc.loadURL(payload.canonical).catch(() => {});
@@ -538,6 +555,7 @@ class Browser extends EventEmitter {
   }
 
   handlePermission(tab, permission, details, callback) {
+    if (permission === 'geolocation' && country.activeProfile(this.settings)) return callback(false); // REQ-313: a country profile hides where you are
     // A magnet: link opens in NovaDM instead of asking Windows for another torrent app.
     if (permission === 'openExternal' && details && /^magnet:\?/i.test(details.externalURL || '')) {
       callback(false);
@@ -554,6 +572,7 @@ class Browser extends EventEmitter {
   }
 
   checkPermission(origin, permission, incognito = false) {
+    if (permission === 'geolocation' && country.activeProfile(this.settings)) return false;
     const stored = this.getStoredPermission(originOf(origin), permission, incognito);
     return stored === 'granted';
   }

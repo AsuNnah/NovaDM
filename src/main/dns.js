@@ -1,7 +1,7 @@
 'use strict';
 // Secure DNS (DNS-over-HTTPS) for all browsing and downloads. Bypasses ISP DNS that returns
 // block pages for some sites (they show up as certificate name errors).
-const { app } = require('electron');
+const { app, net } = require('electron');
 
 const PROVIDERS = {
   cloudflare: { name: 'Cloudflare (1.1.1.1)', url: 'https://cloudflare-dns.com/dns-query' },
@@ -28,7 +28,8 @@ async function reachable(url, timeoutMs = 3500) {
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     // Any HTTP response means the DoH endpoint can be reached from this network.
-    await fetch(url + '?dns=AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE', { signal: ctrl.signal, headers: { accept: 'application/dns-message' } });
+    // Chromium's stack, not Node's fetch: behind a proxy or country profile the probe goes the same way as pages (SEC-111).
+    await net.fetch(url + '?dns=AAABAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE', { signal: ctrl.signal, headers: { accept: 'application/dns-message' } });
     return true;
   } catch {
     return false;

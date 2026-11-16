@@ -6,10 +6,11 @@ const assert = require('node:assert');
 const path = require('path');
 const Module = require('module');
 
+// The probe uses Chromium's net.fetch since 1.8.1; the stub hands it to global.fetch.
 function loadDns(calls) {
   const id = require.resolve('electron');
   const saved = require.cache[id];
-  const m = new Module(id); m.exports = { app: { configureHostResolver: (o) => calls.push(o.secureDnsMode) } }; m.loaded = true; require.cache[id] = m;
+  const m = new Module(id); m.exports = { app: { configureHostResolver: (o) => calls.push(o.secureDnsMode) }, net: { fetch: (...a) => global.fetch(...a) } }; m.loaded = true; require.cache[id] = m;
   try { delete require.cache[path.join(__dirname, '..', 'src', 'main', 'dns.js')]; return require('../src/main/dns'); } finally { if (saved) require.cache[id] = saved; else delete require.cache[id]; }
 }
 const settingsOf = (o) => ({ get: (k) => o[k] });

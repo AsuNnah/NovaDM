@@ -81,7 +81,11 @@ function guardFor(pageUrl, opts) {
 }
 
 /** The session's resolver as a lookup for isPrivateUrl (Secure DNS when it is on, never the OS behind its back). */
-const sessionLookup = (ses) => async (host) => ((await ses.resolveHost(host)).endpoints || []).map((e) => ({ address: e.address }));
+const sessionLookup = (ses) => async (host) => {
+  // Through a proxy, the proxy resolves the name: a lookup here would leak it around the proxy (SEC-111).
+  if (!/^DIRECT/i.test(String((await ses.resolveProxy(`https://${host}/`).catch(() => 'DIRECT')) || 'DIRECT').trim())) return [];
+  return ((await ses.resolveHost(host)).endpoints || []).map((e) => ({ address: e.address }));
+};
 
 const pinned = new WeakMap(); // session -> Transport that refuses private addresses at connect time
 /**

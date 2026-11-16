@@ -68,7 +68,7 @@ const SECRET_HEADER = /^(cookie|authorization|proxy-authorization|x-.*|.*(token|
  * Redirects are followed manually so the final URL is known.
  * Returns { res, req, status, headers, finalUrl, abort() }.
  */
-function open(url, { session, headers = {}, range, timeoutMs = 30000, method = 'GET', hops = 0, guard } = {}) {
+function open(url, { session, headers = {}, range, timeoutMs = 30000, method = 'GET', hops = 0, guard, cookies = true } = {}) {
   return new Promise((resolve, reject) => {
     let finalUrl = url;
     let redirects = 0;
@@ -78,7 +78,7 @@ function open(url, { session, headers = {}, range, timeoutMs = 30000, method = '
     const explicitCookie = headers.cookie || headers.Cookie || '';
     // Sign-in headers given with a download (Authorization, API keys, tokens) belong to the site they were given for.
     const hasSecret = Object.keys(headers).some((k) => SECRET_HEADER.test(k) && headers[k]);
-    const req = net.request({ url, method, session, useSessionCookies: !explicitCookie, redirect: 'manual', cache: 'no-store' });
+    const req = net.request({ url, method, session, useSessionCookies: cookies && !explicitCookie, redirect: 'manual', cache: 'no-store' });
     const ua = session ? session.getUserAgent() : null;
     const all = { ...headers };
     if (ua && !Object.keys(all).some((k) => k.toLowerCase() === 'user-agent')) all['user-agent'] = ua;

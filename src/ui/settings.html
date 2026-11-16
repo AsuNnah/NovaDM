@@ -442,6 +442,22 @@ button{height:32px;padding:0 14px;border-radius:7px;border:1px solid var(--line)
     </div>
   </div>
 
+  <h2 id="network">Country profiles</h2>
+  <div class="card">
+    <div class="row"><div class="lbl"><b>Browse as if from another country</b><span>A profile is a proxy or VPN exit you have, with the time zone and language sites should see. Switch in the Guard panel. While a profile is on, NovaDM never connects without its proxy, and torrents wait.</span></div></div>
+    <div id="profileList"></div>
+    <div class="row"><div class="lbl"></div><button id="profileAdd">Add a profile</button></div>
+    <div id="profileEdit" hidden>
+      <div class="row"><div class="lbl"><b>Name</b></div><input type="text" id="pfName" style="width:200px" spellcheck="false" /></div>
+      <div class="row"><div class="lbl"><b>Country</b><span>Fills in the usual time zone and language.</span></div><select id="pfCountry"></select></div>
+      <div class="row"><div class="lbl"><b>Proxy</b><span>host:port</span></div><select id="pfType"><option value="socks5">SOCKS5</option><option value="http">HTTP</option><option value="https">HTTPS</option></select><input type="text" id="pfServer" placeholder="host:port" style="width:200px" spellcheck="false" /></div>
+      <div class="row"><div class="lbl"><b>Sign-in (if the proxy asks)</b><span>The password is stored encrypted by Windows.</span></div><input type="text" id="pfUser" placeholder="User name" style="width:150px" spellcheck="false" /><input type="password" id="pfPass" placeholder="Password" style="width:150px" /></div>
+      <div class="row"><div class="lbl"><b>Time zone</b></div><select id="pfTz"></select></div>
+      <div class="row"><div class="lbl"><b>Language</b><span>For example en-US or de-DE.</span></div><input type="text" id="pfLang" style="width:100px" spellcheck="false" /></div>
+      <div class="row"><div class="lbl"><span id="pfError"></span></div><button id="pfCancel">Cancel</button><button id="pfSave">Save profile</button></div>
+    </div>
+  </div>
+
   <h2>Extensions</h2>
   <div class="card">
     <div class="row">

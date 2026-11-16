@@ -18,7 +18,13 @@ function show(title, hint, tips) {
 }
 
 const phishing = p.get('p') === '1';
-if (phishing) {
+const profile = p.get('x') || '';
+if (profile) {
+  show(`The proxy for "${profile}" isn't answering`,
+    'NovaDM doesn’t connect without it while this country profile is on, so sites never see your own address.',
+    ['Check that your proxy or VPN is running.', 'Or browse from your own connection.']);
+  $('settings').textContent = 'Browse from your connection';
+} else if (phishing) {
   document.body.classList.add('danger');
   show(`Deceptive site ahead: ${host}`,
     'NovaDM stopped this page: the site is on a list of phishing and malware sites. It may try to steal your passwords or card details, or install harmful software.',
@@ -78,6 +84,7 @@ $('retry').onclick = () => {
 $('settings').onclick = () => {
   if (cert) { $('adv').hidden = !$('adv').hidden; $('settings').textContent = $('adv').hidden ? 'Advanced' : 'Hide advanced'; return; }
   if (!window.novadmInternal) return;
-  if (phishing) window.novadmInternal.call('phishing.allow', { url });
+  if (profile) window.novadmInternal.call('profile.off', { url });
+  else if (phishing) window.novadmInternal.call('phishing.allow', { url });
   else window.novadmInternal.navigate('novadm://settings');
 };

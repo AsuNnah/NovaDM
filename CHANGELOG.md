@@ -6,6 +6,42 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-11-15
+
+Hide your country, with the fixes from the known-issue list.
+
+### Added
+- **Country profiles** (Settings → Country profiles). A profile is a proxy or VPN exit you have (HTTP, HTTPS or
+  SOCKS5, with an optional sign-in; the password is encrypted), with the country, time zone and language sites
+  should see. Choosing a country fills in its usual time zone and language.
+- **Browse from** in the Guard panel switches between *Your connection* and a profile, at once and without a restart.
+  While a profile is on, every tab gets the profile's time zone and language, and location requests are refused.
+  A chip on the toolbar names the profile in use.
+- **Check what sites see** (Guard panel): asks Cloudflare, only when pressed, which address and country it sees
+  through the current route, and shows the time zone, language, WebRTC and location results. A country that
+  differs from the profile's is shown as a warning.
+
+### Changed
+- **Guard off for a site now turns off the other protections for it too**: tracking-code removal, HTTPS upgrade,
+  redirect skipping and AMP redirects are skipped for that site's pages and frames, as in Brave. Third-party cookie
+  blocking stays on for every site (Electron has no per-site exception).
+- **One history row per page:** visits in a row to the same page show once, with a count, in the History panel and
+  the address bar; Cloudflare's "Just a moment…" check pages are not recorded. The full History page still lists
+  each visit.
+
+### Fixed
+- **History panel and address-bar rows** start at the left again (1.8.0 pushed their text to the right).
+
+### Security
+- **A profile fails closed.** While a profile is on, nothing NovaDM sends goes around its proxy: if the proxy stops,
+  pages show *The proxy isn't answering* with a way back to your connection, instead of loading directly. The
+  ad-block and phishing list updates and the Secure DNS check go through the same route, and yt-dlp uses the proxy.
+  Torrents wait: their peers connect directly, so torrents pause while a profile is on; resume them after switching back.
+- **Behind any proxy, site icons and video playlists no longer look up the site's name outside the proxy**; the
+  proxy resolves it, as it does for pages.
+- Profile passwords are not put in backup files, and a backup can't switch a profile on.
+- Build tools only: glob 14.0.2 and minimatch 11.0.1 (code-scanning alerts).
+
 ## [1.8.0] — 2026-11-09
 
 Trust and safety: certificate warnings that can't be clicked past on sites that ask for HTTPS only, sites you choose
