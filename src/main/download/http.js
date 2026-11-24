@@ -346,7 +346,7 @@ class HttpDownload extends EventEmitter {
       // A dead link (403/410 after data, 404...) or a full disk ends the download. Other errors end
       // only this connection while others are still running (they pick up its part).
       if (this._stopping || this._finishing) return;
-      const fatal = (err instanceof HttpError && err.fatal) || ['LINK_EXPIRED', 'NO_SPACE', 'ENOSPC', 'NO_RANGES'].includes(err && err.code);
+      const fatal = (err instanceof HttpError && err.fatal) || ['LINK_EXPIRED', 'NO_SPACE', 'ENOSPC'].includes(err && err.code);
       if (fatal || this.activeConns() <= 1) this.fail(err);
     }).finally(() => {
       c.closed = true;
@@ -375,6 +375,7 @@ class HttpDownload extends EventEmitter {
           const from = seg.start + seg.got;
           const range = this.resumable && seg.end !== Infinity ? `bytes=${from}-${seg.end - 1}` : (from > 0 ? `bytes=${from}-` : undefined);
           conn = await this.request(this.nextSource(), { range });
+          c.skip = 0;
           c.direct = conn.transport === 'direct';
           if (conn.status >= 400) {
             conn.abort();
@@ -383,19 +384,19 @@ class HttpDownload extends EventEmitter {
             throw err;
           }
           if (range && conn.status !== 206) {
-            conn.abort();
-            if (from > 0 || seg !== this.segments[0]) {
-              // Server ignores ranges for extra connections: continue with one connection only.
-              this.resumable = false; this.cap = 1; this.steady = true;
+            // The server ignores ranges: continue with one connection only. Asking for this part again would get
+            // the whole file again, forever (AU-13). If the part before it is still reading its whole-file answer,
+            // it reads on to this part's end; otherwise this answer is read from the start, skipping what we have.
+            this.resumable = false; this.cap = 1; this.steady = true;
+            const prev = this.segments.find((s) => s !== seg && s.end === seg.start && s.conn && !s.conn.closed);
+            if (prev) {
+              conn.abort();
               seg.conn = null;
-              // Asking for this part again would get the whole file again, forever (AU-13). The part before it is
-              // still reading a whole-file answer: let it read on to this part's end instead.
-              const prev = this.segments.find((s) => s !== seg && s.end === seg.start && s.conn && !s.conn.closed);
-              if (!prev) throw Object.assign(new Error('This server can\'t continue a download part-way. Retry to start over.'), { code: 'NO_RANGES' });
               prev.end = seg.end;
               this.segments.splice(this.segments.indexOf(seg), 1);
               return;
             }
+            c.skip = from;
           }
         }
         await this.pump(c, conn);
@@ -416,7 +417,6 @@ class HttpDownload extends EventEmitter {
         }
         if (status === 429 || status === 503) this.holdUntil = Date.now() + (err.retryAfter || 5000);
         if (err instanceof HttpError && err.fatal) throw classifyFatal(err, this.received);
-        if (err.code === 'NO_RANGES') throw err;
         if (!this.resumable && seg.got > 0) {
           // No ranges: the only way to retry is from the beginning.
           seg.got = 0; seg.done = 0; c.bufLen = 0; c.buf = [];
@@ -451,6 +451,7 @@ class HttpDownload extends EventEmitter {
       const handle = async (chunk) => {
         let off = 0;
         while (off < chunk.length && !settled) {
+          if (c.skip > 0) { const k = Math.min(c.skip, chunk.length - off); c.skip -= k; off += k; continue; } // bytes we already have
           let n = chunk.length - off;
           if (this.limiter) n = await this.limiter.take(Math.min(n, 64 * 1024));
           if (this.taskLimiter) n = await this.taskLimiter.take(Math.min(n, 64 * 1024));

@@ -707,8 +707,13 @@ class MergeDownload extends EventEmitter {
     const out = webm && /\.mp4$/i.test(this.savePath) ? util.uniquePath(this.savePath.replace(/\.mp4$/i, '.mkv')) : this.savePath;
     this.state = 'downloading';
     this.emit('progress', { ...this.progress(), joining: true });
-    if (video && audio) await this.ffmpeg.merge(video.path, audio.path, out);
-    else fs.copyFileSync((video || audio).path, out);
+    try {
+      if (video && audio) await this.ffmpeg.merge(video.path, audio.path, out);
+      else fs.copyFileSync((video || audio).path, out);
+    } catch (e) {
+      if (out !== this.savePath) { try { fs.rmSync(out, { force: true }); } catch {} } // no half-written .mkv per Retry
+      throw e;
+    }
     if (out !== this.savePath) { this.savePath = out; this.emit('renamed', out); }
     for (const f of [...this.files.map((x) => x.path), this.metaPath, this.tracksPath]) { try { fs.rmSync(f, { force: true }); } catch {} }
     this.state = 'done';

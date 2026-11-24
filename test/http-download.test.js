@@ -330,3 +330,25 @@ test('AU-13: a server that claims ranges but ignores them still finishes, withou
   assert.ok(same(save, st.body));
   assert.ok(st.requests < 20, `${st.requests} requests`);
 });
+
+test('AU-13: when the earlier part has already finished, the whole-file answer is read past what is there', async (t) => {
+  const body = crypto.randomBytes(6 * 1024 * 1024);
+  let requests = 0;
+  let extras = 0;
+  const server = http.createServer((req, res) => {
+    requests++;
+    const extra = /bytes=([1-9]\d*)-/.test(req.headers.range || '');
+    if (extra) extras++;
+    res.writeHead(200, { 'Content-Length': body.length, 'Accept-Ranges': 'bytes' }); // claims ranges, ignores them
+    let off = 0;
+    const tick = () => { if (res.destroyed) return; if (off >= body.length) return res.end(); res.write(body.subarray(off, off += 16 * 1024)); setTimeout(tick, extra ? 0 : 20); };
+    setTimeout(tick, extra ? 6000 : 0); // the extra connection's answer comes after part 1 is done
+  });
+  t.after(() => server.close()); const url = await listen(server);
+  const save = tmp();
+  const dl = new HttpDownload(base({ savePath: save, url: url + '/f.bin', connections: 8 }));
+  await run(dl);
+  assert.ok(same(save, body));
+  assert.ok(extras > 0, 'the download was split');
+  assert.ok(requests < 10, `${requests} requests`);
+});

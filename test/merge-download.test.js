@@ -240,11 +240,12 @@ test('AU-14: the WebM join never replaces an existing .mkv, and a failed join ke
   const mine = save.replace(/\.mp4$/, '.mkv');
   fs.writeFileSync(mine, 'my own video');
   const tracks = [{ kind: 'video', url: base + '/v.webm' }, { kind: 'audio', url: base + '/a.webm' }];
-  const broken = { available: () => true, merge: async () => { throw new Error('FFmpeg failed'); } };
+  const broken = { available: () => true, merge: async (v, a, out) => { fs.writeFileSync(out, 'half'); throw new Error('FFmpeg failed'); } };
   const dl = new MergeDownload({ id: 'f', savePath: save, openConn: nodeOpen, ffmpeg: broken, source: { type: 'direct', tracks } });
   const err = await new Promise((r) => { dl.on('error', r); dl.on('done', () => r(null)); dl.start(); });
   assert.match(String(err && err.message), /FFmpeg failed/);
   assert.equal(dl.savePath, save, 'still the .mp4 name, so Retry finds its parts');
+  assert.ok(!fs.existsSync(save.replace(/\.mp4$/, ' (1).mkv')), 'the half-written .mkv is removed');
 
   const ffmpeg = { available: () => true, merge: async (v, a, out) => { fs.writeFileSync(out, Buffer.concat([fs.readFileSync(v), fs.readFileSync(a)])); } };
   const dl2 = new MergeDownload({ id: 'g', savePath: save, openConn: nodeOpen, ffmpeg, source: { type: 'direct', tracks } });

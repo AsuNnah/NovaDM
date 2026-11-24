@@ -123,7 +123,11 @@ class DownloadManager extends EventEmitter {
     if (spec.kind === 'torrent') {
       // One record per torrent: a second one would share its folder, and cancelling it would delete the first's files.
       const same = this.findDuplicate(spec);
-      if (same) { if (same.state !== 'done') this.resume(same.id); return same; }
+      if (same && spec.start !== false && !this.engines.has(same.id)) {
+        if (same.state === 'done') same.state = 'paused'; // added again: aria2 checks the files and fetches what is missing
+        this.resume(same.id);
+      }
+      if (same) return same;
     }
     const id = util.uid();
     const { category, folder } = this.placeFor(spec);
@@ -173,6 +177,7 @@ class DownloadManager extends EventEmitter {
   enqueue(id) {
     const rec = this.records.get(id);
     if (!rec || rec.state === 'done' || rec.kind === 'convert') return;
+    if (this.engines.has(id)) return; // already running: a second engine would orphan the first
     if (rec.native) {
       const item = this.natives.get(id);
       if (item && item.canResume()) { item.resume(); rec.state = 'downloading'; this.emitRecord(rec); return; }
@@ -882,7 +887,7 @@ function removeTorrentFiles(rec) {
   const top = path.resolve(rec.savePath); // the torrent's file, or its folder
   const dirs = new Set();
   for (const f of rec.btPaths || []) {
-    if (path.resolve(f) !== top && !insideDir(top, f)) continue;
+    if (path.relative(top, f) !== '' && !insideDir(top, f)) continue; // relative(): case-insensitive on Windows
     try { fs.rmSync(f, { force: true }); } catch {}
     for (let d = path.dirname(path.resolve(f)); d === top || insideDir(top, d); d = path.dirname(d)) dirs.add(d);
   }
