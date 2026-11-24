@@ -130,6 +130,7 @@ function defaults() {
     adblock: true,
     adblockWhitelist: [], // sites where ad blocking is off
     adblockUpdatedAt: 0,
+    exitClean: true, // false while NovaDM runs; still false at start: the last session didn't finish closing (AU-11)
     myFilters: '', // 1.8.0 (REQ-311): the user's own rules, one per line; only here, never in the engine cache
 
     // Pop-ups

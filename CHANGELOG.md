@@ -19,9 +19,9 @@ could get more than you allowed, or private browsing left a trace.
   types Windows uses to run tools or search your files (`ms-msdt:`, `search-ms:`, `ms-officecmd:` and a few others,
   and `file:`) are refused without asking.
 - **Importing a backup can only make NovaDM stricter.** It brings your preferences (looks, search, download speed and
-  queues, file types, My filters) and a protection setting only where the backup's value is the stricter one. Proxy,
-  Secure DNS, folders, site permissions and exceptions, sign-ins, the after-download program and what NovaDM opens to
-  other apps never come in, so a backup from someone else can't turn your protection off or send your traffic
+  queues, file types, the blocking rules in My filters) and a protection setting only where the backup's value is the
+  stricter one. Proxy, Secure DNS, folders, site permissions and exceptions, sign-ins, what runs after downloads (a
+  program, or shutting the PC down) and what NovaDM opens to other apps never come in, so a backup from someone else can't turn your protection off or send your traffic
   elsewhere.
 - **Every file of a multi-file torrent gets the Mark of the Web**, so Windows warns before opening a program from it.
   Before, only the folder was marked, which Windows ignores.
