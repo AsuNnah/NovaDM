@@ -394,7 +394,7 @@ function registerIpc(ctx) {
     'popup.respond': (a) => {
       const b = getManagers().browser;
       // "Remember my choice": always allow this site's pop-ups, or always block them (without asking again).
-      const priv = !!(b.activeTab() && b.activeTab().incognito); // asked in the active tab's window
+      const priv = !!a.incognito; // the asking tab's window: a private one keeps the answer in memory (AU-12)
       if (a.always && a.pageUrl) { if (a.allow) getManagers().popup.allowSite(a.pageUrl, true, priv); else getManagers().popup.blockSite(a.pageUrl, true, priv); }
       if (a.allow && /^https?:/.test(a.url || '')) b.createTab({ url: a.url });
     },

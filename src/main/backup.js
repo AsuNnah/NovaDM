@@ -15,7 +15,7 @@ const MACHINE_SETTINGS = new Set(['downloadDir', 'ffmpegPath', 'aria2Path', 'ytd
 // downloads and what NovaDM opens to other programs never come in.
 const PREFERENCES = new Set(['theme', 'searchEngine', 'homepage', 'restoreTabs', 'connections', 'maxActive', 'speedLimitKBps',
   'retries', 'retryDelaySec', 'timeoutSec', 'minSplitKB', 'downloadTransport', 'autoResume', 'notifyOnComplete', 'queues',
-  'afterAllDone', 'closeToTray', 'preventSleep', 'extractArchives', 'deleteAfterExtract', 'categoryRules', 'accent', 'uiScale',
+  'closeToTray', 'preventSleep', 'extractArchives', 'deleteAfterExtract', 'categoryRules', 'accent', 'uiScale',
   'showBookmarksBar', 'discardTabsAfter', 'memorySaver', 'addonRemindOff', 'torrentAskFiles', 'torrentSeedRatio',
   'torrentSeedMinutes', 'torrentUploadKBps', 'clipboardWatch', 'clipboardExtensions', 'pageTitleNames', 'convertTsToMp4',
   'ytdlpAuto', 'minMediaKB', 'myFilters']);
@@ -30,7 +30,10 @@ const PROTECTIONS = {
 };
 
 function importable(k, v, current) {
-  if (PREFERENCES.has(k)) return k === 'categoryRules' && Array.isArray(v) ? { ok: true, v: v.map(({ folder, ...r }) => r) } : { ok: true, v };
+  if (k === 'categoryRules') return { ok: Array.isArray(v), v: Array.isArray(v) ? v.filter((r) => r && typeof r === 'object').map(({ folder, ...r }) => r) : v };
+  // Exception rules (@@, #@#) would turn Guard off for sites: only blocking rules come in.
+  if (k === 'myFilters') return { ok: typeof v === 'string', v: String(v).split('\n').filter((l) => !/^\s*@@|#@[#?$%]/.test(l)).join('\n') };
+  if (PREFERENCES.has(k)) return { ok: true, v };
   const order = PROTECTIONS[k];
   return { ok: !!order && order.indexOf(v) > order.indexOf(current) && order.indexOf(current) >= 0, v };
 }

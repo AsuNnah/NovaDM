@@ -560,7 +560,7 @@ class Browser extends EventEmitter {
       return;
     }
     if (decision === 'block') { this.emit('popup-blocked', tab.id, url, isAd ? 'ad' : 'popup'); return; }
-    this.emit('popup-ask', { tabId: tab.id, pageUrl: tab.url, url, fromClick: !!click });
+    this.emit('popup-ask', { tabId: tab.id, pageUrl: tab.url, url, fromClick: !!click, incognito: !!tab.incognito });
   }
 
   handlePermission(tab, permission, details, callback) {

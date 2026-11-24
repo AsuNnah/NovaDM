@@ -862,7 +862,7 @@ function showPopupPrompt(d) {
 }
 function respondPopup(d, allow) {
   const remember = document.getElementById('pp-remember');
-  api.call('popup.respond', { url: d.url, pageUrl: d.pageUrl, allow, always: remember && remember.checked });
+  api.call('popup.respond', { url: d.url, pageUrl: d.pageUrl, allow, always: remember && remember.checked, incognito: !!d.incognito });
   close();
 }
 

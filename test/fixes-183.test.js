@@ -83,12 +83,13 @@ test('AU-08: a backup brings preferences, protections only when stricter, and ne
   let patch = null;
   const settings = { get: (k) => cur[k], set: (p) => { patch = p; return p; } };
   importData({ app: 'NovaDM', format: 1, settings: {
-    theme: 'dark', accent: 'teal', myFilters: '||ads.example^', searchEngine: 'brave',
-    categoryRules: [{ by: 'type', value: 'zip', category: 'compressed', folder: 'C:\\Users\\Public\\Startup' }],
+    theme: 'dark', accent: 'teal', myFilters: '||ads.example^\n@@||evil.example^$document\nevil.example#@#.ad', searchEngine: 'brave',
+    categoryRules: [null, { by: 'type', value: 'zip', category: 'compressed', folder: 'C:\\Users\\Public\\Startup' }],
     proxyMode: 'fixed', proxyServer: 'evil.example:8080', proxyPac: 'http://evil.example/p.pac', secureDns: 'custom', secureDnsCustom: 'https://evil.example/dns',
     sitePermissions: { 'https://evil.example': { media: 'granted' } }, adblockWhitelist: ['evil.example'], popupAllow: ['evil.example'],
     markOfTheWeb: false, phishingCheck: false, scanDownloads: 'off', securityLevel: 'standard', skipEditor: true, // looser: ignored
     clearHistoryOnExit: true, popupMode: 'block', // stricter: applied
+    afterAllDone: 'shutdown',
     apiEnabled: true, magnetHandler: true, startWithWindows: true, torrentPort: 1, hardeningOff: ['evil.example'],
   } }, { settings, downloads: { records: new Map() } });
   assert.deepStrictEqual(patch, {
@@ -143,14 +144,23 @@ test('AU-09: a torrent folder gets the Mark of the Web on every file inside, not
   assert.deepStrictEqual(calls, [['tree', 'Pack'], ['file', 'one.iso']]);
 });
 
-test('AU-11: a session that did not finish closing (Windows shutdown) is noticed at the next start', () => {
-  const { startSession, endSession } = require('../src/main/exit-marker');
-  const store = {};
-  const settings = { get: (k) => store[k], set: (p) => Object.assign(store, p), flush() {} };
-  assert.strictEqual(startSession(settings), false, 'first start: nothing missed');
-  assert.strictEqual(startSession(settings), true, 'started again without a normal quit: the clear-on-exit steps run now');
-  endSession(settings);
-  assert.strictEqual(startSession(settings), false, 'after a normal quit: nothing missed');
+test('AU-11: a session that did not finish closing (Windows shutdown) is noticed at the next start, once', () => {
+  const os = require('os'); const fs = require('fs'); const path = require('path'); const Module = require('module');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nd-exit-'));
+  const id = require.resolve('electron'); const saved = require.cache[id];
+  const m = new Module(id); m.exports = { app: { isPackaged: false, getPath: () => dir } }; m.loaded = true; require.cache[id] = m;
+  const fresh = (mod) => { delete require.cache[require.resolve(mod)]; return require(mod); };
+  try {
+    const settings = new (fresh('../src/main/settings').Settings)(); // the real one: it drops keys it doesn't know
+    const run = () => fresh('../src/main/exit-marker'); // one NovaDM process
+    let p = run();
+    assert.strictEqual(p.startSession(settings), false, 'first start: nothing missed');
+    assert.strictEqual(p.startSession(settings), false, 'a second normal window in the same session clears nothing');
+    p = run();
+    assert.strictEqual(p.startSession(settings), true, 'started again without a normal quit: the clear-on-exit steps run now');
+    p.endSession(settings);
+    assert.strictEqual(run().startSession(settings), false, 'after a normal quit: nothing missed');
+  } finally { if (saved) require.cache[id] = saved; else delete require.cache[id]; }
 });
 
 test('AU-25: in a long session the ad-block lists are rebuilt once they are older than the refresh interval', () => {
