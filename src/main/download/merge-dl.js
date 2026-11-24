@@ -14,6 +14,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
+const util = require('../util');
 const net = require('../net');
 const hls = require('../media/hls');
 const diagnostics = require('../diagnostics');
@@ -701,14 +702,14 @@ class MergeDownload extends EventEmitter {
     const video = this.files[this.tracks.findIndex((t) => t.kind === 'video')];
     const audio = this.files[this.tracks.findIndex((t) => t.kind === 'audio')];
     const webm = this.tracks.some((t) => t.webm || (t.init && isWebm(t.init)));
-    if (webm && /\.mp4$/i.test(this.savePath)) {
-      this.savePath = this.savePath.replace(/\.mp4$/i, '.mkv');
-      this.emit('renamed', this.savePath);
-    }
+    // WebM goes into a free .mkv name; the record switches to it only once the join worked, so a failed join keeps
+    // the .mp4 name its parts are saved under and Retry joins again (AU-14).
+    const out = webm && /\.mp4$/i.test(this.savePath) ? util.uniquePath(this.savePath.replace(/\.mp4$/i, '.mkv')) : this.savePath;
     this.state = 'downloading';
     this.emit('progress', { ...this.progress(), joining: true });
-    if (video && audio) await this.ffmpeg.merge(video.path, audio.path, this.savePath);
-    else fs.copyFileSync((video || audio).path, this.savePath);
+    if (video && audio) await this.ffmpeg.merge(video.path, audio.path, out);
+    else fs.copyFileSync((video || audio).path, out);
+    if (out !== this.savePath) { this.savePath = out; this.emit('renamed', out); }
     for (const f of [...this.files.map((x) => x.path), this.metaPath, this.tracksPath]) { try { fs.rmSync(f, { force: true }); } catch {} }
     this.state = 'done';
     this.emit('done');

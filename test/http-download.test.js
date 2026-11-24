@@ -24,7 +24,8 @@ function nodeOpen(url, { headers = {}, range, timeoutMs = 10000 } = {}) {
 /**
  * Test server.
  * opts: ranges, throttleMs (pause between chunks), chunkKB (default 32), dropFirst (range responses cut in half), maxConcurrent (403 above),
- *       tooMany (first N extra requests get 429 + Retry-After), etag, expireAfter (410 after N requests)
+ *       tooMany (first N extra requests get 429 + Retry-After), etag, expireAfter (410 after N requests),
+ *       claimRanges (with ranges: false: says Accept-Ranges: bytes but always sends the whole file)
  */
 function makeServer(state, opts = {}) {
   const { ranges = true, throttleMs = 0, chunkKB = 32, maxConcurrent = Infinity, retryAfter = 1 } = opts;
@@ -65,7 +66,7 @@ function makeServer(state, opts = {}) {
       if (drops-- > 0 && start > 0) { res.write(slice.subarray(0, Math.floor(slice.length / 2))); return setTimeout(() => res.destroy(), 20); }
       return send(res, slice);
     }
-    res.writeHead(200, { 'Content-Length': body.length, 'Content-Type': 'video/mp4', 'Accept-Ranges': ranges ? 'bytes' : 'none', ETag: etag });
+    res.writeHead(200, { 'Content-Length': body.length, 'Content-Type': 'video/mp4', 'Accept-Ranges': ranges || opts.claimRanges ? 'bytes' : 'none', ETag: etag });
     send(res, body);
   });
 }
@@ -267,4 +268,65 @@ test('a speed-limited download from a fast server finishes without "closed early
   assert.ok(same(save, st.body));
   assert.deepEqual(sleeps, [], 'no retry backoff happened');
   assert.ok(Date.now() - t0 >= 2500, 'the limit was applied (1 MB at 256 KB/s after a 256 KB burst)');
+});
+
+test('AU-03: a download paused while connecting leaves the files alone when the server answers late', async (t) => {
+  const body = crypto.randomBytes(256 * 1024);
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const server = http.createServer(async (req, res) => {
+    await gate; // the first answer arrives only after the pause
+    res.writeHead(206, { 'Content-Range': `bytes 0-${body.length - 1}/${body.length}`, 'Content-Length': body.length, 'Accept-Ranges': 'bytes' });
+    res.end(body);
+  });
+  t.after(() => server.close()); const url = await listen(server);
+  const save = tmp();
+  const dl = new HttpDownload(base({ savePath: save, url: url + '/f.bin', connections: 1 }));
+  dl.on('error', () => {});
+  dl.start();
+  await new Promise((r) => setTimeout(r, 50));
+  await dl.pause();
+  fs.writeFileSync(save + '.part', 'new engine data'); // what a resumed engine wrote meanwhile
+  release();
+  await new Promise((r) => setTimeout(r, 200));
+  assert.strictEqual(fs.readFileSync(save + '.part', 'utf8'), 'new engine data');
+  assert.strictEqual(fs.existsSync(save + '.part.meta'), false);
+});
+
+test('AU-21: an empty file whose server refuses every range downloads as an empty file', async (t) => {
+  const server = http.createServer((req, res) => {
+    if (req.headers.range) { res.writeHead(416, { 'Content-Range': 'bytes */0' }); return res.end(); }
+    res.writeHead(200, { 'Content-Length': 0 }); res.end();
+  });
+  t.after(() => server.close()); const url = await listen(server);
+  const save = tmp();
+  await run(new HttpDownload(base({ savePath: save, url: url + '/empty.bin' })));
+  assert.strictEqual(fs.statSync(save).size, 0);
+});
+
+test('AU-04: a name sent by the server skips the paths of other queued downloads', async (t) => {
+  const body = crypto.randomBytes(64 * 1024);
+  const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Length': body.length, 'Content-Disposition': 'attachment; filename="file.zip"' });
+    res.end(body);
+  });
+  t.after(() => server.close()); const url = await listen(server);
+  const dir = path.dirname(tmp());
+  const queued = path.join(dir, 'file.zip'); // another download's path, no file on disk yet
+  const dl = new HttpDownload(base({ savePath: path.join(dir, 'get'), url: url + '/get?id=5', allowRename: true, reserved: () => new Set([queued.toLowerCase()]) }));
+  await run(dl);
+  assert.strictEqual(dl.savePath, path.join(dir, 'file (1).zip'));
+  assert.ok(same(dl.savePath, body));
+});
+
+test('AU-13: a server that claims ranges but ignores them still finishes, without a request loop', async (t) => {
+  const st = { body: crypto.randomBytes(6 * 1024 * 1024) };
+  const server = makeServer(st, { ranges: false, claimRanges: true, throttleMs: 20, chunkKB: 16 }); t.after(() => server.close()); const url = await listen(server);
+  const save = tmp();
+  const dl = new HttpDownload(base({ savePath: save, url: url + '/f.mp4', connections: 8 }));
+  let timer;
+  const timeout = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`no end after 30 s, ${st.requests} requests`)), 30000); });
+  await Promise.race([run(dl), timeout]).finally(() => { clearTimeout(timer); return dl.pause(); });
+  assert.ok(same(save, st.body));
+  assert.ok(st.requests < 20, `${st.requests} requests`);
 });

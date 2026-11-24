@@ -61,3 +61,16 @@ test('a newer temp file wins over an older file; a broken temp file is ignored',
   fs.writeFileSync(file + '.tmp', '{"v": "half-writ');
   assert.deepStrictEqual(new JsonStore(file, {}).data, { v: 'new' });
 });
+
+test('AU-10: saves keep coming, the file is still written within the delay', async () => {
+  const file = path.join(tmpDir(), 'history.json');
+  const s = new JsonStore(file, { n: 0 });
+  const t = setInterval(() => { s.data.n++; s.save(200); }, 50);
+  await new Promise((r) => setTimeout(r, 450));
+  clearInterval(t);
+  try { assert.ok(fs.existsSync(file), 'written while saves kept coming'); } finally { s.flush(); }
+  // A shorter delay still wins over a longer timer that is already running.
+  s.data.n = -1; s.save(5000); s.save(0);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.strictEqual(JSON.parse(fs.readFileSync(file, 'utf8')).n, -1);
+});

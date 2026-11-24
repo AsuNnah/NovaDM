@@ -51,6 +51,7 @@ class HttpDownload extends EventEmitter {
     this.timeoutMs = opts.timeoutMs ?? 30000;
     this.openConn = opts.openConn || null;
     this.allowRename = !!opts.allowRename;
+    this.reserved = opts.reserved || null; // () => Set of lower-case paths other unfinished downloads use
     this.minPart = opts.minSplitBytes || MIN_PART;
     this.checkpointMs = opts.checkpointMs || CHECKPOINT_MS;
     this.checkpointBytes = opts.checkpointBytes || CHECKPOINT_BYTES;
@@ -124,7 +125,10 @@ class HttpDownload extends EventEmitter {
   async freshStart() {
     this.segments = [];
     const url = this.sources[0];
-    const conn = await this.requestWithRetry(url, { range: 'bytes=0-', first: true });
+    // An empty file has no byte 0, so some servers (S3) refuse every range with 416: ask once without one (AU-21).
+    const conn = await this.requestWithRetry(url, { range: 'bytes=0-', first: true })
+      .catch((err) => { if (err.status === 416) return this.requestWithRetry(url, { first: true }); throw err; });
+    this.stopIfStopped(conn);
     const h = conn.headers;
     const cr = /bytes\s+(\d+)-(\d+)\/(\d+|\*)/i.exec(h['content-range'] || '');
     if (conn.status === 206 && cr) {
@@ -164,6 +168,7 @@ class HttpDownload extends EventEmitter {
     if (this.validator && (this.validator.etag || this.validator.lastModified)) headers['if-range'] = this.validator.etag || this.validator.lastModified;
     const from = first.start + first.done;
     const conn = await this.requestWithRetry(this.sources[0], { range: `bytes=${from}-${first.end - 1}`, first: true, extraHeaders: headers });
+    this.stopIfStopped(conn);
     if (conn.status === 200) {
       // File changed on the server (or ranges dropped): start over with this full response.
       conn.abort();
@@ -173,6 +178,11 @@ class HttpDownload extends EventEmitter {
     this.openPart();
     this.resumedFrom = this.received;
     return { conn, seg: first };
+  }
+
+  // Paused or cancelled while this request waited: a newer engine may own the files by now (AU-03).
+  stopIfStopped(conn) {
+    if (this._stopping) { conn.abort(); throw new Error('stopped'); }
   }
 
   openPart() {
@@ -336,7 +346,7 @@ class HttpDownload extends EventEmitter {
       // A dead link (403/410 after data, 404...) or a full disk ends the download. Other errors end
       // only this connection while others are still running (they pick up its part).
       if (this._stopping || this._finishing) return;
-      const fatal = (err instanceof HttpError && err.fatal) || ['LINK_EXPIRED', 'NO_SPACE', 'ENOSPC'].includes(err && err.code);
+      const fatal = (err instanceof HttpError && err.fatal) || ['LINK_EXPIRED', 'NO_SPACE', 'ENOSPC', 'NO_RANGES'].includes(err && err.code);
       if (fatal || this.activeConns() <= 1) this.fail(err);
     }).finally(() => {
       c.closed = true;
@@ -378,6 +388,12 @@ class HttpDownload extends EventEmitter {
               // Server ignores ranges for extra connections: continue with one connection only.
               this.resumable = false; this.cap = 1; this.steady = true;
               seg.conn = null;
+              // Asking for this part again would get the whole file again, forever (AU-13). The part before it is
+              // still reading a whole-file answer: let it read on to this part's end instead.
+              const prev = this.segments.find((s) => s !== seg && s.end === seg.start && s.conn && !s.conn.closed);
+              if (!prev) throw Object.assign(new Error('This server can\'t continue a download part-way. Retry to start over.'), { code: 'NO_RANGES' });
+              prev.end = seg.end;
+              this.segments.splice(this.segments.indexOf(seg), 1);
               return;
             }
           }
@@ -400,6 +416,7 @@ class HttpDownload extends EventEmitter {
         }
         if (status === 429 || status === 503) this.holdUntil = Date.now() + (err.retryAfter || 5000);
         if (err instanceof HttpError && err.fatal) throw classifyFatal(err, this.received);
+        if (err.code === 'NO_RANGES') throw err;
         if (!this.resumable && seg.got > 0) {
           // No ranges: the only way to retry is from the beginning.
           seg.got = 0; seg.done = 0; c.bufLen = 0; c.buf = [];
@@ -606,7 +623,7 @@ class HttpDownload extends EventEmitter {
     if (!util.extOf(name)) name = util.ensureExt(name, info.mime);
     const target = path.join(dir, name);
     if (target === this.savePath) return;
-    this.setSavePath(util.uniquePath(target));
+    this.setSavePath(util.uniquePath(target, this.reserved ? this.reserved() : undefined)); // other downloads' paths too (AU-04)
     this.emit('renamed', this.savePath);
   }
 

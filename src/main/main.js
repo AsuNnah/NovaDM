@@ -1144,8 +1144,10 @@ app.whenReady().then(async () => {
   });
   // Live updates for open Downloads pages.
   downloads.on('changed', () => {
+    const tabs = browser.internalTabs('downloads');
+    if (!tabs.length) return; // no Downloads page open: don't build the list a second time
     const data = { list: downloads.list(), summary: downloads.activeSummary() };
-    for (const t of browser.internalTabs('downloads')) t.wc.send('novadm:internal-event', 'downloads', data);
+    for (const t of tabs) t.wc.send('novadm:internal-event', 'downloads', data);
   });
 
   app.on('activate', () => { if (!win) createWindow(); });

@@ -6,6 +6,36 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.8.2] — 2026-11-24
+
+Don't lose downloads: fixes from a review of the whole app, for the ways a download or a finished file could be lost
+or damaged.
+
+### Fixed
+- **Cancelling a torrent no longer deletes a whole folder.** It deletes only the files that torrent downloaded and its
+  `.aria2` progress file, then the folders it leaves empty. Before, it deleted the folder with the torrent's name, which
+  could hold an earlier finished copy or your own files.
+- **A torrent can't point outside your download folder.** A torrent whose name contains `..\` is no longer moved to
+  that path, and nothing outside the download folder is ever deleted for it.
+- **The same torrent is listed once.** Adding a torrent that is already in the list resumes that one instead of
+  adding a second copy into the same folder.
+- **Pause and resume while a download is still connecting** can no longer damage the file: a paused download's late
+  server answer no longer empties the partial file the resumed download is writing.
+- **Two downloads can no longer write into one file** when a server names a download the same as one that is still
+  waiting in the queue.
+- **Servers that say they can send parts of a file, but always send all of it,** no longer make the download ask
+  again in a loop forever: it finishes on one connection.
+- **Empty files** download as empty files instead of failing with "HTTP 416".
+- **Joining WebM video and sound never replaces an existing `.mkv`**, and a failed join keeps the downloaded parts,
+  so Retry joins again instead of downloading everything again.
+- **History and open tabs are saved during long sessions.** A tab whose title kept changing (a chat counter) could
+  keep them from being saved until NovaDM closed, so a crash or power cut lost them.
+- **Download progress no longer freezes** for several seconds while three or more downloads run.
+
+### Changed
+- The toolbar Downloads panel shows Remove (✕) only on finished downloads. Cancelling a download that isn't finished
+  deletes its partial file, so that stays on the Downloads page, which asks first.
+
 ## [1.8.1] — 2026-11-15
 
 Hide your country, with the fixes from the known-issue list.

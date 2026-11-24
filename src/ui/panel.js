@@ -356,8 +356,8 @@ function dlRow(d) {
   if (d.recording) actions.append(icon('Stop recording', stopSvg(), () => api.call('downloads.stopRecording', { id: d.id })));
   else if (d.state === 'downloading' || d.state === 'connecting') actions.append(icon('Pause', pauseSvg(), () => api.call('downloads.pause', { id: d.id })));
   else if (['paused', 'error', 'queued', 'scheduled'].includes(d.state)) actions.append(icon('Resume', playSmSvg(), () => api.call('downloads.resume', { id: d.id })));
-  if (d.state === 'done') { actions.append(icon('Open', folderSvg(), () => api.call('downloads.showInFolder', { id: d.id }))); }
-  actions.append(icon('Remove', xSvg(), () => api.call(d.state === 'done' ? 'downloads.remove' : 'downloads.cancel', { id: d.id })));
+  // Remove only for finished ones: cancelling deletes the partial file, so it stays on the Downloads page, which asks (AU-05).
+  if (d.state === 'done') actions.append(icon('Open', folderSvg(), () => api.call('downloads.showInFolder', { id: d.id })), icon('Remove', xSvg(), () => api.call('downloads.remove', { id: d.id })));
   row.append(actions);
   if (d.state === 'done') row.ondblclick = () => api.call('downloads.openFile', { id: d.id });
   return row;
