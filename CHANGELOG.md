@@ -17,8 +17,8 @@ or damaged.
   could hold an earlier finished copy or your own files.
 - **A torrent can't point outside your download folder.** A torrent whose name contains `..\` is no longer moved to
   that path, and nothing outside the download folder is ever deleted for it.
-- **The same torrent is listed once.** Adding a torrent that is already in the list resumes that one instead of
-  adding a second copy into the same folder.
+- **The same torrent is listed once.** Adding a torrent that is already in the list continues that one (a finished one
+  is checked and its missing files downloaded again) instead of adding a second copy into the same folder.
 - **Pause and resume while a download is still connecting** can no longer damage the file: a paused download's late
   server answer no longer empties the partial file the resumed download is writing.
 - **Two downloads can no longer write into one file** when a server names a download the same as one that is still
