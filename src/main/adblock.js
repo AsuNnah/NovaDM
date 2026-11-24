@@ -10,6 +10,7 @@ const { app, ipcMain, net } = require('electron');
 const fetch = (url) => require('./net').fetchBuffer(url, { timeoutMs: 60000 }).then((r) => new Response(r.body, { status: r.status }));
 const { ElectronBlocker, fromElectronDetails, adsAndTrackingLists, parseFilter } = require('@ghostery/adblocker-electron');
 const { siteOf } = require('./util');
+const privateSites = require('./private-sites');
 
 const PRELOAD_PATH = require.resolve('@ghostery/adblocker-electron-preload');
 const INJECT_CH = '@ghostery/adblocker/inject-cosmetic-filters';
@@ -151,6 +152,11 @@ class AdBlocker extends EventEmitter {
     if (cachedAt && Date.now() - cachedAt > REFRESH_MS) this.refresh();
   }
 
+  /** Lists older than REFRESH_MS: rebuilt in the background, also in a session that runs for days (AU-25). */
+  refreshIfStale() {
+    if (this.ready && Date.now() - (this.settings.data.adblockUpdatedAt || 0) > REFRESH_MS) this.refresh();
+  }
+
   async refresh() {
     try {
       this.engine = await this.build();
@@ -163,11 +169,11 @@ class AdBlocker extends EventEmitter {
     }
   }
 
-  siteWhitelisted(url) {
+  siteWhitelisted(url, incognito = false) {
     if (!this.settings.get('adblock')) return true;
     const site = siteOf(url || '');
     if (!site) return false;
-    return (this.settings.get('adblockWhitelist') || []).includes(site);
+    return privateSites.listHas(this.settings, 'adblockWhitelist', site, incognito);
   }
 
   pageUrlFor(details) {
@@ -183,7 +189,8 @@ class AdBlocker extends EventEmitter {
     this._ipcDone = true;
     // Cosmetic filters: preload reports DOM info; we inject CSS/scriptlets unless whitelisted.
     ipcMain.handle(INJECT_CH, (event, url, msg) => {
-      if (!this.engine || this.cosmetic === false || this.siteWhitelisted(url)) return; // cosmetic=false: benchmark only
+      const priv = !!(event.sender && event.sender.session && !event.sender.session.isPersistent());
+      if (!this.engine || this.cosmetic === false || this.siteWhitelisted(url, priv)) return; // cosmetic=false: benchmark only
       return this.engine.onInjectCosmeticFilters(event, url, msg);
     });
     ipcMain.handle(MUTATION_CH, (event) => (this.engine ? this.engine.onIsMutationObserverEnabled(event) : false));
@@ -198,24 +205,25 @@ class AdBlocker extends EventEmitter {
     if (this._attached.has(session)) return;
     this._attached.add(session);
     this.registerIpcOnce();
+    const priv = typeof session.isPersistent === 'function' && !session.isPersistent(); // a private window's session: its own Guard switches (AU-12)
     session.registerPreloadScript({ type: 'frame', filePath: PRELOAD_PATH });
 
     session.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
       const isMain = details.resourceType === 'mainFrame';
       if (isMain && this.isPhishing(details)) { this.phishBlocked.add(details.url); return callback({ cancel: true }); }
       // Guard off for a site turns its Shields off too, as in Brave: a page by its own address, a frame by its page's.
-      if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents && !this.isWhitelisted(isMain ? details.url : this.pageUrlFor(details))) {
+      if (this.shields && (isMain || details.resourceType === 'subFrame') && details.method === 'GET' && details.webContents && !this.isWhitelisted(isMain ? details.url : this.pageUrlFor(details), priv)) {
         const to = this.shields.rewrite(details.url, { isMain });
         if (to && to !== details.url) return callback({ redirectURL: to });
       }
       // Security level Safer / Safest (hardening.js): no web fonts.
       if (details.resourceType === 'font' && this.protection) {
-        const p = this.protection(this.pageUrlFor(details));
+        const p = this.protection(this.pageUrlFor(details), priv);
         if (p && p.blockFonts) return callback({ cancel: true });
       }
       if (!this.ready || !this.engine) return callback({});
       const pageUrl = this.pageUrlFor(details);
-      if (this.siteWhitelisted(pageUrl)) return callback({});
+      if (this.siteWhitelisted(pageUrl, priv)) return callback({});
       const request = fromElectronDetails(details);
       if (request.type === 'other') request.guessTypeOfRequest();
       if (request.isMainFrame()) return callback({});
@@ -229,7 +237,7 @@ class AdBlocker extends EventEmitter {
       // Security level Safest (and Safer on http:// pages): no scripts, through the page's CSP.
       let headers = null;
       if (this.protection && (details.resourceType === 'mainFrame' || details.resourceType === 'subFrame')) {
-        const p = this.protection(details.resourceType === 'mainFrame' ? details.url : this.pageUrlFor(details));
+        const p = this.protection(details.resourceType === 'mainFrame' ? details.url : this.pageUrlFor(details), priv);
         if (p && p.noScript) {
           // An extra policy on top of the site's own: browsers enforce every CSP header given.
           headers = { ...details.responseHeaders };
@@ -239,14 +247,14 @@ class AdBlocker extends EventEmitter {
         }
       }
       const done = (r = {}) => callback(r.responseHeaders || !headers ? r : { responseHeaders: headers });
-      if (!this.ready || !this.engine || this.siteWhitelisted(this.pageUrlFor(details))) return done();
+      if (!this.ready || !this.engine || this.siteWhitelisted(this.pageUrlFor(details), priv)) return done();
       this.engine.onHeadersReceived(details, done);
     });
   }
 
   /** True when `url` belongs to a known ad/tracker domain (used to block ad pop-ups outright). */
-  isAdUrl(url, pageUrl) {
-    if (!this.ready || this.siteWhitelisted(pageUrl)) return false;
+  isAdUrl(url, pageUrl, incognito = false) {
+    if (!this.ready || this.siteWhitelisted(pageUrl, incognito)) return false;
     try {
       const { Request } = require('@ghostery/adblocker-electron');
       for (const type of ['sub_frame', 'script']) {
@@ -272,14 +280,15 @@ class AdBlocker extends EventEmitter {
 
   count(wcId) { return this.counts.get(wcId) || 0; }
 
-  isWhitelisted(url) {
+  isWhitelisted(url, incognito = false) {
     const site = siteOf(url || '');
-    return site ? (this.settings.get('adblockWhitelist') || []).includes(site) : false;
+    return site ? privateSites.listHas(this.settings, 'adblockWhitelist', site, incognito) : false;
   }
 
-  setSiteEnabled(url, enabled) {
+  setSiteEnabled(url, enabled, incognito = false) {
     const site = siteOf(url || '');
     if (!site) return;
+    if (incognito) { privateSites.setPrivate('adblockWhitelist', site, !enabled); this.emit('whitelistChanged'); return; }
     const list = new Set(this.settings.get('adblockWhitelist') || []);
     if (enabled) list.delete(site); else list.add(site);
     this.settings.set({ adblockWhitelist: [...list] });

@@ -869,10 +869,11 @@ function respondPopup(d, allow) {
 function showPermissionPrompt(d) {
   current = 'permission'; place('prompt');
   content.innerHTML = '';
-  const label = { media: 'use your camera and microphone', audioCapture: 'use your microphone', videoCapture: 'use your camera', geolocation: 'know your location', notifications: 'show notifications', midi: 'use MIDI devices' }[d.permission] || ('use ' + d.permission);
+  const label = { media: 'use your camera and microphone', audioCapture: 'use your microphone', videoCapture: 'use your camera', geolocation: 'know your location', notifications: 'show notifications', midi: 'use MIDI devices' }[d.permission] || (d.scheme ? `open ${d.scheme}: links in another app` : 'use ' + d.permission);
   content.append(el('div', 'hdr', '<div class="t">Permission request</div>'));
   content.append(el('div', 'q', `<b>${esc(hostOf(d.origin))}</b> wants to ${esc(label)}.`));
-  content.append(el('label', 'chk', '<input type="checkbox" id="pm-remember" checked> Remember my choice'));
+  // App links: Remember starts unticked, so one Allow isn't kept by accident (AU-07).
+  content.append(el('label', 'chk', `<input type="checkbox" id="pm-remember"${d.scheme ? '' : ' checked'}> Remember my choice${d.scheme ? ` for ${esc(d.scheme)}: links` : ''}`));
   const acts = el('div', 'acts');
   const allow = el('button', 'btn pri', 'Allow'); allow.onclick = () => respondPerm(true);
   const block = el('button', 'btn', 'Block'); block.onclick = () => respondPerm(false);
