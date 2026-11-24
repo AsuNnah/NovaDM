@@ -6,7 +6,7 @@ const { redact } = require('./redact');
 
 const MAX_LINES = 500;
 const lines = [];
-const SENSITIVE_SETTING = /pass|token|secret|cookie|proxy|auth|login|home|folder|dir|path|site|rule|perm|agent|header|dns/i;
+const SENSITIVE_SETTING = /pass|token|secret|cookie|proxy|auth|login|home|folder|dir|path|site|rule|perm|agent|header|dns|filter/i; // filter: My filters name sites (AU-17)
 
 // Not problems, so not in a report: Electron words an advert's page that the ad blocker stopped (or a load that was
 // cancelled) as "Failed to load URL … with error: ERR_BLOCKED_BY_CLIENT / ERR_ABORTED".
@@ -27,7 +27,8 @@ function install(app) {
     const orig = console[level];
     console[level] = (...a) => { add(level, a); orig.apply(console, a); };
   }
-  app.on('render-process-gone', (_e, wc, d) => add('crash', [`page process ${d.reason} (exit ${d.exitCode}) on ${wc.getURL()}`]));
+  // A private tab's address is never kept, not even in memory for a report (AU-17).
+  app.on('render-process-gone', (_e, wc, d) => add('crash', [`page process ${d.reason} (exit ${d.exitCode}) on ${wc.session && !wc.session.isPersistent() ? 'a private tab' : wc.getURL()}`]));
   app.on('child-process-gone', (_e, d) => add('crash', [`${d.type} process ${d.reason} (exit ${d.exitCode})${d.name ? ' ' + d.name : ''}`]));
   // Errors in NovaDM's own code that nothing caught (the monitor only watches; default handling stays).
   process.on('uncaughtExceptionMonitor', (e) => add('crash', ['uncaught:', e]));

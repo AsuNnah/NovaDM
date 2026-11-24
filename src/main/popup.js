@@ -8,30 +8,31 @@
 //   real click on a link to another site            ask      ask      open     block
 //   opened by a script (no real click)              ask      block    open     block
 const { siteOf } = require('./util');
+const privateSites = require('./private-sites');
 
 class PopupGuard {
   constructor(settings) { this.settings = settings; }
 
-  siteAllowed(pageUrl) {
+  siteAllowed(pageUrl, incognito = false) {
     const site = siteOf(pageUrl || '');
-    return !!site && (this.settings.get('popupAllow') || []).includes(site);
+    return !!site && privateSites.listHas(this.settings, 'popupAllow', site, incognito);
   }
 
-  siteBlocked(pageUrl) {
+  siteBlocked(pageUrl, incognito = false) {
     const site = siteOf(pageUrl || '');
-    return !!site && (this.settings.get('popupBlock') || []).includes(site);
+    return !!site && privateSites.listHas(this.settings, 'popupBlock', site, incognito);
   }
 
   /**
    * @param {object} r { pageUrl, url, click: {mods}|null, isAd: bool }
    * @returns 'open' | 'ask' | 'block'
    */
-  decideRequest({ pageUrl, url, click, isAd }) {
+  decideRequest({ pageUrl, url, click, isAd, incognito = false }) {
     const mode = this.settings.get('popupMode') || 'ask';
     const web = /^https?:/i.test(url || '');
     const byHand = !!click && (!!click.mods || siteOf(url) === siteOf(pageUrl)); // Ctrl/middle click, or a link within the site
-    if (this.siteAllowed(pageUrl)) return 'open';
-    if (this.siteBlocked(pageUrl)) return web && !isAd && byHand ? 'open' : 'block'; // the user's own click still works
+    if (this.siteAllowed(pageUrl, incognito)) return 'open';
+    if (this.siteBlocked(pageUrl, incognito)) return web && !isAd && byHand ? 'open' : 'block'; // the user's own click still works
     if (mode === 'allow') return 'open';
     if (isAd || !web) return 'block';
     if (click) return byHand ? 'open' : 'ask';
@@ -45,14 +46,15 @@ class PopupGuard {
   }
 
   /** Always allow (true) or stop always allowing (false) this site's pop-ups; allowing takes it off the block list. */
-  allowSite(pageUrl, enabled = true) { this._list(pageUrl, 'popupAllow', enabled, enabled ? 'popupBlock' : null); }
+  allowSite(pageUrl, enabled = true, incognito = false) { this._list(pageUrl, 'popupAllow', enabled, enabled ? 'popupBlock' : null, incognito); }
 
   /** Always block (true) or stop always blocking (false) this site's pop-ups; blocking takes it off the allow list. */
-  blockSite(pageUrl, enabled = true) { this._list(pageUrl, 'popupBlock', enabled, enabled ? 'popupAllow' : null); }
+  blockSite(pageUrl, enabled = true, incognito = false) { this._list(pageUrl, 'popupBlock', enabled, enabled ? 'popupAllow' : null, incognito); }
 
-  _list(pageUrl, key, enabled, removeFrom) {
+  _list(pageUrl, key, enabled, removeFrom, incognito = false) {
     const site = siteOf(pageUrl || '');
     if (!site) return;
+    if (incognito) { privateSites.setPrivate(key, site, enabled); if (removeFrom) privateSites.setPrivate(removeFrom, site, false); return; }
     const set = new Set(this.settings.get(key) || []);
     if (enabled) set.add(site); else set.delete(site);
     const change = { [key]: [...set] };

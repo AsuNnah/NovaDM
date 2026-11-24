@@ -48,7 +48,8 @@ function categoryOf(name, mime) {
   return 'other';
 }
 
-const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+// Windows device names, tested on the part before the first dot: `aux.tar.gz` is the AUX device too (AU-23).
+const RESERVED = /^(con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])$/i;
 // Text-direction overrides and invisible characters would let `invoice<RLO>gpj.exe` look like `invoiceexe.jpg`.
 // (Not U+200C / U+200D: Persian and emoji need them.)
 const INVISIBLE = /[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
@@ -58,7 +59,7 @@ function sanitizeFilename(name, fallback = 'download') {
   if (!n) n = fallback;
   const ext = extOf(n);
   const base = ext ? n.slice(0, -(ext.length + 1)) : n;
-  if (RESERVED.test(base)) n = '_' + n;
+  if (RESERVED.test(n.split('.')[0].replace(/[ .]+$/, ''))) n = '_' + n;
   // Keep full path under Windows MAX_PATH comfortably.
   if (n.length > 180) {
     n = ext ? base.slice(0, 175 - ext.length) + '.' + ext : n.slice(0, 180);

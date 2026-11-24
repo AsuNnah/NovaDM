@@ -155,10 +155,12 @@ class SiteExtensions {
   async fetchFor(wcId, url, opts = {}) {
     const run = this.runs.get(wcId);
     if (!run) throw new Error('Not allowed');
-    if (!run.ext.matches.some((p) => matchPattern(p, url))) throw new Error(`The extension may not read ${new URL(url).host}`);
+    // Every address, the first and each redirect, must be one of the extension's sites (AU-06).
+    const guard = (u) => { if (!run.ext.matches.some((p) => matchPattern(p, u))) throw new Error(`The extension may not read ${new URL(u).host}`); };
+    guard(url);
     const headers = {};
     for (const [k, v] of Object.entries(opts.headers || {})) if (typeof v === 'string' && /^(referer|accept|x-[a-z0-9-]+|content-type)$/i.test(k)) headers[k.toLowerCase()] = v;
-    return this.fetchText(url, { headers, session: run.session });
+    return this.fetchText(url, { headers, session: run.session, guard });
   }
 }
 

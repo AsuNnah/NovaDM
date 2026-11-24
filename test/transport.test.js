@@ -139,3 +139,17 @@ test('cookies handed over with a download go only to their own site', async (t) 
   await read(conn);
   assert.deepEqual(seen, [['own', 'ext=from-chrome'], ['other', '']]);
 });
+
+test('AU-30: a file stored gzip-encoded, which Chromium cannot decode by range, is fetched by NovaDM\'s own client (not in browser-only mode)', async (t) => {
+  const body = Buffer.alloc(50, 9);
+  const server = http.createServer((req, res) => { res.writeHead(206, { 'Content-Encoding': 'gzip', 'Content-Range': 'bytes 0-49/50', 'Content-Length': 50 }); res.end(body); });
+  t.after(() => server.close());
+  const port = await listen(server);
+  const failing = async () => { throw new Error('net::ERR_CONTENT_DECODING_FAILED'); };
+  const tr = new Transport({ session: fakeSession(), settings: settings('auto'), browserOpen: failing });
+  const conn = await tr.open(`http://127.0.0.1:${port}/f.tar`, { range: [0, 49], direct: false });
+  assert.strictEqual(conn.transport, 'direct');
+  assert.deepStrictEqual(await read(conn), body, 'the stored bytes, as curl saves them');
+  const only = new Transport({ session: fakeSession(), settings: settings('browser'), browserOpen: failing });
+  await assert.rejects(only.open(`http://127.0.0.1:${port}/f.tar`, { range: [0, 49] }), /DECODING/);
+});
