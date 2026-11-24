@@ -41,6 +41,7 @@ const { isLocalHost } = require('./shields');
 // Must load before the app is ready (registers the crx:// scheme for extension icons).
 const { Extensions } = require('./extensions');
 const appScheme = require('./app-scheme');
+const privateSites = require('./private-sites');
 appScheme.registerPrivileged(protocol); // before ready, like crx://
 
 let dnsStatus = { mode: 'starting', servers: [] };
@@ -315,6 +316,9 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
   // Only web and mail links go to the default program: other schemes (file:, ms-*: …) can start programs.
   cv.webContents.setWindowOpenHandler(({ url }) => { if (/^(https?|mailto):/i.test(url)) shell.openExternal(url); return { action: 'deny' }; });
 
+  // Windows shutdown or sign-out ends NovaDM without a normal quit: save everything now; the clear-on-exit steps
+  // run at the next start (AU-11).
+  w.on('session-end', saveOnSessionEnd);
   if (priv) { w.on('closed', closePrivateWindow); return; }
   // Moving or resizing a window: its place is saved with the tabs.
   for (const ev of ['move', 'resize']) w.on(ev, () => browser.emit('windows-changed'));
@@ -341,7 +345,7 @@ function createWindow(kind = 'normal', { restore = true, bounds = null } = {}) {
   // The tabs from last time (Settings → Restore tabs), or a new tab. NOVADM_OPEN (debug) opens a
   // given address instead.
   // Sites to forget are cleared first, in case NovaDM was killed before it could (SEC-109).
-  if (restore) browsing.forgetSites().catch(() => {}).finally(() => browsing.openStartTabs(process.env.NOVADM_OPEN || ''));
+  if (restore) browsing.onStart().catch(() => {}).finally(() => browsing.openStartTabs(process.env.NOVADM_OPEN || ''));
 }
 
 /** A new normal window (Ctrl+N, a tab dragged out, a closed window reopened); returns its id. */
@@ -377,6 +381,7 @@ function closePrivateWindow() {
   useCtx(browser.normalWindow());
   privateStats.ads = privateStats.popups = 0;
   browser.privatePermissions = {}; // its "remember" answers go with it
+  privateSites.clear(); // and its Guard switches (AU-12)
   browser.forgetPrivateCerts(); // and its certificate exceptions
   forgetPrivate(); // and what yt-dlp found on its pages
   const ses = browser.incognitoSession;
@@ -873,7 +878,7 @@ app.whenReady().then(async () => {
       .then((n) => { if (n > 0) warn({ count: n }); })
       .catch(() => {}); // offline or service down: no warning
   });
-  adblock.protection = (url) => hardening.protectionFor(settings, url);
+  adblock.protection = (url, incognito) => hardening.protectionFor(settings, url, incognito);
   transport = new Transport({ session: browser.normalSession, settings, certFor: (host) => browser.acceptedCerts(host) });
   downloads = new DownloadManager(settings, browser.normalSession, { transport, privateSession: browser.incognitoSession });
   addFlow = new AddFlow({ downloads, settings, browser, sendUI, setPanel, getWindow: () => win, notify });
@@ -896,8 +901,8 @@ app.whenReady().then(async () => {
   ytdlp = new YtDlp({ settings, userDataDir: app.getPath('userData'), fetchText: toolText, download: toolDownload });
   siteExt = new SiteExtensions({
     settings, userDataDir: app.getPath('userData'), createSandbox: createSiteExtSandbox,
-    fetchText: async (url, { headers, session }) => {
-      const r = await net.fetchText(url, { session: session || browser.normalSession, headers, timeoutMs: 20000, maxBytes: 8 * 1024 * 1024 });
+    fetchText: async (url, { headers, session, guard }) => {
+      const r = await net.fetchText(url, { session: session || browser.normalSession, headers, guard, timeoutMs: 20000, maxBytes: 8 * 1024 * 1024 });
       return { status: r.status, url: r.finalUrl, text: r.text };
     },
     confirm: async (man) => {
@@ -1070,7 +1075,7 @@ app.whenReady().then(async () => {
 
   // Ad-block lists load in the background; attach to sessions once ready.
   adblock.initPhishing();
-  setInterval(() => adblock.initPhishing(), 6 * 3600 * 1000).unref(); // the lists change daily
+  setInterval(() => { adblock.initPhishing(); adblock.refreshIfStale(); }, 6 * 3600 * 1000).unref(); // the lists change daily
   adblock.init().then(() => {
     adblock.attach(browser.normalSession);
     adblock.attach(browser.incognitoSession);
@@ -1183,6 +1188,10 @@ app.whenReady().then(async () => {
     }, Number(process.env.NOVADM_SELFTEST_DELAY) || 3000);
   }
 });
+
+function saveOnSessionEnd() {
+  for (const f of [() => settings.flush(), () => downloads.persist(), () => downloads.store.flush(), () => browsing.flushAll()]) { try { f(); } catch {} }
+}
 
 app.on('window-all-closed', () => { settings && settings.flush(); app.quit(); });
 // Running downloads are paused properly on quit (caches written, data synced, progress saved), so they

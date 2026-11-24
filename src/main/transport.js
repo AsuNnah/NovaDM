@@ -67,7 +67,16 @@ class Transport {
    */
   async open(url, opts = {}) {
     const ses = opts.session || this.session;
-    if (!opts.direct) return this.browserOpen(url, { ...opts, session: ses });
+    if (!opts.direct) {
+      try {
+        return await this.browserOpen(url, { ...opts, session: ses });
+      } catch (err) {
+        // A file stored gzip-encoded (some S3/CDN setups): Chromium decodes it and fails on every range (AU-30).
+        // NovaDM's own client saves the stored bytes, as curl does; browser-only mode keeps the error.
+        if (!/ERR_CONTENT_DECODING_FAILED/.test(err && err.message) || this.mode() === 'browser') throw err;
+        return this.directOpen(url, { ...opts, session: ses });
+      }
+    }
     try {
       const conn = await this.directOpen(url, { ...opts, session: ses });
       // Some CDNs refuse clients that don't look like a browser (TLS fingerprint, bot checks). Ask again

@@ -595,7 +595,8 @@ class DownloadManager extends EventEmitter {
   async postProcess(rec) {
     await this.optimizeVideo(rec); // first: the mark and the scan apply to the final file
     const mark = this.motw(rec);
-    if (mark) post.markOfTheWeb(rec.savePath, mark);
+    // A folder (a torrent with several files): every file in it, since Windows reads the mark on each file (AU-09).
+    if (mark) { let dir = false; try { dir = fs.statSync(rec.savePath).isDirectory(); } catch {} if (dir) post.markTree(rec.savePath, mark); else post.markOfTheWeb(rec.savePath, mark); }
     if (post.wantsScan(this.settings.get('scanDownloads'), rec.category)) {
       rec.scan = 'scanning'; this.emitRecord(rec);
       const r = await this.scanFile(rec.savePath);

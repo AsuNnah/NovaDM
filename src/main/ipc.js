@@ -19,6 +19,7 @@ const addonUpdates = require('./addon-updates');
 const addonVulns = require('./addon-vulns');
 const { canAutoUpdate, createUpdater } = require('./updater');
 const net = require('./net');
+const privateSites = require('./private-sites');
 
 const GRAB_CATEGORY = { image: 'images', video: 'video', audio: 'music', document: 'documents', archive: 'archives', program: 'programs' };
 
@@ -370,11 +371,11 @@ function registerIpc(ctx) {
 
     // ---- shields (adblock) ----
     'shields.state': () => shieldsState(),
-    'shields.toggleSite': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { const on = getManagers().adblock.isWhitelisted(t.url); getManagers().adblock.setSiteEnabled(t.url, on); b.reload(t.id); } setTimeout(pushShields, 200); },
-    'shields.toggleHardening': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { toggleSite(getManagers().settings, t.url); b.reload(t.id); } setTimeout(pushShields, 200); },
+    'shields.toggleSite': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { const on = getManagers().adblock.isWhitelisted(t.url, t.incognito); getManagers().adblock.setSiteEnabled(t.url, on, t.incognito); b.reload(t.id); } setTimeout(pushShields, 200); },
+    'shields.toggleHardening': () => { const b = getManagers().browser; const t = b.activeTab(); if (t) { toggleSite(getManagers().settings, t.url, t.incognito); b.reload(t.id); } setTimeout(pushShields, 200); },
     // The Guard panel's "always block pop-ups on this site" (and back to asking / the general setting).
     'shields.toggleForget': () => { const t = getManagers().browser.activeTab(); const st = getManagers().settings; const site = t && !t.incognito && /^https?:/i.test(t.url || '') ? siteOf(t.url) : ''; /* a private window's site is never written to disk */ if (site) { const l = new Set(st.get('forgetSites') || []); if (l.has(site)) l.delete(site); else l.add(site); st.set({ forgetSites: [...l] }); } pushShields(); },
-    'shields.togglePopupBlock': () => { const t = getManagers().browser.activeTab(); const p = getManagers().popup; if (t) p.blockSite(t.url, !p.siteBlocked(t.url)); setTimeout(pushShields, 100); },
+    'shields.togglePopupBlock': () => { const t = getManagers().browser.activeTab(); const p = getManagers().popup; if (t) p.blockSite(t.url, !p.siteBlocked(t.url, t.incognito), t.incognito); /* private: in memory only (AU-12) */ setTimeout(pushShields, 100); },
     'shields.setProfile': (a) => { const { settings } = getManagers(); const id = String(a.id || ''); if (!id || (settings.get('proxyProfiles') || []).some((p) => p.id === id)) settings.set({ proxyProfile: id }); setTimeout(pushShields, 100); return { ok: true }; },
     // REQ-314: only when the user presses Check; through the normal browsing session, so the active route.
     'shields.checkRoute': () => {
@@ -393,7 +394,8 @@ function registerIpc(ctx) {
     'popup.respond': (a) => {
       const b = getManagers().browser;
       // "Remember my choice": always allow this site's pop-ups, or always block them (without asking again).
-      if (a.always && a.pageUrl) { if (a.allow) getManagers().popup.allowSite(a.pageUrl, true); else getManagers().popup.blockSite(a.pageUrl, true); }
+      const priv = !!(b.activeTab() && b.activeTab().incognito); // asked in the active tab's window
+      if (a.always && a.pageUrl) { if (a.allow) getManagers().popup.allowSite(a.pageUrl, true, priv); else getManagers().popup.blockSite(a.pageUrl, true, priv); }
       if (a.allow && /^https?:/.test(a.url || '')) b.createTab({ url: a.url });
     },
     'popup.review': () => reviewBlockedPopup(),
@@ -561,11 +563,11 @@ function registerIpc(ctx) {
     const t = browser.activeTab();
     return {
       global: !!settings.get('adblock'),
-      siteEnabled: t ? !adblock.isWhitelisted(t.url) : true,
+      siteEnabled: t ? !adblock.isWhitelisted(t.url, t.incognito) : true,
       site: t ? siteOf(t.url) : '',
       count: t ? adblock.count(t.wcId) : 0,
-      protection: t && /^https?:/i.test(t.url || '') ? { siteOn: !(settings.get('hardeningOff') || []).includes(siteOf(t.url)), level: settings.get('securityLevel'), fingerprinting: settings.get('fingerprinting') } : null,
-      popups: t && /^https?:/i.test(t.url || '') ? (getManagers().popup.siteBlocked(t.url) ? 'blocked' : getManagers().popup.siteAllowed(t.url) ? 'allowed' : 'default') : null,
+      protection: t && /^https?:/i.test(t.url || '') ? { siteOn: !privateSites.listHas(settings, 'hardeningOff', siteOf(t.url), t.incognito), level: settings.get('securityLevel'), fingerprinting: settings.get('fingerprinting') } : null,
+      popups: t && /^https?:/i.test(t.url || '') ? (getManagers().popup.siteBlocked(t.url, t.incognito) ? 'blocked' : getManagers().popup.siteAllowed(t.url, t.incognito) ? 'allowed' : 'default') : null,
       ready: adblock.ready,
       forget: t && !t.incognito && /^https?:/i.test(t.url || '') ? (settings.get('forgetSites') || []).includes(siteOf(t.url)) : null, // REQ-309
       dnsFallback: !!getManagers().getDnsStatus && getManagers().getDnsStatus().mode === 'automatic', // REQ-307

@@ -29,6 +29,9 @@ const ONE_PER_WINDOW = /^novadm:\/\/(downloads|settings|history|bookmarks)\/?(?:
 /** 'settings' | 'downloads' | 'history' | 'bookmarks' for that page's address (with or without ?section=…), else ''. */
 function onePerWindow(url) { const m = ONE_PER_WINDOW.exec(String(url || '')); return m ? m[1].toLowerCase() : ''; }
 
+// Link types that start Windows tools, run installers or open remote files: never opened from a page (AU-07).
+const RISKY_SCHEMES = /^(ms-msdt|search-ms|search|ms-officecmd|ms-cxh|ms-cxh-full|ms-appinstaller|file)$/;
+
 class Browser extends EventEmitter {
   constructor({ settings, media, adblock, popup }) {
     super();
@@ -417,7 +420,7 @@ class Browser extends EventEmitter {
     wc.on('context-menu', (_e, params) => this.emit('context-menu', tab, params));
     // Pages that send the current tab to a known ad site (click hijacking) are stopped.
     wc.on('will-navigate', (e) => {
-      if (this.adblock && /^https?:/i.test(e.url) && this.adblock.isAdUrl(e.url, tab.url)) {
+      if (this.adblock && /^https?:/i.test(e.url) && this.adblock.isAdUrl(e.url, tab.url, tab.incognito)) {
         e.preventDefault();
         this.emit('popup-blocked', tab.id, e.url, 'ad-redirect');
       }
@@ -439,6 +442,12 @@ class Browser extends EventEmitter {
     this.closedSeq = (this.closedSeq || 0) + 1;
     this.closed.push({ ...entry, id: this.closedSeq, t: Date.now() });
     if (this.closed.length > 25) this.closed.shift();
+  }
+
+  /** Clear history: Recently closed loses the entries of the cleared range too (AU-18). */
+  forgetClosed(rangeMs) {
+    const since = Date.now() - rangeMs;
+    this.closed = this.closed.filter((c) => c.t < since);
   }
 
   /** Recently closed, newest first; from a private window, nothing (private tabs are never kept). */
@@ -501,7 +510,7 @@ class Browser extends EventEmitter {
         // De-AMP: open the publisher's own page; the AMP copy is taken out of the back list.
         if (this.settings.get('deAmp') === false || !payload || !/^https?:/i.test(payload.canonical || '')) break;
         if (!tab.wc || payload.from !== tab.wc.getURL() || tab.ampFrom === payload.from) break;
-        if (this.adblock && this.adblock.isWhitelisted(payload.from)) break; // Guard off for this site
+        if (this.adblock && this.adblock.isWhitelisted(payload.from, tab.incognito)) break; // Guard off for this site
         tab.ampFrom = payload.from;
         if (this.shields) this.shields.stats.deAmp++;
         tab.wc.loadURL(payload.canonical).catch(() => {});
@@ -540,8 +549,8 @@ class Browser extends EventEmitter {
   decideWindowOpen(tab, { url, disposition }) {
     if (!this.tabs.has(tab.id)) return;
     const click = this.takeClick(tab, url);
-    const isAd = !!(this.adblock && /^https?:/i.test(url) && this.adblock.isAdUrl(url, tab.url));
-    const decision = this.popup.decideRequest({ pageUrl: tab.url, url, click, isAd });
+    const isAd = !!(this.adblock && /^https?:/i.test(url) && this.adblock.isAdUrl(url, tab.url, tab.incognito));
+    const decision = this.popup.decideRequest({ pageUrl: tab.url, url, click, isAd, incognito: !!tab.incognito });
     if (decision === 'open') {
       if (/^https?:|^novadm:/i.test(url)) {
         // As in Chrome: Ctrl+click / middle-click behind, Ctrl+Shift+click and Shift+click in front.
@@ -562,13 +571,22 @@ class Browser extends EventEmitter {
       this.emit('magnet', tab, details.externalURL);
       return;
     }
+    // Another app: asked and remembered per link type, so allowing zoommtg: doesn't allow every app; types that run
+    // Windows tools or open remote files are never offered (AU-07).
+    let scheme = '';
+    if (permission === 'openExternal') {
+      scheme = (/^([a-z][a-z0-9+.-]*):/i.exec((details && details.externalURL) || '') || [])[1];
+      scheme = scheme ? scheme.toLowerCase() : '';
+      if (!scheme || RISKY_SCHEMES.test(scheme)) return callback(false);
+      permission = 'openExternal:' + scheme;
+    }
     const origin = (details && details.requestingUrl) ? originOf(details.requestingUrl) : originOf(tab.url);
     const stored = this.getStoredPermission(origin, permission, tab.incognito);
     if (stored === 'granted') return callback(true);
     if (stored === 'denied') return callback(false);
     const auto = new Set(['fullscreen', 'pointerLock', 'clipboard-sanitized-write']);
     if (auto.has(permission)) return callback(true);
-    this.emit('permission-ask', { tabId: tab.id, origin, permission, incognito: !!tab.incognito }, callback);
+    this.emit('permission-ask', { tabId: tab.id, origin, permission, scheme, incognito: !!tab.incognito }, callback);
   }
 
   checkPermission(origin, permission, incognito = false) {
