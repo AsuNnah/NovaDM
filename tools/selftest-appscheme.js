@@ -26,6 +26,7 @@ module.exports = async ({ app, browser, ipc, chromeView, overlayView }) => {
     const settled = (id) => until(() => { const t = tabOf(id); return t && t.wc && !t.loading ? t : null; });
 
     // 1. The UI views and every internal page come from app://ui/.
+    await until(() => chromeView.webContents.getURL() && overlayView.webContents.getURL()); // loaded (a slow PC may still be starting)
     c.toolbarOnApp = chromeView.webContents.getURL().startsWith('app://ui/chrome.html');
     c.panelOnApp = overlayView.webContents.getURL().startsWith('app://ui/panel.html');
     result.pages = {};
