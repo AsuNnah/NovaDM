@@ -39,7 +39,7 @@ test('magnet links (hex and base32) and tracker lists', () => {
 });
 
 // A stand-in for aria2's JSON-RPC: downloads move forward each time their status is read.
-function mockAria2(t, { seedPolls = 2 } = {}) {
+function mockAria2(t, { seedPolls = 2, name = 'ubuntu.iso' } = {}) {
   const calls = [];
   const dl = new Map();
   let n = 0;
@@ -49,6 +49,7 @@ function mockAria2(t, { seedPolls = 2 } = {}) {
     downloadSpeed: d.status === 'active' && d.done < d.total ? '500000' : '0', uploadSpeed: d.seeder ? '20000' : '0',
     connections: '7', numSeeders: '3', seeder: d.seeder ? 'true' : 'false', infoHash: 'c12fe1c06bba254a9dc9f519b335aa7c1367a88a',
     followedBy: d.followedBy, bittorrent: d.meta ? undefined : { info: { name: d.name } }, dir: DL,
+    files: d.meta ? [] : [{ index: '1', path: path.join(DL, d.name), length: String(d.total), completedLength: String(d.done), selected: 'true' }],
   });
   const server = http.createServer((req, res) => {
     let body = '';
@@ -71,7 +72,7 @@ function mockAria2(t, { seedPolls = 2 } = {}) {
           return reply(meta.gid);
         }
         case 'addTorrent': {
-          const d2 = { gid: gid(), name: 'ubuntu.iso', status: p[2] && p[2].pause === 'true' ? 'paused' : 'active', total: 4096, done: 0, up: 0, select: (p[2] || {})['select-file'] || '' };
+          const d2 = { gid: gid(), name, status: p[2] && p[2].pause === 'true' ? 'paused' : 'active', total: 4096, done: 0, up: 0, select: (p[2] || {})['select-file'] || '' };
           dl.set(d2.gid, d2);
           return reply(d2.gid);
         }
@@ -152,4 +153,48 @@ test('a .torrent with files already chosen starts right away; cancel and errors'
 
   const wrong = new Aria2({ settings: { get: () => undefined }, userDataDir: 'x', rpcPort: port, secret: 'wrong' });
   await assert.rejects(wrong.call('getVersion'), /Unauthorized/);
+});
+
+test('AU-01: a torrent whose name leads out of the download folder is not moved there', async (t) => {
+  const { port } = await mockAria2(t, { name: path.join('..', '..', 'Documents') });
+  const td = new TorrentDownload({ id: 'e', aria2: ariaFor(port), torrent: makeTorrent(false).buf.toString('base64'), dir: DL, selectFiles: '1', pollMs: 20 });
+  const renamed = []; const paths = [];
+  td.on('renamed', (p) => renamed.push(p)); td.on('paths', (p) => paths.push(...p));
+  await runToDone(td);
+  await td.cancel();
+  assert.deepEqual(renamed, []);
+  assert.deepEqual(paths, [], 'a file outside the folder is never listed for deleting');
+});
+
+test('AU-02: cancelling a torrent deletes only its own files, and the same torrent is found as a duplicate', async () => {
+  const fs = require('fs'); const os = require('os');
+  const { removeTorrentFiles, DownloadManager } = require('../src/main/download/manager');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'novadm-bt-'));
+  const folder = path.join(dir, 'Holiday photos');
+  fs.mkdirSync(path.join(folder, 'sub'), { recursive: true });
+  for (const f of ['a.jpg', path.join('sub', 'b.mp4'), 'mine.txt']) fs.writeFileSync(path.join(folder, f), 'x');
+  fs.writeFileSync(folder + '.aria2', 'x');
+  fs.writeFileSync(path.join(dir, 'outside.txt'), 'x');
+  removeTorrentFiles({ savePath: folder, btPaths: [path.join(folder, 'a.jpg'), path.join(folder, 'sub', 'b.mp4'), path.join(dir, 'outside.txt'), path.join(dir, '..', 'x')] });
+  assert.deepEqual(fs.readdirSync(folder), ['mine.txt'], "the user's own file stays, the empty sub folder goes");
+  assert.ok(fs.existsSync(path.join(dir, 'outside.txt')), 'nothing outside the torrent folder is deleted');
+  assert.ok(!fs.existsSync(folder + '.aria2'));
+
+  const first = { id: '1', kind: 'torrent', infoHash: 'c12f', state: 'downloading', sources: [], savePath: folder };
+  const m = { records: new Map([['1', first]]) };
+  assert.equal(DownloadManager.prototype.findDuplicate.call(m, { kind: 'torrent', infoHash: 'C12F', magnet: 'magnet:?xt=urn:btih:c12f' }), first);
+  assert.equal(DownloadManager.prototype.findDuplicate.call(m, { kind: 'torrent', infoHash: 'ffff' }), null);
+  let resumed = null;
+  const fake = (running) => ({ findDuplicate: () => first, resume: (id) => { resumed = id; }, engines: new Map(running ? [['1', {}]] : []) });
+  const add = (spec, running) => DownloadManager.prototype.add.call(fake(running), { kind: 'torrent', infoHash: 'c12f', ...spec });
+  assert.equal(add({}, true), first, 'adding the same torrent again gives the existing record');
+  assert.equal(resumed, null, 'a running one is not started twice');
+  first.state = 'paused';
+  add({ start: false }); assert.equal(resumed, null, '"Add paused" leaves it paused');
+  first.state = 'done';
+  add({}); assert.equal(resumed, '1', 'a finished one added again is checked and completed again');
+  assert.equal(first.state, 'paused');
+  const q = { records: new Map([['1', { id: '1', state: 'downloading' }]]), engines: new Map([['1', {}]]), queue: [] };
+  DownloadManager.prototype.enqueue.call(q, '1');
+  assert.deepEqual(q.queue, [], 'enqueue skips a record that is running');
 });

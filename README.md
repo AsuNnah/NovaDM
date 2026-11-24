@@ -100,7 +100,8 @@ the SHA-256 of its files so you can check your download.
 - DRM-protected streams are labelled and not downloaded
 
 **Torrents and other apps**
-- Magnet links and `.torrent` files, with file choice and seeding limits (through the aria2 add-on)
+- Magnet links and `.torrent` files, with file choice and seeding limits (through the aria2 add-on); a torrent is
+  listed once, and cancelling it deletes only the files it downloaded
 - Browser extension for Chrome, Edge and Brave (`browser-extension/`, load it unpacked)
 - Command line (`NovaDM.exe --add <link>`), `novadm://` links, and a local API with an MCP endpoint
   for AI assistants (off by default, this PC only)

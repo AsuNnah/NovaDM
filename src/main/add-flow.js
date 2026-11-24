@@ -132,9 +132,9 @@ class AddFlow {
       const start = a.action === 'start';
       if (req.kind === 'many') {
         const pick = new Set(a.selected || []);
-        let n = 0;
-        req.specs.forEach((s, i) => { if (pick.has(i)) { this.downloads.add({ ...s, dir: a.folder || undefined, queue: a.queue, start }); n++; } });
-        result.count = n;
+        const before = this.downloads.records.size; // a torrent already in the list isn't added again
+        req.specs.forEach((s, i) => { if (pick.has(i)) this.downloads.add({ ...s, dir: a.folder || undefined, queue: a.queue, start }); });
+        result.count = this.downloads.records.size - before;
       } else {
         const s = req.spec;
         const rec = this.downloads.add({

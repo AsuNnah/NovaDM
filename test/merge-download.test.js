@@ -232,3 +232,24 @@ test('a segment that fails for good ends the merge download with an error, not a
   assert.equal(dl.state, 'error');
   assert.ok(Date.now() - t0 < 6000);
 });
+
+test('AU-14: the WebM join never replaces an existing .mkv, and a failed join keeps the .mp4 name', async (t) => {
+  const files = { '/v.webm': Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(9000, 1)]), '/a.webm': Buffer.concat([Buffer.from([0x1a, 0x45, 0xdf, 0xa3]), Buffer.alloc(5000, 2)]) };
+  const base = await listen(rangeServer(t, files));
+  const save = tmp();
+  const mine = save.replace(/\.mp4$/, '.mkv');
+  fs.writeFileSync(mine, 'my own video');
+  const tracks = [{ kind: 'video', url: base + '/v.webm' }, { kind: 'audio', url: base + '/a.webm' }];
+  const broken = { available: () => true, merge: async (v, a, out) => { fs.writeFileSync(out, 'half'); throw new Error('FFmpeg failed'); } };
+  const dl = new MergeDownload({ id: 'f', savePath: save, openConn: nodeOpen, ffmpeg: broken, source: { type: 'direct', tracks } });
+  const err = await new Promise((r) => { dl.on('error', r); dl.on('done', () => r(null)); dl.start(); });
+  assert.match(String(err && err.message), /FFmpeg failed/);
+  assert.equal(dl.savePath, save, 'still the .mp4 name, so Retry finds its parts');
+  assert.ok(!fs.existsSync(save.replace(/\.mp4$/, ' (1).mkv')), 'the half-written .mkv is removed');
+
+  const ffmpeg = { available: () => true, merge: async (v, a, out) => { fs.writeFileSync(out, Buffer.concat([fs.readFileSync(v), fs.readFileSync(a)])); } };
+  const dl2 = new MergeDownload({ id: 'g', savePath: save, openConn: nodeOpen, ffmpeg, source: { type: 'direct', tracks } });
+  await run(dl2);
+  assert.equal(fs.readFileSync(mine, 'utf8'), 'my own video');
+  assert.equal(path.basename(dl2.savePath), path.basename(save, '.mp4') + ' (1).mkv');
+});

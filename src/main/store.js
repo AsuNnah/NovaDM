@@ -37,8 +37,12 @@ class JsonStore {
     }
   }
 
+  // A save waits at most `delay` from the first unsaved change: later saves don't push it back (AU-10).
   save(delay = 400) {
+    const due = Date.now() + delay;
+    if (this.timer && this.due <= due) return;
     clearTimeout(this.timer);
+    this.due = due;
     this.timer = setTimeout(() => this.flush(), delay);
   }
 

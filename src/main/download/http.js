@@ -51,6 +51,7 @@ class HttpDownload extends EventEmitter {
     this.timeoutMs = opts.timeoutMs ?? 30000;
     this.openConn = opts.openConn || null;
     this.allowRename = !!opts.allowRename;
+    this.reserved = opts.reserved || null; // () => Set of lower-case paths other unfinished downloads use
     this.minPart = opts.minSplitBytes || MIN_PART;
     this.checkpointMs = opts.checkpointMs || CHECKPOINT_MS;
     this.checkpointBytes = opts.checkpointBytes || CHECKPOINT_BYTES;
@@ -124,7 +125,10 @@ class HttpDownload extends EventEmitter {
   async freshStart() {
     this.segments = [];
     const url = this.sources[0];
-    const conn = await this.requestWithRetry(url, { range: 'bytes=0-', first: true });
+    // An empty file has no byte 0, so some servers (S3) refuse every range with 416: ask once without one (AU-21).
+    const conn = await this.requestWithRetry(url, { range: 'bytes=0-', first: true })
+      .catch((err) => { if (err.status === 416) return this.requestWithRetry(url, { first: true }); throw err; });
+    this.stopIfStopped(conn);
     const h = conn.headers;
     const cr = /bytes\s+(\d+)-(\d+)\/(\d+|\*)/i.exec(h['content-range'] || '');
     if (conn.status === 206 && cr) {
@@ -164,6 +168,7 @@ class HttpDownload extends EventEmitter {
     if (this.validator && (this.validator.etag || this.validator.lastModified)) headers['if-range'] = this.validator.etag || this.validator.lastModified;
     const from = first.start + first.done;
     const conn = await this.requestWithRetry(this.sources[0], { range: `bytes=${from}-${first.end - 1}`, first: true, extraHeaders: headers });
+    this.stopIfStopped(conn);
     if (conn.status === 200) {
       // File changed on the server (or ranges dropped): start over with this full response.
       conn.abort();
@@ -173,6 +178,11 @@ class HttpDownload extends EventEmitter {
     this.openPart();
     this.resumedFrom = this.received;
     return { conn, seg: first };
+  }
+
+  // Paused or cancelled while this request waited: a newer engine may own the files by now (AU-03).
+  stopIfStopped(conn) {
+    if (this._stopping) { conn.abort(); throw new Error('stopped'); }
   }
 
   openPart() {
@@ -365,6 +375,7 @@ class HttpDownload extends EventEmitter {
           const from = seg.start + seg.got;
           const range = this.resumable && seg.end !== Infinity ? `bytes=${from}-${seg.end - 1}` : (from > 0 ? `bytes=${from}-` : undefined);
           conn = await this.request(this.nextSource(), { range });
+          c.skip = 0;
           c.direct = conn.transport === 'direct';
           if (conn.status >= 400) {
             conn.abort();
@@ -373,13 +384,19 @@ class HttpDownload extends EventEmitter {
             throw err;
           }
           if (range && conn.status !== 206) {
-            conn.abort();
-            if (from > 0 || seg !== this.segments[0]) {
-              // Server ignores ranges for extra connections: continue with one connection only.
-              this.resumable = false; this.cap = 1; this.steady = true;
+            // The server ignores ranges: continue with one connection only. Asking for this part again would get
+            // the whole file again, forever (AU-13). If the part before it is still reading its whole-file answer,
+            // it reads on to this part's end; otherwise this answer is read from the start, skipping what we have.
+            this.resumable = false; this.cap = 1; this.steady = true;
+            const prev = this.segments.find((s) => s !== seg && s.end === seg.start && s.conn && !s.conn.closed);
+            if (prev) {
+              conn.abort();
               seg.conn = null;
+              prev.end = seg.end;
+              this.segments.splice(this.segments.indexOf(seg), 1);
               return;
             }
+            c.skip = from;
           }
         }
         await this.pump(c, conn);
@@ -434,6 +451,7 @@ class HttpDownload extends EventEmitter {
       const handle = async (chunk) => {
         let off = 0;
         while (off < chunk.length && !settled) {
+          if (c.skip > 0) { const k = Math.min(c.skip, chunk.length - off); c.skip -= k; off += k; continue; } // bytes we already have
           let n = chunk.length - off;
           if (this.limiter) n = await this.limiter.take(Math.min(n, 64 * 1024));
           if (this.taskLimiter) n = await this.taskLimiter.take(Math.min(n, 64 * 1024));
@@ -606,7 +624,7 @@ class HttpDownload extends EventEmitter {
     if (!util.extOf(name)) name = util.ensureExt(name, info.mime);
     const target = path.join(dir, name);
     if (target === this.savePath) return;
-    this.setSavePath(util.uniquePath(target));
+    this.setSavePath(util.uniquePath(target, this.reserved ? this.reserved() : undefined)); // other downloads' paths too (AU-04)
     this.emit('renamed', this.savePath);
   }
 

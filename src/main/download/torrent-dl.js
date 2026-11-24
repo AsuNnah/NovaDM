@@ -7,6 +7,12 @@ const path = require('path');
 const { EventEmitter } = require('events');
 
 const POLL_MS = 1000;
+/** Is p inside dir (not dir itself, no `..`)? */
+function insideDir(dir, p) {
+  const r = path.relative(path.resolve(dir), path.resolve(p));
+  return !!r && r !== '..' && !r.startsWith('..' + path.sep) && !path.isAbsolute(r);
+}
+
 const KEYS = ['gid', 'status', 'totalLength', 'completedLength', 'uploadLength', 'downloadSpeed', 'uploadSpeed', 'connections', 'numSeeders', 'seeder', 'infoHash', 'followedBy', 'errorCode', 'errorMessage', 'bittorrent', 'dir', 'files'];
 
 class TorrentDownload extends EventEmitter {
@@ -68,11 +74,16 @@ class TorrentDownload extends EventEmitter {
     if (this.state === 'paused' || this.state === 'cancelled' || this.state === 'error') return;
     const st = await this.aria2.call('tellStatus', this.gid, KEYS);
     this.st = st;
+    // The name and file paths come from the torrent, so a crafted one can point anywhere: only paths inside the
+    // download folder are used, for the record and for deleting on cancel (AU-01).
     const name = st.bittorrent && st.bittorrent.info && st.bittorrent.info.name;
     if (name && name !== this.name) {
       this.name = name;
-      this.emit('renamed', path.join(this.dir, name));
+      const p = path.join(this.dir, name);
+      if (insideDir(this.dir, p) && !path.relative(this.dir, p).includes(path.sep)) this.emit('renamed', p);
     }
+    const paths = (st.files || []).map((f) => f.path).filter((p) => p && insideDir(this.dir, p));
+    if (paths.length && paths.join('\n') !== this._paths) { this._paths = paths.join('\n'); this.emit('paths', paths); }
     if (st.status === 'error') throw Object.assign(new Error(st.errorMessage || `aria2 error ${st.errorCode}`), { code: 'TORRENT_' + st.errorCode });
     if (st.status === 'removed') { this.state = 'cancelled'; return; }
 
@@ -180,4 +191,4 @@ class TorrentDownload extends EventEmitter {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-module.exports = { TorrentDownload };
+module.exports = { insideDir, TorrentDownload };

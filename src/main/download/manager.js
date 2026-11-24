@@ -8,7 +8,7 @@ const { app } = require('electron');
 const { HttpDownload } = require('./http');
 const { HlsDownload } = require('./hls-dl');
 const { MergeDownload } = require('./merge-dl');
-const { TorrentDownload } = require('./torrent-dl');
+const { TorrentDownload, insideDir } = require('./torrent-dl');
 const { RateLimiter } = require('./limiter');
 const { JsonStore } = require('../store');
 const util = require('../util');
@@ -82,7 +82,7 @@ class DownloadManager extends EventEmitter {
       separateAudio: !!r.separateAudio, reresolve: !!r.reresolve, live: !!r.live, recordedSeconds: r.recordedSeconds || 0,
       from: r.from || '',
       magnet: r.magnet || '', torrentData: r.torrentData || '', gid: r.gid || '', selectFiles: r.selectFiles || '', infoHash: r.infoHash || '',
-      btFiles: r.btFiles || null, uploaded: r.uploaded || 0, mergeSource: mergeSourceToSave(r),
+      btFiles: r.btFiles || null, btPaths: r.btPaths || [], uploaded: r.uploaded || 0, mergeSource: mergeSourceToSave(r),
       extract: r.extract === 'extracting' ? '' : r.extract || '', extractedTo: r.extractedTo || '',
     }));
     this.store.save();
@@ -120,6 +120,15 @@ class DownloadManager extends EventEmitter {
    *   pageUrl, category, size, convertTs, start (bool) }
    */
   add(spec) {
+    if (spec.kind === 'torrent') {
+      // One record per torrent: a second one would share its folder, and cancelling it would delete the first's files.
+      const same = this.findDuplicate(spec);
+      if (same && spec.start !== false && !this.engines.has(same.id)) {
+        if (same.state === 'done') same.state = 'paused'; // added again: aria2 checks the files and fetches what is missing
+        this.resume(same.id);
+      }
+      if (same) return same;
+    }
     const id = util.uid();
     const { category, folder } = this.placeFor(spec);
     let dir = spec.dir || folder;
@@ -168,6 +177,7 @@ class DownloadManager extends EventEmitter {
   enqueue(id) {
     const rec = this.records.get(id);
     if (!rec || rec.state === 'done' || rec.kind === 'convert') return;
+    if (this.engines.has(id)) return; // already running: a second engine would orphan the first
     if (rec.native) {
       const item = this.natives.get(id);
       if (item && item.canResume()) { item.resume(); rec.state = 'downloading'; this.emitRecord(rec); return; }
@@ -292,6 +302,7 @@ class DownloadManager extends EventEmitter {
       limiter: this.limiter, taskLimiter: this.taskLimiter(rec), transport: this.transport, retries: this.settings.get('retries'),
       retryDelayMs: (this.settings.get('retryDelaySec') || 3) * 1000,
       timeoutMs: (this.settings.get('timeoutSec') || 30) * 1000,
+      reserved: () => { const s = this.reservedPaths(); s.delete(rec.savePath.toLowerCase()); return s; },
     };
     if (rec.kind === 'merge') {
       // Separate picture and sound files given directly (yt-dlp).
@@ -343,6 +354,7 @@ class DownloadManager extends EventEmitter {
     const current = () => this.engines.get(rec.id) === engine;
     rec.runStartedAt = Date.now();
     engine.on('renamed', (p) => {
+      if (!current()) return; // a paused engine's late answer must not move the record (AU-03)
       rec.savePath = p; rec.name = path.basename(p); rec.allowRename = false;
       this.persist(); this.emitRecord(rec);
     });
@@ -485,6 +497,7 @@ class DownloadManager extends EventEmitter {
     engine.on('gid', (gid) => { rec.gid = gid; this.persist(); });
     engine.on('selected', (sel) => { rec.selectFiles = sel; this.persist(); });
     engine.on('files', (files) => { rec.btFiles = files.map((f) => ({ path: f.path, length: f.length })); });
+    engine.on('paths', (paths) => { rec.btPaths = paths; this.persist(); });
     engine.on('progress', (p) => { rec.phase = p.phase; rec.seeders = p.seeders; if (p.infoHash) rec.infoHash = p.infoHash; });
     engine.on('seeding', (s) => {
       rec.seeding = s.seeding; rec.uploadSpeed = s.uploadSpeed; rec.uploaded = s.uploaded; rec.ratio = s.ratio;
@@ -541,11 +554,8 @@ class DownloadManager extends EventEmitter {
     if (engine) { try { await engine.cancel(); } catch {} }
     if (rec._pausing) await rec._pausing;
     if (deleteFile) {
-      if (rec.kind === 'torrent') {
-        // A torrent may be a folder; aria2 keeps its progress in "<name>.aria2".
-        for (const f of [rec.savePath, rec.savePath + '.aria2']) { try { fs.rmSync(f, { recursive: true, force: true }); } catch {} }
-      }
-      for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8', rec.savePath + '.part.tracks', rec.savePath + '.video.part', rec.savePath + '.audio.part']) {
+      if (rec.kind === 'torrent') removeTorrentFiles(rec);
+      else for (const f of [rec.savePath, rec.savePath + '.part', rec.savePath + '.part.meta', rec.savePath + '.part.m3u8', rec.savePath + '.part.tracks', rec.savePath + '.video.part', rec.savePath + '.audio.part']) {
         try { fs.rmSync(f, { force: true }); } catch {}
       }
     }
@@ -675,10 +685,15 @@ class DownloadManager extends EventEmitter {
   /** Same link already in the list? Returns that record (unfinished ones first) or null. */
   findDuplicate(spec) {
     const norm = (u) => String(u || '').replace(/#.*$/, '');
+    if (spec.kind === 'torrent') { // the same torrent saves into the same folder (AU-02)
+      const hash = String(spec.infoHash || '').toLowerCase();
+      return (hash && [...this.records.values()].find((r) => r.kind === 'torrent' && String(r.infoHash || '').toLowerCase() === hash)) || null;
+    }
     const want = norm(spec.kind === 'hls' || spec.kind === 'dash' ? spec.playlistUrl : (spec.url || (spec.sources || [])[0]));
     if (!want) return null;
     let found = null;
     for (const r of this.records.values()) {
+      if (r.kind === 'torrent') continue;
       const have = norm(r.kind === 'hls' || r.kind === 'dash' ? r.playlistUrl : r.sources[0]);
       if (have !== want) continue;
       if (r.state !== 'done') return r;
@@ -846,9 +861,10 @@ class DownloadManager extends EventEmitter {
 
   emitRecord(rec) { this.emit('updated', rec.id); this.emitList(); }
 
+  // At most one list update per 120 ms; progress events don't push it back (AU-16).
   emitList() {
-    clearTimeout(this._listTimer);
-    this._listTimer = setTimeout(() => this.emit('changed'), 120);
+    if (this._listTimer) return;
+    this._listTimer = setTimeout(() => { this._listTimer = null; this.emit('changed'); }, 120);
   }
 }
 
@@ -863,4 +879,20 @@ function mergeSourceToSave(r) {
   return { ...m, tracks: (m.tracks || []).map((t) => ({ ...t, headers: withoutSignIn(t.headers) })) };
 }
 
-module.exports = { DownloadManager, headersToSave, mergeSourceToSave, withoutSignIn };
+/**
+ * Cancel of a torrent: delete the files aria2 reported for it (rec.btPaths) and "<savePath>.aria2", then folders left
+ * empty inside its folder. Never a whole folder: it may hold the user's own files or an earlier copy (AU-02).
+ */
+function removeTorrentFiles(rec) {
+  const top = path.resolve(rec.savePath); // the torrent's file, or its folder
+  const dirs = new Set();
+  for (const f of rec.btPaths || []) {
+    if (path.relative(top, f) !== '' && !insideDir(top, f)) continue; // relative(): case-insensitive on Windows
+    try { fs.rmSync(f, { force: true }); } catch {}
+    for (let d = path.dirname(path.resolve(f)); d === top || insideDir(top, d); d = path.dirname(d)) dirs.add(d);
+  }
+  try { fs.rmSync(rec.savePath + '.aria2', { force: true }); } catch {}
+  for (const d of [...dirs].sort((a, b) => b.length - a.length)) { try { fs.rmdirSync(d); } catch {} } // only if empty
+}
+
+module.exports = { removeTorrentFiles, DownloadManager, headersToSave, mergeSourceToSave, withoutSignIn };
