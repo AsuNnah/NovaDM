@@ -2,13 +2,41 @@
 // Export and import: the downloads list and the settings, as one JSON file the user keeps
 // (for another PC, or a fresh install). Secrets are left out: the proxy password and the API key
 // are not exported. Importing adds downloads that aren't in the list yet (finished ones stay
-// finished, unfinished ones come back paused) and applies the settings.
+// finished, unfinished ones come back paused) and applies the preferences (see importable()).
 
 const SECRET_SETTINGS = new Set(['proxyPassEnc', 'apiKey', 'apiKeyEnc']);
 const { withoutSignIn } = require('./download/manager');
 // Paths of this PC, and what runs or is sent after each download: a backup someone else made must not set them.
 // The download folder too: imported downloads are kept inside it (manager.importRecord), so the file can't move it.
-const MACHINE_SETTINGS = new Set(['downloadDir', 'ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl', 'proxyProfile']);
+const MACHINE_SETTINGS = new Set(['downloadDir', 'ffmpegPath', 'aria2Path', 'ytdlpPath', 'afterProgram', 'afterArgs', 'webhookUrl', 'proxyProfile', 'exitClean']);
+
+// Import (AU-08): a backup may come from someone else, so it brings only preferences, plus a protection setting when the
+// file's value is the stricter one. Proxy, DNS, folders, site permissions and exceptions, sign-ins, what runs after
+// downloads and what NovaDM opens to other programs never come in.
+const PREFERENCES = new Set(['theme', 'searchEngine', 'homepage', 'restoreTabs', 'connections', 'maxActive', 'speedLimitKBps',
+  'retries', 'retryDelaySec', 'timeoutSec', 'minSplitKB', 'downloadTransport', 'autoResume', 'notifyOnComplete', 'queues',
+  'closeToTray', 'preventSleep', 'extractArchives', 'deleteAfterExtract', 'categoryRules', 'accent', 'uiScale',
+  'showBookmarksBar', 'discardTabsAfter', 'memorySaver', 'addonRemindOff', 'torrentAskFiles', 'torrentSeedRatio',
+  'torrentSeedMinutes', 'torrentUploadKBps', 'clipboardWatch', 'clipboardExtensions', 'pageTitleNames', 'convertTsToMp4',
+  'ytdlpAuto', 'minMediaKB', 'myFilters']);
+// Protections, each as its values from loosest to strictest.
+const ONOFF = [false, true];
+const PROTECTIONS = {
+  markOfTheWeb: ONOFF, phishingCheck: ONOFF, breachCheck: ONOFF, updateCheck: ONOFF, adblock: ONOFF, httpsUpgrade: ONOFF,
+  debounceLinks: ONOFF, stripTrackingParams: ONOFF, deAmp: ONOFF, blockThirdPartyCookies: ONOFF, secureDnsStrict: ONOFF,
+  clearCookiesOnExit: ONOFF, clearCacheOnExit: ONOFF, clearHistoryOnExit: ONOFF, skipEditor: [true, false],
+  scanDownloads: ['off', 'programs', 'all'], fingerprinting: ['off', 'standard', 'strict'],
+  securityLevel: ['standard', 'safer', 'safest'], popupMode: ['allow', 'ask', 'block'],
+};
+
+function importable(k, v, current) {
+  if (k === 'categoryRules') return { ok: Array.isArray(v), v: Array.isArray(v) ? v.filter((r) => r && typeof r === 'object').map(({ folder, ...r }) => r) : v };
+  // Exception rules (@@, #@#) would turn Guard off for sites: only blocking rules come in.
+  if (k === 'myFilters') return { ok: typeof v === 'string', v: String(v).split('\n').filter((l) => !/^\s*@@|#@[#?$%]/.test(l)).join('\n') };
+  if (PREFERENCES.has(k)) return { ok: true, v };
+  const order = PROTECTIONS[k];
+  return { ok: !!order && order.indexOf(v) > order.indexOf(current) && order.indexOf(current) >= 0, v };
+}
 
 function exportData({ settings, downloads, version, includeSettings = true, includeDownloads = true }) {
   const out = { app: 'NovaDM', format: 1, version, exportedAt: new Date().toISOString() };
@@ -40,7 +68,11 @@ function importData(data, { settings, downloads, applySettings = true, addDownlo
   const res = { settings: 0, added: 0, skipped: 0 };
   if (applySettings && data.settings && typeof data.settings === 'object') {
     const patch = {};
-    for (const [k, v] of Object.entries(data.settings)) if (!SECRET_SETTINGS.has(k) && !MACHINE_SETTINGS.has(k)) patch[k] = v;
+    const current = (k) => (typeof settings.get === 'function' ? settings.get(k) : (settings.data || {})[k]);
+    for (const [k, v] of Object.entries(data.settings)) {
+      const r = importable(k, v, current(k));
+      if (r.ok) patch[k] = r.v;
+    }
     res.settings = Object.keys(settings.set(patch)).length;
   }
   if (addDownloads && Array.isArray(data.downloads)) {

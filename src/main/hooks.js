@@ -20,10 +20,14 @@ function buildArgs(template, rec) {
   return words(String(template || '')).map((a) => a.replace(/\{(file|folder|name|url|page)\}/g, (m, k) => values[k]));
 }
 
+const SHELLS = /^(cmd|powershell|powershell_ise|pwsh|wscript|cscript|mshta|bash|wsl)(\.exe)?$/i;
+
 /** Start the user's program for a finished download. Resolves { ok, error }. */
 function runProgram(program, argsTemplate, rec, spawnFn = spawn) {
   return new Promise((resolve) => {
     if (!program) return resolve({ ok: false, error: 'No program chosen' });
+    // A shell or script host would read a server-chosen file name (`a&calc.exe`) as commands (AU-24).
+    if (SHELLS.test(path.win32.basename(program))) return resolve({ ok: false, error: 'Command shells and script hosts read file names as commands, so NovaDM does not run them after downloads; choose a program (.exe)' });
     if (/\.(bat|cmd)$/i.test(program)) return resolve({ ok: false, error: 'Batch files run through a command shell, which NovaDM does not use for safety; choose a program (.exe)' });
     try {
       const p = spawnFn(program, buildArgs(argsTemplate, rec), { detached: true, stdio: 'ignore', windowsHide: false, shell: false });

@@ -5,14 +5,15 @@
 const crypto = require('crypto');
 const { ipcMain } = require('electron');
 const { siteOf } = require('./util');
+const privateSites = require('./private-sites');
 
 const SESSION_KEY = crypto.randomBytes(16).toString('hex'); // fingerprint noise changes each time NovaDM starts
 
 /** What applies to a page at `url`, or null (internal pages, or protection off for the site). */
-function protectionFor(settings, url) {
+function protectionFor(settings, url, incognito = false) {
   if (!/^https?:/i.test(url || '')) return null;
   const site = siteOf(url);
-  if ((settings.get('hardeningOff') || []).includes(site)) return null;
+  if (privateSites.listHas(settings, 'hardeningOff', site, incognito)) return null;
   const level = ['safer', 'safest'].includes(settings.get('securityLevel')) ? settings.get('securityLevel') : 'standard';
   const fingerprinting = level === 'standard' ? (settings.get('fingerprinting') || 'standard') : 'strict';
   return {
@@ -30,13 +31,16 @@ function install(settings) {
   ipcMain.on('novadm:shield-config', (e) => {
     let url = '';
     try { url = e.sender.getURL(); } catch {}
-    e.returnValue = protectionFor(settings, url);
+    let priv = false;
+    try { priv = !e.sender.session.isPersistent(); } catch {}
+    e.returnValue = protectionFor(settings, url, priv);
   });
 }
 
-function toggleSite(settings, url) {
+function toggleSite(settings, url, incognito = false) {
   const site = siteOf(url || '');
   if (!site) return;
+  if (incognito) return privateSites.setPrivate('hardeningOff', site, !privateSites.listHas(settings, 'hardeningOff', site, true));
   const off = new Set(settings.get('hardeningOff') || []);
   if (off.has(site)) off.delete(site); else off.add(site);
   settings.set({ hardeningOff: [...off] });

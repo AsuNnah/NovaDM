@@ -15,6 +15,7 @@ const { menuText, siteOf } = require('./util');
 const { guardFor, sessionLookup, openerFor } = require('./netguard');
 const { Shields } = require('./shields');
 const { COLORS, COLOR_HEX } = require('./tab-groups');
+const exitMarker = require('./exit-marker');
 
 const UI_DIR = path.join(__dirname, '..', 'ui');
 const UI_PRELOAD = path.join(UI_DIR, 'preload-ui.js');
@@ -308,7 +309,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   // ---- clear browsing data ----
   const RANGES = { hour: 3600e3, day: 86400e3, week: 7 * 86400e3, all: Infinity };
   async function clearData({ range = 'all', history: h = true, cookies = false, cache = false } = {}) {
-    if (h) { if (range === 'all') browser.hsts.n.clear(); history.clear(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
+    if (h) { if (range === 'all') browser.hsts.n.clear(); history.clear(RANGES[range] || Infinity); browser.forgetClosed(RANGES[range] || Infinity); siteIcons.keepOnly(history.visits.map((v) => v.url)); if (range === 'all') tabSession.clear(); }
     if (cookies) {
       await browser.normalSession.clearStorageData({ storages: ['cookies', 'localstorage', 'indexdb', 'websql', 'serviceworkers', 'cachestorage', 'filesystem', 'shadercache'] });
     }
@@ -341,17 +342,35 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
   /** Settings → "When NovaDM closes, clear…". */
   async function onQuit() {
     await forgetSites().catch(() => {}); // first: it reads the history for the sites' origins
+    await clearOnExit();
+    flushAll();
+    if (settings.get('restoreTabs') === false) tabSession.clear();
+    tabSession.flush();
+    exitMarker.endSession(settings);
+  }
+
+  /** At start, before the tabs open: forgotten sites, and the clear-on-exit steps a Windows shutdown skipped (AU-11). */
+  async function onStart() {
+    const missed = exitMarker.startSession(settings);
+    await forgetSites().catch(() => {});
+    if (missed) await clearOnExit();
+  }
+
+  async function clearOnExit() {
     const jobs = [];
     if (settings.get('clearHistoryOnExit')) { history.clear(); siteIcons.keepOnly([]); if (browser.hsts) browser.hsts.n.clear(); }
     if (settings.get('clearCookiesOnExit') || settings.get('clearCacheOnExit')) {
       jobs.push(clearData({ history: false, cookies: !!settings.get('clearCookiesOnExit'), cache: !!settings.get('clearCacheOnExit') }).catch(() => {}));
     }
     await Promise.all(jobs);
+  }
+
+  /** Everything browsing keeps, written now (quit, and Windows shutdown, where there is no time for more). */
+  function flushAll() {
     history.flush();
     siteIcons.flush();
     if (browser.hsts) browser.hsts.n.store.flush();
     bookmarks.flush();
-    if (settings.get('restoreTabs') === false) tabSession.clear();
     tabSession.flush();
   }
 
@@ -536,7 +555,7 @@ function setupBrowsing({ settings, browser, net, userDataDir, sendUI, setPanel, 
 
   return {
     history, bookmarks, tabSession, siteIcons, shields, handlers,
-    chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, clearData, forgetSites,
+    chromeHeight, findBounds, createFindView, openFind, closeFind, applyScale, openStartTabs, onQuit, onStart, flushAll, clearData, forgetSites,
     toggleActiveBookmark, openReader, bookmarkState, memoryCheck,
     get findView() { return find.view; },
     get findOpen() { return find.open; },

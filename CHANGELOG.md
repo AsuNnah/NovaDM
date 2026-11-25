@@ -6,6 +6,41 @@ All notable changes to NovaDM are listed here, newest first. Versions follow
 
 ## [Unreleased]
 
+## [1.8.3] — 2026-11-24
+
+Close the security gaps: fixes from the same review of the whole app, for places where a site, a file or a backup
+could get more than you allowed, or private browsing left a trace.
+
+### Fixed
+- **A site extension can read only the sites it lists.** Before, a site it was allowed on could redirect it to any
+  other site, which it then read with your cookies.
+- **"Open in another app" names the kind of link** ("open zoommtg: links in another app"), and your answer counts for
+  that kind of link only, not for every app the site might open later. Remember is no longer ticked for you. Link
+  types Windows uses to run tools or search your files (`ms-msdt:`, `search-ms:`, `ms-officecmd:` and a few others,
+  and `file:`) are refused without asking.
+- **Importing a backup can only make NovaDM stricter.** It brings your preferences (looks, search, download speed and
+  queues, file types, the blocking rules in My filters) and a protection setting only where the backup's value is the
+  stricter one. Proxy, Secure DNS, folders, site permissions and exceptions, sign-ins, what runs after downloads (a
+  program, or shutting the PC down) and what NovaDM opens to other apps never come in, so a backup from someone else can't turn your protection off or send your traffic
+  elsewhere.
+- **Every file of a multi-file torrent gets the Mark of the Web**, so Windows warns before opening a program from it.
+  Before, only the folder was marked, which Windows ignores.
+- **Windows shutdown or sign-out no longer loses your last changes**, and *When NovaDM closes, clear…* runs at the
+  next start if Windows ended NovaDM before it could.
+- **Guard switches in a private window stay private.** Turning Guard, Guard Extended or the pop-up blocker off (or
+  always allowing a site's pop-ups) in a private window lasts until the private window closes and is never saved;
+  normal windows keep their own switches.
+- **The problem report leaves out My filters and the address of a crashed private tab.**
+- **Clearing history also clears Recently closed** for the same time range.
+- **Windows' reserved names are caught in every form** (`aux.tar.gz`, `CONIN$`, `COM¹`), so such a download is
+  renamed instead of failing.
+- **A command shell or script host can't be the after-download program** (`cmd`, PowerShell, `wscript`, `cscript`,
+  `mshta`, `bash`, `wsl`), as `.bat` and `.cmd` files already couldn't.
+- **Files a server stores compressed** (a `.tar.gz` some servers send with `Content-Encoding: gzip`) download instead
+  of staying at "connecting".
+- **Ad-block lists stay current in a session that runs for days**: they are refreshed while NovaDM runs, not only at
+  start.
+
 ## [1.8.2] — 2026-11-24
 
 Don't lose downloads: fixes from a review of the whole app, for the ways a download or a finished file could be lost

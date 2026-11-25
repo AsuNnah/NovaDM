@@ -71,7 +71,7 @@ the SHA-256 of its files so you can check your download.
   Safer / Safest security levels modelled on Tor Browser's (NovaDM does not use the Tor network), with an
   off switch per site
 - Secure DNS (DNS over HTTPS) with a strict choice that never falls back to your network's DNS, proxy support, Microsoft Defender scan of downloaded programs,
-  Mark of the Web on downloads
+  Mark of the Web on downloads (on every file of a torrent folder too)
 - Encrypted cookies, leaked-password and insecure sign-in warnings, tamper-checked app
 - Sites you choose are forgotten (cookies and site data) when NovaDM closes
 - **Country profiles**: browse through a proxy or VPN exit you have in another country, with that country's time
@@ -145,7 +145,7 @@ does; Settings → Add-ons turns it off). The sites you visit are checked agains
 Private windows leave no history or downloads list entries, and their cookies, site data and
 sign-ins are deleted when the private window closes. They take nothing from normal browsing either: no history
 in the address bar, no closed normal tabs brought back, no normal downloads in their list, and a site allowed in a
-normal window asks again. Passwords for proxies and sites are
+normal window asks again, and Guard switches changed in a private window last only until it closes. Passwords for proxies and sites are
 encrypted with Windows' data protection. Sites you mark *Forget this site when NovaDM closes* lose their cookies and
 site data each time NovaDM closes. *Check what sites see* (Guard panel) asks Cloudflare which address and country it
 sees, only when you press it. My filters, your own ad-block rules, stay in your settings on this PC.
