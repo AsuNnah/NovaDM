@@ -23,12 +23,12 @@
     "electron-chrome-web-store": "0.13.0",
     "electron-updater": "6.8.11",
     "mux.js": "6.3.0",
-    "tldts-experimental": "7.5.4",
-    "undici": "8.12.4"
+    "tldts-experimental": "7.5.5",
+    "undici": "8.13.1"
   },
   "devDependencies": {
-    "@electron/asar": "4.3.2",
-    "electron": "45.3.4",
+    "@electron/asar": "4.3.4",
+    "electron": "45.5.0",
     "electron-builder": "26.18.0"
   },
   "overrides": {
